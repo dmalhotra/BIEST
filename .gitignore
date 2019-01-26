@@ -1,0 +1,7 @@
+/bin/*
+/obj/*
+*.vtp
+*.pvtp
+*.log
+/vis*
+*.swo

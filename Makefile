@@ -37,13 +37,16 @@ OBJDIR = ./obj
 INCDIR = ./include
 
 TARGET_BIN = \
-       $(BINDIR)/example \
        $(BINDIR)/table1 \
        $(BINDIR)/table3 \
        $(BINDIR)/table4 \
        $(BINDIR)/table5 \
        $(BINDIR)/table6 \
-       $(BINDIR)/table7
+       $(BINDIR)/table7 \
+       $(BINDIR)/quadrature-example \
+       $(BINDIR)/force-free-fields-example \
+       $(BINDIR)/double-layer-convergence \
+       $(BINDIR)/virtual-casing-principle
 
 all : $(TARGET_BIN)
 

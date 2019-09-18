@@ -193,6 +193,31 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
   return normal_scal;
 }
 
+template <class Real> void SurfaceOp<Real>::SurfCurl(sctl::Vector<Real>& CurlF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, const sctl::Vector<Real>& F) const {
+  sctl::Vector<Real> GradF;
+  SurfGrad(GradF, dX, F);
+  { // Compute CurlF <--curl(GradF)
+    sctl::Long N = Nt_ * Np_;
+    sctl::Long dof = F.Dim() / (COORD_DIM * Nt_ * Np_);
+    assert(F.Dim() == dof * COORD_DIM * Nt_ * Np_);
+    assert(normal.Dim() == COORD_DIM * Nt_ * Np_);
+    if (CurlF.Dim() != dof * Nt_ * Np_) {
+      CurlF.ReInit(dof * Nt_ * Np_);
+    }
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
+      for (sctl::Long k = 0; k < dof; k++) {
+        Real curl = 0;
+        sctl::Long idx = k*COORD_DIM*COORD_DIM + i;
+        curl += normal[0*N+i] * (GradF[(1*COORD_DIM+2) * N + idx] - GradF[(2*COORD_DIM+1) * N + idx]);
+        curl += normal[1*N+i] * (GradF[(2*COORD_DIM+0) * N + idx] - GradF[(0*COORD_DIM+2) * N + idx]);
+        curl += normal[2*N+i] * (GradF[(0*COORD_DIM+1) * N + idx] - GradF[(1*COORD_DIM+0) * N + idx]);
+        CurlF[k * N + i] = curl;
+      }
+    }
+  }
+}
+
 template <class Real> void SurfaceOp<Real>::SurfGrad(sctl::Vector<Real>& GradFvec, const sctl::Vector<Real>& dXvec_, const sctl::Vector<Real>& Fvec) const {
   auto transpose0 = [this](sctl::Vector<Real>& V) {
     sctl::Long dof = V.Dim() / (Nt_ * Np_);

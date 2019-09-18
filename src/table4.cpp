@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
 
   {
     typedef double Real;
-    sctl::Comm comm = sctl::Comm::World();
+    sctl::Comm comm = sctl::Comm::Self();
     sctl::Profile::Enable(true);
 
     { // SurfaceOp::test_InvSurfLap

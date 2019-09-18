@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
 
   { // Compute vacuum field and Taylor state
     typedef double Real;
-    sctl::Comm comm = sctl::Comm::World();
+    sctl::Comm comm = sctl::Comm::Self();
     sctl::Profile::Enable(true);
 
     sctl::Vector<biest::Surface<Real>> Svec(1);

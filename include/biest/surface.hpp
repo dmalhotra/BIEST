@@ -50,7 +50,7 @@ struct VTKData {
   std::vector<int32_t> poly_connect;
   std::vector<int32_t> poly_offset;
 
-  void WriteVTK(const char* fname, const sctl::Comm& comm = sctl::Comm::World()) {
+  void WriteVTK(const char* fname, const sctl::Comm& comm = sctl::Comm::Self()) {
     sctl::Integer np = comm.Size();
     sctl::Integer myrank = comm.Rank();
 
@@ -182,7 +182,7 @@ struct VTUData {
   sctl::Vector<int32_t> offset;
   sctl::Vector<uint8_t> types;
 
-  void WriteVTK(const std::string& fname, const sctl::Comm& comm = sctl::Comm::World()) const {
+  void WriteVTK(const std::string& fname, const sctl::Comm& comm = sctl::Comm::Self()) const {
     typedef typename VTUData::VTKReal VTKReal;
     sctl::Long value_dof = 0;
     {  // Write vtu file.
@@ -332,7 +332,7 @@ struct VTUData {
   };
 };
 
-template <class Real> void WriteVTK(const char* fname, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real> F = sctl::Vector<Real>(), const sctl::Comm& comm = sctl::Comm::World()) {
+template <class Real> void WriteVTK(const char* fname, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real> F = sctl::Vector<Real>(), const sctl::Comm& comm = sctl::Comm::Self()) {
   VTKData data;
   typedef VTKData::VTKReal VTKReal;
   auto& point_coord =data.point_coord ;
@@ -382,7 +382,7 @@ template <class Real> void WriteVTK(const char* fname, const sctl::Vector<Surfac
   data.WriteVTK(fname, comm);
 }
 
-template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, const sctl::Vector<Real> F = sctl::Vector<Real>(), const sctl::Comm& comm = sctl::Comm::World()) {
+template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, const sctl::Vector<Real> F = sctl::Vector<Real>(), const sctl::Comm& comm = sctl::Comm::Self()) {
   WriteVTK(fname, sctl::Vector<Surface<Real>>(1,sctl::Ptr2Itr<Surface<Real>>((Surface<Real>*)&S,1),false), F, comm);
 }
 

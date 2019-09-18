@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
 #endif
 
   {
-    sctl::Comm comm = sctl::Comm::World();
+    sctl::Comm comm = sctl::Comm::Self();
     sctl::Profile::Enable(true);
 
     { // Compute Taylor state

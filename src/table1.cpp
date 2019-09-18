@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
 
   {
     typedef double Real;
-    sctl::Comm comm = sctl::Comm::World();
+    sctl::Comm comm = sctl::Comm::Self();
     sctl::Profile::Enable(true);
 
     auto laplace_ker = [](const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& v_src, const sctl::Vector<Real>& r_trg, sctl::Vector<Real>& v_trg) {

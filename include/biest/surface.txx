@@ -48,9 +48,9 @@ template <class Real> Surface<Real>::Surface(sctl::Long Nt, sctl::Long Np, SurfT
     stell_geom(X0_, Nt0, Np0, 2.0, 0.3, 0.55, true);
   } else if (type == SurfType::Quas3) {
     sctl::Matrix<double> X, Y, Z;
-    X.Read("Quas3-X.mat");
-    Y.Read("Quas3-Y.mat");
-    Z.Read("Quas3-Z.mat");
+    X.Read("geom/Quas3-X.mat");
+    Y.Read("geom/Quas3-Y.mat");
+    Z.Read("geom/Quas3-Z.mat");
     sctl::Long Nt = X.Dim(0)-1, Np = X.Dim(1)-1;
     sctl::Vector<Real> XX(COORD_DIM * Nt * Np);
     for (sctl::Long t = 0; t < Nt; t++) {
@@ -63,9 +63,9 @@ template <class Real> Surface<Real>::Surface(sctl::Long Nt, sctl::Long Np, SurfT
     SurfaceOp<Real>::Upsample(XX, Nt, Np, this->Coord(), Nt0, Np0);
   } else if (type == SurfType::LHD) {
     sctl::Matrix<double> X, Y, Z;
-    X.Read("LHD-X.mat");
-    Y.Read("LHD-Y.mat");
-    Z.Read("LHD-Z.mat");
+    X.Read("geom/LHD-X.mat");
+    Y.Read("geom/LHD-Y.mat");
+    Z.Read("geom/LHD-Z.mat");
     sctl::Long Nt = X.Dim(0), Np = X.Dim(1);
     sctl::Vector<Real> XX(COORD_DIM * Nt * Np);
     for (sctl::Long t = 0; t < Nt; t++) {
@@ -78,9 +78,9 @@ template <class Real> Surface<Real>::Surface(sctl::Long Nt, sctl::Long Np, SurfT
     SurfaceOp<Real>::Upsample(XX, Nt, Np, this->Coord(), Nt0, Np0);
   } else if (type == SurfType::W7X) {
     sctl::Matrix<double> X, Y, Z;
-    X.Read("W7X-X.mat");
-    Y.Read("W7X-Y.mat");
-    Z.Read("W7X-Z.mat");
+    X.Read("geom/W7X-X.mat");
+    Y.Read("geom/W7X-Y.mat");
+    Z.Read("geom/W7X-Z.mat");
     sctl::Long Nt = X.Dim(0), Np = X.Dim(1);
     sctl::Vector<Real> XX(COORD_DIM * Nt * Np);
     for (sctl::Long t = 0; t < Nt; t++) {

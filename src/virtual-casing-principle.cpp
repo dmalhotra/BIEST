@@ -2,7 +2,82 @@
 #include <sctl.hpp>
 typedef double Real;
 
-template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void GetExtField(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B, Real gmres_tol = 1e-12) {
+// Generalized virtual-casing principle (without solving a Laplace Neumann problem)
+template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void GeneralVirtualCasing(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B) {
+  constexpr sctl::Integer COORD_DIM = 3;
+  sctl::Comm comm = sctl::Comm::Self();
+  bool prof_state = sctl::Profile::Enable(true);
+  sctl::Profile::Tic("Total", &comm);
+
+  sctl::Long Nt = S.NTor();
+  sctl::Long Np = S.NPol();
+  sctl::Vector<biest::Surface<Real>> Svec(1);
+  Svec[0] = S;
+
+  sctl::Profile::Tic("Setup", &comm);
+  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE, PDIM, RDIM> BiotSavartFxU(comm);
+  BiotSavartFxU.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU());
+
+  biest::BoundaryIntegralOp<Real, 1, 3, UPSAMPLE, PDIM, RDIM> LaplaceFxdU(comm);
+  LaplaceFxdU.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU());
+
+  sctl::Vector<Real> dX, normal;
+  biest::SurfaceOp<Real> SurfOp(comm, Nt, Np);
+  { // set dX, normal
+    SurfOp.Grad2D(dX, S.Coord());
+    SurfOp.SurfNormalAreaElem(&normal, nullptr, dX, &S.Coord());
+  }
+  sctl::Profile::Toc();
+
+  auto DotProd = [](sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B) {
+    sctl::Long N = A.Dim() / COORD_DIM;
+    SCTL_ASSERT(A.Dim() == COORD_DIM * N);
+    SCTL_ASSERT(B.Dim() == COORD_DIM * N);
+    if (AdotB.Dim() != N) AdotB.ReInit(N);
+    for (sctl::Long i = 0; i < N; i++) {
+      Real AdotB_ = 0;
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+        AdotB_ += A[k*N+i] * B[k*N+i];
+      }
+      AdotB[i] = AdotB_;
+    }
+  };
+  auto CrossProd = [](sctl::Vector<Real>& AcrossB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B) {
+    sctl::Long N = A.Dim() / COORD_DIM;
+    SCTL_ASSERT(A.Dim() == COORD_DIM * N);
+    SCTL_ASSERT(B.Dim() == COORD_DIM * N);
+    if (AcrossB.Dim() != COORD_DIM * N) AcrossB.ReInit(COORD_DIM * N);
+    for (sctl::Long i = 0; i < N; i++) {
+      sctl::StaticArray<Real,COORD_DIM> A_, B_, AcrossB_;
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+        A_[k] = A[k*N+i];
+        B_[k] = B[k*N+i];
+      }
+      AcrossB_[0] = A_[1] * B_[2] - B_[1] * A_[2];
+      AcrossB_[1] = A_[2] * B_[0] - B_[2] * A_[0];
+      AcrossB_[2] = A_[0] * B_[1] - B_[0] * A_[1];
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+        AcrossB[k*N+i] = AcrossB_[k];
+      }
+    }
+  };
+
+  sctl::Profile::Tic("B-ext", &comm);
+  sctl::Vector<Real> BdotN, J, Bext_;
+  DotProd(BdotN, B, normal);
+  CrossProd(J, normal, B);
+  LaplaceFxdU(Bext_, BdotN);
+  BiotSavartFxU(Bext, J);
+  Bext += Bext_ + 0.5 * B;
+  sctl::Profile::Toc();
+
+  sctl::Profile::Toc();
+  sctl::Profile::print(&comm);
+  sctl::Profile::Enable(prof_state);
+}
+
+// Virtual-casing principle for the case when B.n=0 (and constructing (B+Bvac).n = 0 when B.n!=0)
+template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void VirtualCasing(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B, Real gmres_tol = 1e-12) {
   constexpr sctl::Integer COORD_DIM = 3;
   sctl::Comm comm = sctl::Comm::Self();
   bool prof_state = sctl::Profile::Enable(true);
@@ -110,7 +185,8 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Profile::Enable(prof_state);
 }
 
-template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void GetNormalExtField(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B, Real gmres_tol = 1e-12) {
+// Virtual-casing principle (using vector potential)
+template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void VirtualCasingNormalComponent(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B, Real gmres_tol = 1e-12) {
   constexpr sctl::Integer COORD_DIM = 3;
   sctl::Comm comm = sctl::Comm::Self();
   bool prof_state = sctl::Profile::Enable(true);
@@ -253,12 +329,12 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Vector<Real> Berr;
   if (0) { // Set Berr
     sctl::Vector<Real> Bext_;
-    GetExtField<Real,UPSAMPLE,PDIM,RDIM>(Bext_, Svec[0], B, 1);
+    VirtualCasing<Real,UPSAMPLE,PDIM,RDIM>(Bext_, Svec[0], B, 1);
     auto Berr_ = Bext - Bext_;
     DotProd(Berr, Berr_, normal);
   } else {
     sctl::Vector<Real> NdotBext_, NdotBext;
-    GetNormalExtField<Real,UPSAMPLE,PDIM,RDIM>(NdotBext_, Svec[0], B, 1);
+    VirtualCasingNormalComponent<Real,UPSAMPLE,PDIM,RDIM>(NdotBext_, Svec[0], B, 1);
     DotProd(NdotBext, Bext, normal);
     Berr = NdotBext - NdotBext_;
   }
@@ -439,12 +515,12 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Vector<Real> Berr;
   if (0) { // Set Berr
     sctl::Vector<Real> Bext_;
-    GetExtField<Real,UPSAMPLE,PDIM,RDIM>(Bext_, Svec[0], B, gmres_tol);
+    VirtualCasing<Real,UPSAMPLE,PDIM,RDIM>(Bext_, Svec[0], B, gmres_tol);
     auto Berr_ = Bext - Bext_;
     DotProd(Berr, Berr_, normal);
   } else {
     sctl::Vector<Real> NdotBext_, NdotBext;
-    GetNormalExtField<Real,UPSAMPLE,PDIM,RDIM>(NdotBext_, Svec[0], B, gmres_tol);
+    VirtualCasingNormalComponent<Real,UPSAMPLE,PDIM,RDIM>(NdotBext_, Svec[0], B, gmres_tol);
     DotProd(NdotBext, Bext, normal);
     Berr = NdotBext - NdotBext_;
   }
@@ -479,7 +555,7 @@ int main(int argc, char** argv) {
         Real tor_flux=1, pol_flux=0, lambda = 1.0;
         bool prof_state = sctl::Profile::Enable(true);
         biest::TaylorState<Real,1,40,75>::Compute(B_, tor_flux, pol_flux, lambda, Svec, comm, gmres_tol, 100);
-        GetExtField<Real,1,40,75>(Bext_, Svec[0], B_, 10);
+        VirtualCasing<Real,1,40,75>(Bext_, Svec[0], B_, 10);
         sctl::Profile::Enable(prof_state);
       }
 

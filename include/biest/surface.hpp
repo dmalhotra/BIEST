@@ -32,6 +32,8 @@ template <class Real> class Surface {
     sctl::Long NPol() const {return Np0;}
     sctl::Vector<Real>& Coord() {return X0_;}
     const sctl::Vector<Real>& Coord() const {return X0_;}
+    Real& Coord(sctl::Long i, sctl::Long j, sctl::Long k) {return X0_[(k*Nt0+i)*Np0+j];}
+    const Real& Coord(sctl::Long i, sctl::Long j, sctl::Long k) const {return X0_[(k*Nt0+i)*Np0+j];}
 
   private:
 

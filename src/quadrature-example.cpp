@@ -2,39 +2,47 @@
 #include <sctl.hpp>
 
 int main(int argc, char** argv) {
-#ifdef SCTL_HAVE_PETSC
-  PetscInitialize(&argc, &argv, NULL, NULL);
-#elif defined(SCTL_HAVE_MPI)
-  MPI_Init(&argc, &argv);
-#endif
-
-  { // Compute vacuum field and Taylor state
-    typedef double Real;
-    sctl::Comm comm = sctl::Comm::Self();
+  { // Compute layer potential on a toroidal surface
     sctl::Profile::Enable(true);
+    typedef double Real;
 
-    sctl::Vector<biest::Surface<Real>> Svec(1);
-    { // Initialize Svec
-      long Nt = 200, Np = 50;
-      Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::Quas3);
-      // To modify the surface,
-      // for (long t = 0; t < Nt; t++) {
-      //   for (long p = 0; p < Np; p++) {
-      //     Svec[0].Coord()[0*Nt*Np + t*Np + p] = X(theta(t),phi(p));
-      //     Svec[0].Coord()[1*Nt*Np + t*Np + p] = Y(theta(t),phi(p));
-      //     Svec[0].Coord()[2*Nt*Np + t*Np + p] = Z(theta(t),phi(p));
-      //   }
-      // }
+    long Nt = 200, Np = 50;
+    sctl::Vector<biest::Surface<Real>> Svec(1); // vector of surfaces
+    sctl::Vector<Real> f(Nt * Np); // surface charge density
+    { // Initialize Svec, f
+      auto density_fn = [](Real X, Real Y, Real Z) {
+        Real R2 = (X-4)*(X-4) + Y*Y + Z*Z;
+        return exp(-2*R2);
+      };
+      Svec[0] = biest::Surface<Real>(Nt, Np);
+      for (long t = 0; t < Nt; t++) { // toroidal direction
+        for (long p = 0; p < Np; p++) { // poloidal direction
+          Real X = (3 + cos(2*M_PI*p/Np)) * cos(2*M_PI*t/Nt);
+          Real Y = (3 + cos(2*M_PI*p/Np)) * sin(2*M_PI*t/Nt);
+          Real Z = sin(2*M_PI*p/Np);
+          Svec[0].Coord(t,p,0) = X;
+          Svec[0].Coord(t,p,1) = Y;
+          Svec[0].Coord(t,p,2) = Z;
+          f[t*Np+p] = density_fn(X,Y,Z);
+        }
+      }
     }
+    WriteVTK("f", Svec, f); // visualize f
 
-    // TODO
+    // Setup the boundary integral operator
+    constexpr int DENSITY_DOF = 1; // degree-of-freedom of density function at each grid point
+    constexpr int POTENTIAL_DOF = 1; // degree-of-freedom of the potential at each grid point
+    constexpr int UPSAMPLE = 1; // upsample factor for the quadrature
+    constexpr int PDIM = 24; // dimension of the square patch for singular integration
+    constexpr int QDIM = 24; // order of the polar-coordinate quadrature
+    biest::BoundaryIntegralOp<Real, DENSITY_DOF, POTENTIAL_DOF, UPSAMPLE, PDIM, QDIM> LaplaceSingleLayer;
+    LaplaceSingleLayer.SetupSingular(Svec, biest::Laplace3D<Real>::FxU());
+
+    // Evaluate boundary integral operator
+    sctl::Vector<Real> u;
+    LaplaceSingleLayer(u, f);
+    WriteVTK("u", Svec, u); // visualize f
   }
-
-#ifdef SCTL_HAVE_PETSC
-  PetscFinalize();
-#elif defined(SCTL_HAVE_MPI)
-  MPI_Finalize();
-#endif
   return 0;
 }
 

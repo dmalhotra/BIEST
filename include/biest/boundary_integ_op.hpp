@@ -12,7 +12,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
   public:
 
-    BoundaryIntegralOp(const sctl::Comm& comm) : comm_(comm) {
+    BoundaryIntegralOp(const sctl::Comm& comm = sctl::Comm::Self()) : comm_(comm) {
       dim[0] = 0;
       dim[1] = 0;
       ker_ptr = nullptr;

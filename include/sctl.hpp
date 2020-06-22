@@ -20,6 +20,15 @@
 #define SCTL_QUOTEME_1(x) #x
 #define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
+// ODE solver
+#include SCTL_INCLUDE(ode-solver.hpp)
+
+// Tensor
+#include SCTL_INCLUDE(tensor.hpp)
+
+// Tree
+#include SCTL_INCLUDE(tree.hpp)
+
 // MPI Wrapper
 #include SCTL_INCLUDE(comm.hpp)
 
@@ -63,5 +72,12 @@
 // Print stack trace
 #include SCTL_INCLUDE(stacktrace.h)
 const int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
+
+// Boundary quadrature, Kernel functions
+#include SCTL_INCLUDE(kernel_functions.hpp)
+#include SCTL_INCLUDE(boundary_quadrature.hpp)
+
+// Math utilities
+#include SCTL_INCLUDE(math_utils.hpp)
 
 #endif //_SCTL_HPP_

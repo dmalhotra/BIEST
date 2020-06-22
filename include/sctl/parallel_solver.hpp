@@ -1,6 +1,8 @@
 #ifndef _SCTL_PARALLEL_SOLVER_HPP_
 #define _SCTL_PARALLEL_SOLVER_HPP_
 
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 #include SCTL_INCLUDE(comm.hpp)
 
@@ -213,7 +215,7 @@ template <class Real> inline void ParallelSolver<Real>::operator()(Vector<Real>*
           H_[i][j] = H[i][j];
         }
       }
-      H_ = H_.pinv();
+      H_ = H_.pinv(0);
 
       y.ReInit(H_.Dim(1));
       for (Integer i = 0; i < y.Dim(); i++) {

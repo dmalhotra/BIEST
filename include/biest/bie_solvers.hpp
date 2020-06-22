@@ -359,6 +359,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
         return circ_ / (Nt*Np);
       };
 
+#ifdef BIEST_VERBOSE
       if (1) { // Check circulation error
         Real max_err = 0;
         for (sctl::Long i = 0; i < Svec.Dim(); i++) {
@@ -386,6 +387,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
         };
         for (sctl::Long i = 0; i < Nsurf; i++) print_err(J[i], B[i]);
       }
+#endif
 
       sctl::Profile::Tic("CompFlux", &comm);
       { // Compute flux
@@ -407,11 +409,71 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
 
   public:
 
-    static void Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1) {
-      sctl::Vector<sctl::Vector<Real>> B, m, sigma;
-      ComputeHelper(B, m, sigma, lambda, Svec, comm, gmres_tol, gmres_iter, LB_tol);
+    static void Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1, sctl::Vector<sctl::Vector<Real>>* m = nullptr, sctl::Vector<sctl::Vector<Real>>* sigma = nullptr) {
+      sctl::Vector<sctl::Vector<Real>> B, m_, sigma_;
+      ComputeHelper(B, m_, sigma_, lambda, Svec, comm, gmres_tol, gmres_iter, LB_tol);
       if (B.Dim() > 0) B_out = B[0] * tor_flux;
       if (B.Dim() > 1) B_out += B[1] * pol_flux;
+      if (m && sigma) {
+        *m = m_;
+        *sigma = sigma_;
+      }
+    }
+
+    static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m_, const sctl::Vector<sctl::Vector<Real>>& sigma_, const sctl::Comm& comm) {
+      sctl::Vector<Real> m0, sigma0;
+      if (Svec.Dim() > 0) m0  = m_[0] * tor_flux;
+      if (Svec.Dim() > 1) m0 += m_[1] * pol_flux;
+      if (Svec.Dim() > 0) sigma0  = sigma_[0] * tor_flux;
+      if (Svec.Dim() > 1) sigma0 += sigma_[1] * pol_flux;
+
+      sctl::Vector<sctl::Vector<Real>> Xsrc, dXsrc, Xn_src, Xa_src, m, sigma;
+      { // Upsample
+        sctl::Long Nsurf = Svec.Dim();
+        Xsrc .ReInit(Nsurf);
+        dXsrc .ReInit(Nsurf);
+        Xn_src.ReInit(Nsurf);
+        Xa_src.ReInit(Nsurf);
+        sigma.ReInit(Nsurf);
+        m.ReInit(Nsurf);
+        sctl::Long dsp = 0;
+        for (sctl::Long i = 0; i < Nsurf; i++) {
+          const auto& S = Svec[i];
+          sctl::Long Nt0 = S.NTor();
+          sctl::Long Np0 = S.NPol();
+          sctl::Long Nup = Nt0*Np0*UPSAMPLE*UPSAMPLE;
+          SurfaceOp<Real> Sop(comm, Nt0*UPSAMPLE, Np0*UPSAMPLE);
+
+          Sop.Upsample(S.Coord(), Nt0, Np0, Xsrc[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
+          Sop.Grad2D(dXsrc[i], Xsrc[i]);
+          Sop.SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
+
+          sctl::Vector<Real> m0_(COORD_DIM*2*Nt0*Np0, m0.begin()+COORD_DIM*2*dsp, false);
+          Sop.Upsample(m0_, Nt0, Np0, m[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
+          for (sctl::Long j = 0; j < Nup; j++) { // m <-- m * Xa
+            for (sctl::Long k = 0; k < COORD_DIM*2; k++) {
+              m[i][k * Nup + j] *= Xa_src[i][j];
+            }
+          }
+
+          sctl::Vector<Real> sigma0_(2*Nt0*Np0, sigma0.begin()+2*dsp, false);
+          Sop.Upsample(sigma0_, Nt0, Np0, sigma[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
+          for (sctl::Long j = 0; j < Nup; j++) { // sigma <-- sigma * Xa
+            for (sctl::Long k = 0; k < 2; k++) {
+              sigma[i][k * Nup + j] *= Xa_src[i][j];
+            }
+          }
+
+          dsp += Nt0 * Np0;
+        }
+      }
+      { // Compute Btrg at Xtrg
+        sctl::Vector<Real> X = Xtrg, B;
+        sctl::Matrix<Real>(COORD_DIM, X.Dim()/COORD_DIM, X.begin(), false) = sctl::Matrix<Real>(X.Dim()/COORD_DIM, COORD_DIM, X.begin(), false).Transpose();
+        ComputeFarField(B, X, Xsrc, Xn_src, sigma, m, lambda);
+        sctl::Matrix<Real>(B.Dim()/COORD_DIM, COORD_DIM, B.begin(), false) = sctl::Matrix<Real>(COORD_DIM, B.Dim()/COORD_DIM, B.begin(), false).Transpose();
+        Btrg = B;
+      }
     }
 
     static void test_conv(Real lambda, const sctl::Vector<Surface<Real>>& Svec_, sctl::Long upsample, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, Real LB_tol = 0.1) {
@@ -1202,6 +1264,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
           }
         }
         if (1) {
+#ifdef BIEST_VERBOSE
           auto extract_comp = [&SurfDim,&SurfDsp,Nsurf,N](const sctl::Vector<Real>& in, sctl::Long surf_id, sctl::Long comp_id) {
             sctl::Long dof = in.Dim() / N;
             SCTL_ASSERT(in.Dim() == N * dof);
@@ -1283,6 +1346,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
             }
             std::cout<<"Error : | n x m + i m |_inf = "<<err<<'\n';
           }
+#endif
         }
       };
       auto Compute_B = [lambda,&SurfDim,&SurfDsp,&Xn,&BI_grad_diff,&BI_grad,&BI_potn,&ker_grad_diff,&ker_grad,&ker_potn,&comm] (sctl::Vector<Real>* B, sctl::Vector<Real>* B_flux, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m0, const sctl::Vector<Real>& mH) {
@@ -1526,9 +1590,11 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
           }
         };
         auto print_imag_norm = [&real_imag_part] (const sctl::Vector<Real>& B) { // Print | imag(B) |_inf
+#ifdef BIEST_VERBOSE
           sctl::Vector<Real> B_imag;
           real_imag_part(B_imag, B, false);
           std::cout<<"Error : | imag(B) |_inf / | real(B) |_inf = "<<max_norm(B_imag) / max_norm(B)<<'\n';
+#endif
         };
 
         if (Nsurf == 1) {

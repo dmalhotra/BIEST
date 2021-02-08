@@ -376,7 +376,7 @@ int main(int argc, char** argv) {
 
   // Read coil data
   CoilsField<Real> coils;
-  coils.Init("ellipse.coils", 2); // upsample my factor 2
+  coils.Init("ellipse.coils", 2); // upsample by factor 2
   coils.WriteVTK("coils"); // Write VTK visualization of coils
 
   // Read plasma surface and B-field data

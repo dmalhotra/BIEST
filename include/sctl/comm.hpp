@@ -8,6 +8,9 @@
 #ifdef SCTL_HAVE_MPI
 #include <mpi.h>
 #endif
+#ifdef SCTL_HAVE_PETSC
+#include <petscsys.h>
+#endif
 
 namespace SCTL_NAMESPACE {
 
@@ -41,7 +44,7 @@ class Comm {
   Comm();
 
 #ifdef SCTL_HAVE_MPI
-  Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
+  explicit Comm(const MPI_Comm mpi_comm) { Init(mpi_comm); }
 #endif
 
   Comm(const Comm& c);
@@ -55,7 +58,8 @@ class Comm {
   ~Comm();
 
 #ifdef SCTL_HAVE_MPI
-  MPI_Comm GetMPI_Comm() { return mpi_comm_; }
+  MPI_Comm& GetMPI_Comm() { return mpi_comm_; }
+  const MPI_Comm& GetMPI_Comm() const { return mpi_comm_; }
 #endif
 
   Comm Split(Integer clr) const;
@@ -71,6 +75,8 @@ class Comm {
   template <class RType> void* Irecv(Iterator<RType> rbuf, Long rcount, Integer source, Integer tag = 0) const;
 
   void Wait(void* req_ptr) const;
+
+  template <class Type> void Bcast(Iterator<Type> buf, Long count, Long root) const;
 
   template <class SType, class RType> void Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const;
 
@@ -90,9 +96,17 @@ class Comm {
 
   template <class Type> void PartitionN(Vector<Type>& v, Long N) const;
 
-  template <class Type> void PartitionS(Vector<Type>& nodeList, const Type& splitter) const;
+  template <class Type, class Compare> void PartitionS(Vector<Type>& nodeList, const Type& splitter, Compare comp) const;
 
-  template <class Type> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const;
+  template <class Type> void PartitionS(Vector<Type>& nodeList, const Type& splitter) const {
+    PartitionS(nodeList, splitter, std::less<Type>());
+  }
+
+  template <class Type, class Compare> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp) const;
+
+  template <class Type> void HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const {
+    HyperQuickSort(arr_, SortedElem, std::less<Type>());
+  }
 
   template <class Type> void SortScatterIndex(const Vector<Type>& key, Vector<Long>& scatter_index, const Type* split_key_ = nullptr) const;
 

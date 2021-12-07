@@ -1,13 +1,15 @@
 #ifndef _SCTL_ODE_SOLVER_
 #define _SCTL_ODE_SOLVER_
 
+#include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(common.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
 
 #include <functional>
 
 namespace SCTL_NAMESPACE {
+
+template <class ValueType> class Vector;
+template <class ValueType> class Matrix;
 
 template <class Real, Integer ORDER> class SDC {
   public:
@@ -105,18 +107,16 @@ template <class Real, Integer ORDER> class SDC {
     }
 
     static void test() {
-      auto ref_sol = [](Real t) { return cos(-t); };
-      auto fn = [](sctl::Vector<Real>* dudt, const sctl::Vector<Real>& u) {
-        (*dudt)[0] = -u[1];
-        (*dudt)[1] = u[0];
+      auto ref_sol = [](Real t) { return exp<Real>(-t); };
+      auto fn = [](Vector<Real>* dudt, const Vector<Real>& u) {
+        dudt[0] = u * -1.0;
       };
-      std::function<void(sctl::Vector<Real>*, const sctl::Vector<Real>&)> F(fn);
+      std::function<void(Vector<Real>*, const Vector<Real>&)> F(fn);
 
-      sctl::SDC<Real, ORDER> ode_solver;
+      SDC<Real, ORDER> ode_solver;
       Real t = 0.0, dt = 1.0e-1;
-      sctl::Vector<Real> u, u0(2);
-      u0[0] = 1.0;
-      u0[1] = 0.0;
+      Vector<Real> u, u0(1);
+      u0 = 1.0;
       while (t < 10.0) {
         Real error_interp, error_picard;
         ode_solver(&u, dt, u0, F, ORDER, 0.0, &error_interp, &error_picard);
@@ -127,7 +127,6 @@ template <class Real, Integer ORDER> class SDC {
 
         printf("t = %e;  ", t);
         printf("u1 = %e;  ", u0[0]);
-        printf("u_ref = %e;  ", ref_sol(t));
         printf("error = %e;  ", ref_sol(t) - u0[0]);
         printf("time_step_error_estimate = %e;  \n", std::max(error_interp, error_picard));
       }

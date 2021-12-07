@@ -6,6 +6,7 @@
 #include SCTL_INCLUDE(common.hpp)
 
 #include <iostream>
+#include <iomanip>
 
 namespace SCTL_NAMESPACE {
 
@@ -65,12 +66,23 @@ template <class ValueType, bool own_data, Long... Args> class Tensor {
       Init((Iterator<ValueType>)M.begin());
     }
 
+    explicit Tensor(const ValueType& v) {
+      static_assert(own_data || Size() == 0, "Memory pointer must be provided to initialize Tensor types with own_data=false");
+      Init(NullIterator<ValueType>());
+      for (auto& x : *this) x = v;
+    }
+
     template <bool own_data_> Tensor(const Tensor<ValueType,own_data_,Args...> &M) {
       Init((Iterator<ValueType>)M.begin());
     }
 
     Tensor &operator=(const Tensor &M) {
       memcopy(begin(), M.begin(), Size());
+      return *this;
+    }
+
+    Tensor &operator=(const ValueType& v) {
+      for (auto& x : *this) x = v;
       return *this;
     }
 

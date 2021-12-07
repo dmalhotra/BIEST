@@ -3,11 +3,18 @@
 
 #define SCTL_SHMAXDEG 1024
 
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(fft_wrapper.hpp)
+#include SCTL_INCLUDE(math_utils.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
+#include <vector>
+
 namespace SCTL_NAMESPACE {
+
+class Comm;
+template <class ValueType> class Vector;
+template <class ValueType> class Matrix;
+template <class ValueType> class FFT;
 
 enum class SHCArrange {
   // (p+1) x (p+1) complex elements in row-major order.
@@ -451,10 +458,14 @@ template <class Real> class SphericalHarmonics{
     template <bool SLayer, bool DLayer> static void StokesSingularInteg_(const Vector<Real>& X0, Long p0, Long p1, Vector<Real>& SL, Vector<Real>& DL);
 
     struct MatrixStorage{
-      MatrixStorage(){
-        const Long size = SCTL_SHMAXDEG;
-        Resize(size);
+      MatrixStorage() : Mfft_(NullIterator<FFT<Real>>()), Mfftinv_(NullIterator<FFT<Real>>()) {
+        Resize(SCTL_SHMAXDEG);
       }
+      ~MatrixStorage() {
+        Resize(0);
+      }
+      MatrixStorage(const MatrixStorage&) = delete;
+      MatrixStorage& operator=(const MatrixStorage&) = delete;
 
       void Resize(Long size){
         Qx_ .resize(size);
@@ -468,8 +479,15 @@ template <class Real> class SphericalHarmonics{
         Mfinv_ .resize(size*size);
         Mlinv_ .resize(size*size);
 
-        Mfft_.resize(size);
-        Mfftinv_.resize(size);
+        aligned_delete(Mfft_);
+        aligned_delete(Mfftinv_);
+        if (size) {
+          Mfft_ = aligned_new<FFT<Real>>(size);
+          Mfftinv_ = aligned_new<FFT<Real>>(size);
+        } else {
+          Mfft_ = NullIterator<FFT<Real>>();
+          Mfftinv_ = NullIterator<FFT<Real>>();
+        }
       }
 
       std::vector<Vector<Real>> Qx_;
@@ -483,8 +501,8 @@ template <class Real> class SphericalHarmonics{
       std::vector<Matrix<Real>> Mfinv_ ;
       std::vector<std::vector<Matrix<Real>>> Mlinv_ ;
 
-      std::vector<FFT<Real>> Mfft_;
-      std::vector<FFT<Real>> Mfftinv_;
+      Iterator<FFT<Real>> Mfft_;
+      Iterator<FFT<Real>> Mfftinv_;
     };
     static MatrixStorage& MatrixStore(){
       static MatrixStorage storage;

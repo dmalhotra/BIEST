@@ -77,7 +77,6 @@ inline void Profile::Toc() {
     std::string name_ = prof.name.top();
     const Comm* comm_ = prof.comm.top();
     bool sync_ = prof.sync.top();
-    SCTL_UNUSED(comm_);
     // sync_=true;
 
     prof.e_log.push_back(false);
@@ -269,7 +268,6 @@ inline void Profile::print(const Comm* comm_) {
 
 inline void Profile::reset() {
   ProfileData& prof = ProfData();
-  prof.MEM = 0;
   prof.FLOP = 0;
   while (!prof.sync.empty()) prof.sync.pop();
   while (!prof.name.empty()) prof.name.pop();

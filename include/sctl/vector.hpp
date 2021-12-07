@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cstdint>
+#include <initializer_list>
 
 namespace SCTL_NAMESPACE {
 
@@ -23,11 +24,13 @@ template <class ValueType> class Vector {
 
   Vector();
 
-  Vector(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
+  explicit Vector(Long dim_, Iterator<ValueType> data_ = NullIterator<ValueType>(), bool own_data_ = true);
 
   Vector(const Vector& V);
 
-  Vector(const std::vector<ValueType>& V);
+  explicit Vector(const std::vector<ValueType>& V);
+
+  explicit Vector(std::initializer_list<ValueType> V);
 
   ~Vector();
 
@@ -82,6 +85,8 @@ template <class ValueType> class Vector {
   Vector operator*(const Vector& V) const;
 
   Vector operator/(const Vector& V) const;
+
+  Vector operator-() const ;
 
   // Vector-Scalar operations
 

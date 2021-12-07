@@ -153,6 +153,16 @@ inline void Comm::Wait(void* req_ptr) const {
 #endif
 }
 
+template <class Type> void Comm::Bcast(Iterator<Type> buf, Long count, Long root) const {
+  static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
+#ifdef SCTL_HAVE_MPI
+  if (!count) return;
+  SCTL_UNUSED(buf[0]        );
+  SCTL_UNUSED(buf[count - 1]);
+  MPI_Bcast(&buf[0], count, CommDatatype<Type>::value(), root, mpi_comm_);
+#endif
+}
+
 template <class SType, class RType> void Comm::Allgather(ConstIterator<SType> sbuf, Long scount, Iterator<RType> rbuf, Long rcount) const {
   static_assert(std::is_trivially_copyable<SType>::value, "Data is not trivially copyable!");
   static_assert(std::is_trivially_copyable<RType>::value, "Data is not trivially copyable!");
@@ -512,7 +522,7 @@ template <class Type> void Comm::PartitionN(Vector<Type>& v, Long N) const {
   v.Swap(v_);
 }
 
-template <class Type> void Comm::PartitionS(Vector<Type>& nodeList, const Type& splitter) const {
+template <class Type, class Compare> void Comm::PartitionS(Vector<Type>& nodeList, const Type& splitter, Compare comp) const {
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
   Integer npes = Size();
   if (npes == 1) return;
@@ -525,7 +535,7 @@ template <class Type> void Comm::PartitionS(Vector<Type>& nodeList, const Type& 
   {  // Compute scnt, sdsp
 #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < npes; i++) {
-      sdsp[i] = std::lower_bound(nodeList.begin(), nodeList.begin() + nodeList.Dim(), mins[i]) - nodeList.begin();
+      sdsp[i] = std::lower_bound(nodeList.begin(), nodeList.begin() + nodeList.Dim(), mins[i], comp) - nodeList.begin();
     }
 #pragma omp parallel for schedule(static)
     for (Integer i = 0; i < npes - 1; i++) {
@@ -975,7 +985,7 @@ SCTL_HS_MPIDATATYPE(unsigned char, MPI_UNSIGNED_CHAR);
 #undef SCTL_HS_MPIDATATYPE
 #endif
 
-template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
+template <class Type, class Compare> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector<Type>& SortedElem, Compare comp) const {  // O( ((N/p)+log(p))*(log(N/p)+log(p)) )
   static_assert(std::is_trivially_copyable<Type>::value, "Data is not trivially copyable!");
 #ifdef SCTL_HAVE_MPI
   Integer npes, myrank, omp_p;
@@ -994,14 +1004,14 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
 
   if (npes == 1) {  // SortedElem <--- local_sort(arr_)
     SortedElem = arr_;
-    omp_par::merge_sort(SortedElem.begin(), SortedElem.end());
+    omp_par::merge_sort(SortedElem.begin(), SortedElem.end(), comp);
     return;
   }
 
   Vector<Type> arr;
   {  // arr <-- local_sort(arr_)
     arr = arr_;
-    omp_par::merge_sort(arr.begin(), arr.end());
+    omp_par::merge_sort(arr.begin(), arr.end(), comp);
   }
 
   Vector<Type> nbuff, nbuff_ext, rbuff, rbuff_ext;  // Allocate memory.
@@ -1057,7 +1067,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
       {  // Compute local rank
 #pragma omp parallel for schedule(static)
         for (Integer i = 0; i < glb_splt_count; i++) {
-          lrank[i] = std::lower_bound(arr.begin(), arr.end(), glb_splitters[i]) - arr.begin();
+          lrank[i] = std::lower_bound(arr.begin(), arr.end(), glb_splitters[i], comp) - arr.begin();
         }
       }
 
@@ -1099,7 +1109,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
       Long ssize = 0, lsize = 0;
       ConstIterator<Type> sbuff, lbuff;
       {  // Set ssize, lsize, sbuff, lbuff
-        Long split_indx = std::lower_bound(arr.begin(), arr.end(), split_key) - arr.begin();
+        Long split_indx = std::lower_bound(arr.begin(), arr.end(), split_key, comp) - arr.begin();
         ssize = (myrank > split_id ? split_indx : arr.Dim() - split_indx);
         sbuff = (myrank > split_id ? arr.begin() : arr.begin() + split_indx);
         lsize = (myrank <= split_id ? split_indx : arr.Dim() - split_indx);
@@ -1124,11 +1134,11 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
 
       {  // nbuff <-- merge(lbuff, rbuff, rbuff_ext)
         nbuff.ReInit(lsize + rsize);
-        omp_par::merge<ConstIterator<Type>>(lbuff, (lbuff + lsize), rbuff.begin(), rbuff.begin() + rsize, nbuff.begin(), omp_p, std::less<Type>());
+        omp_par::merge<ConstIterator<Type>>(lbuff, (lbuff + lsize), rbuff.begin(), rbuff.begin() + rsize, nbuff.begin(), omp_p, comp);
         if (ext_rsize > 0) {
           if (nbuff.Dim() > 0) {
             nbuff_ext.ReInit(lsize + rsize + ext_rsize);
-            omp_par::merge(nbuff.begin(), nbuff.begin() + (lsize + rsize), rbuff_ext.begin(), rbuff_ext.begin() + ext_rsize, nbuff_ext.begin(), omp_p, std::less<Type>());
+            omp_par::merge(nbuff.begin(), nbuff.begin() + (lsize + rsize), rbuff_ext.begin(), rbuff_ext.begin() + ext_rsize, nbuff_ext.begin(), omp_p, comp);
             nbuff.Swap(nbuff_ext);
             nbuff_ext.ReInit(0);
           } else {
@@ -1162,7 +1172,7 @@ template <class Type> void Comm::HyperQuickSort(const Vector<Type>& arr_, Vector
   PartitionW<Type>(SortedElem);
 #else
   SortedElem = arr_;
-  std::sort(SortedElem.begin(), SortedElem.begin() + SortedElem.Dim());
+  std::sort(SortedElem.begin(), SortedElem.begin() + SortedElem.Dim(), comp);
 #endif
 }
 

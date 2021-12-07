@@ -356,7 +356,6 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
     auto& line_offset =data.line_offset ;
     constexpr sctl::Integer COORD_DIM = biest::VTKData::COORD_DIM;
 
-    sctl::Long offset = 0;
     SCTL_ASSERT(coords.Dim() == values.Dim());
     for (sctl::Long j = 0; j < coords.Dim(); j++) { // set point_coord, line_connect
       const auto& coord = coords[j];
@@ -366,11 +365,11 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
       SCTL_ASSERT(value.Dim() == dof * N);
       for (sctl::Long i = 0; i < N; i++) {
         line_connect.push_back(point_coord.size()/COORD_DIM);
-        point_coord.push_back(coord[0*N+i]);
-        point_coord.push_back(coord[1*N+i]);
-        point_coord.push_back(coord[2*N+i]);
+        point_coord.push_back((VTKReal)coord[0*N+i]);
+        point_coord.push_back((VTKReal)coord[1*N+i]);
+        point_coord.push_back((VTKReal)coord[2*N+i]);
         for (sctl::Long k = 0; k < dof; k++) {
-          point_value.push_back(value[k*N+i]);
+          point_value.push_back((VTKReal)value[k*N+i]);
         }
       }
       line_offset.push_back(line_connect.size());

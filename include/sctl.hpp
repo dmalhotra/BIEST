@@ -20,6 +20,28 @@
 #define SCTL_QUOTEME_1(x) #x
 #define SCTL_INCLUDE(x) SCTL_QUOTEME(SCTL_NAMESPACE/x)
 
+// Import PVFMM preprocessor macro definitions
+#ifdef SCTL_HAVE_PVFMM
+#ifndef SCTL_HAVE_MPI
+#define SCTL_HAVE_MPI
+#endif
+#include "pvfmm_config.h"
+#if defined(PVFMM_QUAD_T) && !defined(SCTL_QUAD_T)
+#define SCTL_QUAD_T PVFMM_QUAD_T
+#endif
+#endif
+
+// Math utilities
+#include SCTL_INCLUDE(math_utils.hpp)
+
+// FMM wrapper
+#include SCTL_INCLUDE(fmm-wrapper.hpp)
+
+// Boundary Integrals
+#include SCTL_INCLUDE(boundary_integral.hpp)
+#include SCTL_INCLUDE(slender_element.hpp)
+#include SCTL_INCLUDE(quadrule.hpp)
+
 // ODE solver
 #include SCTL_INCLUDE(ode-solver.hpp)
 
@@ -28,6 +50,7 @@
 
 // Tree
 #include SCTL_INCLUDE(tree.hpp)
+#include SCTL_INCLUDE(vtudata.hpp)
 
 // MPI Wrapper
 #include SCTL_INCLUDE(comm.hpp)
@@ -41,11 +64,9 @@
 // Matrix, Permutation operators
 #include SCTL_INCLUDE(matrix.hpp)
 
-// Template vector intrinsics
-#include SCTL_INCLUDE(intrin_wrapper.hpp)
-
 // Template vector intrinsics (new)
 #include SCTL_INCLUDE(vec.hpp)
+#include SCTL_INCLUDE(vec-test.hpp)
 
 // OpenMP merge-sort and scan
 #include SCTL_INCLUDE(ompUtils.hpp)
@@ -76,8 +97,5 @@ const int sgh = SCTL_NAMESPACE::SetSigHandler(); // Set signal handler
 // Boundary quadrature, Kernel functions
 #include SCTL_INCLUDE(kernel_functions.hpp)
 #include SCTL_INCLUDE(boundary_quadrature.hpp)
-
-// Math utilities
-#include SCTL_INCLUDE(math_utils.hpp)
 
 #endif //_SCTL_HPP_

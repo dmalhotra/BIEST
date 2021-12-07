@@ -37,8 +37,8 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
 
   sctl::FFT<Real> fft_r2c0, fft_c2r_;
   { // Initialize fft_r2c0, fft_c2r_
-    sctl::StaticArray<sctl::Long, 2> fft_dim0 = {Nt0, Np0};
-    sctl::StaticArray<sctl::Long, 2> fft_dim_ = {Nt1, Np1};
+    sctl::StaticArray<sctl::Long, 2> fft_dim0{Nt0, Np0};
+    sctl::StaticArray<sctl::Long, 2> fft_dim_{Nt1, Np1};
     fft_r2c0.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim0, false), omp_get_max_threads());
     fft_c2r_.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
   }
@@ -148,8 +148,8 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
   if (normal != nullptr && area_elem != nullptr) {
     #pragma omp parallel for schedule(static)
     for (sctl::Long i = 0; i < N; i++) {
-      sctl::StaticArray<Real, COORD_DIM> xt = {dX[0*N+i], dX[2*N+i], dX[4*N+i]};
-      sctl::StaticArray<Real, COORD_DIM> xp = {dX[1*N+i], dX[3*N+i], dX[5*N+i]};
+      sctl::StaticArray<Real, COORD_DIM> xt{dX[0*N+i], dX[2*N+i], dX[4*N+i]};
+      sctl::StaticArray<Real, COORD_DIM> xp{dX[1*N+i], dX[3*N+i], dX[5*N+i]};
       sctl::StaticArray<Real, COORD_DIM> xn;
       (*area_elem)[i] = compute_area_elem(xn, xt, xp) * scal;
       (*normal)[0*N+i] = xn[0];
@@ -159,8 +159,8 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
   } else if (normal != nullptr) {
     #pragma omp parallel for schedule(static)
     for (sctl::Long i = 0; i < N; i++) {
-      sctl::StaticArray<Real, COORD_DIM> xt = {dX[0*N+i], dX[2*N+i], dX[4*N+i]};
-      sctl::StaticArray<Real, COORD_DIM> xp = {dX[1*N+i], dX[3*N+i], dX[5*N+i]};
+      sctl::StaticArray<Real, COORD_DIM> xt{dX[0*N+i], dX[2*N+i], dX[4*N+i]};
+      sctl::StaticArray<Real, COORD_DIM> xp{dX[1*N+i], dX[3*N+i], dX[5*N+i]};
       sctl::StaticArray<Real, COORD_DIM> xn;
       compute_area_elem(xn, xt, xp);
       (*normal)[0*N+i] = xn[0];
@@ -170,8 +170,8 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
   } else if (area_elem != nullptr) {
     #pragma omp parallel for schedule(static)
     for (sctl::Long i = 0; i < N; i++) {
-      sctl::StaticArray<Real, COORD_DIM> xt = {dX[0*N+i], dX[2*N+i], dX[4*N+i]};
-      sctl::StaticArray<Real, COORD_DIM> xp = {dX[1*N+i], dX[3*N+i], dX[5*N+i]};
+      sctl::StaticArray<Real, COORD_DIM> xt{dX[0*N+i], dX[2*N+i], dX[4*N+i]};
+      sctl::StaticArray<Real, COORD_DIM> xp{dX[1*N+i], dX[3*N+i], dX[5*N+i]};
       sctl::StaticArray<Real, COORD_DIM> xn;
       (*area_elem)[i] = compute_area_elem(xn, xt, xp) * scal;
     }
@@ -390,7 +390,7 @@ template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLa
 template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
   auto spectral_GradInvSurfLap = [this](sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, sctl::Long Nt_, sctl::Long Np_, Real tol, sctl::Integer max_iter) {
     sctl::FFT<Real> fft_r2c, fft_c2r;
-    sctl::StaticArray<sctl::Long, 2> fft_dim = {Nt_, Np_};
+    sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
     fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
     fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
 
@@ -734,7 +734,7 @@ template <class Real> void SurfaceOp<Real>::Init(const sctl::Comm& comm, sctl::L
   solver = sctl::ParallelSolver<Real>(comm_,false);
 
   if (!Nt_ || !Np_) return;
-  sctl::StaticArray<sctl::Long, 2> fft_dim = {Nt_, Np_};
+  sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
   fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
   fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
 }

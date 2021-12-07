@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
@@ -141,7 +142,7 @@ template <class ValueType> class Permutation {
  public:
   Permutation() {}
 
-  Permutation(Long size);
+  explicit Permutation(Long size);
 
   static Permutation<ValueType> RandPerm(Long size);
 

@@ -1,14 +1,13 @@
 #ifndef _SCTL_BOUNDARY_QUADRATURE_HPP_
 #define _SCTL_BOUNDARY_QUADRATURE_HPP_
 
-#include SCTL_INCLUDE(tree.hpp)
-#include SCTL_INCLUDE(tensor.hpp)
-#include SCTL_INCLUDE(morton.hpp)
-#include SCTL_INCLUDE(matrix.hpp)
-#include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(common.hpp)
-#include SCTL_INCLUDE(cheb_utils.hpp)
 #include SCTL_INCLUDE(kernel_functions.hpp)
+#include SCTL_INCLUDE(tree.hpp)
+#include SCTL_INCLUDE(cheb_utils.hpp)
+#include SCTL_INCLUDE(fmm-wrapper.hpp)
+#include SCTL_INCLUDE(tensor.hpp)
+#include SCTL_INCLUDE(profile.hpp)
+#include SCTL_INCLUDE(common.hpp)
 
 #include <mutex>
 #include <atomic>
@@ -1639,8 +1638,8 @@ template <class Real> class Quadrature {
         }
       }
 
-      GenericKernel<Laplace3D_DxU> Laplace_DxU;
-      GenericKernel<Laplace3D_FxU> Laplace_FxU;
+      Laplace3D_DxU Laplace_DxU;
+      Laplace3D_FxU Laplace_FxU;
 
       Profile::Enable(true);
       if (1) { // Greeen's identity test (Laplace, on-surface)

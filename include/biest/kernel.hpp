@@ -175,10 +175,10 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KER_DIM0, sctl::Int
     sctl::StaticArray<Real, KER_DIM1> v;
     for (sctl::Integer i = 0; i < KER_DIM1; i++) v[i] = 0;
     for (sctl::Long s = 0; s < Ns; s++) {
-      sctl::StaticArray<Real, COORD_DIM> r = {r_trg[0 * Nt + t] - r_src[0 * Ns + s],
+      sctl::StaticArray<Real, COORD_DIM> r{r_trg[0 * Nt + t] - r_src[0 * Ns + s],
                                         r_trg[1 * Nt + t] - r_src[1 * Ns + s],
                                         r_trg[2 * Nt + t] - r_src[2 * Ns + s]};
-      sctl::StaticArray<Real, COORD_DIM> n = {n_src[0 * Ns + s], n_src[1 * Ns + s], n_src[2 * Ns + s]};
+      sctl::StaticArray<Real, COORD_DIM> n{n_src[0 * Ns + s], n_src[1 * Ns + s], n_src[2 * Ns + s]};
       sctl::StaticArray<Real, KER_DIM0> f;
       for (sctl::Integer i = 0; i < KER_DIM0; i++)  f[i] = v_src[(k*KER_DIM0+i) * Ns + s];
       UKER(v, r, n, f, ctx);
@@ -340,19 +340,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Stok
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec rinv2 = rinv*rinv;
       RealVec rinv3 = rinv2*rinv;
       RealVec rinv5 = rinv2*rinv3;
@@ -555,19 +543,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Lapl
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       for (sctl::Integer k = 0; k < DOF; k++) v[k] += f[k] * rinv;
     }
 
@@ -579,20 +555,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Lapl
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
-
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       for (sctl::Integer k = 0; k < DOF; k++) {
         RealVec ker_term0 = f[k] * rinv * rinv * rinv;
         for (sctl::Integer i = 0; i < COORD_DIM; i++) v[k*COORD_DIM+i] -= dx[i] * ker_term0;
@@ -607,20 +570,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Lapl
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
-
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec ndotr = ns[0] * dx[0] + ns[1] * dx[1] + ns[2] * dx[2];
       for (sctl::Integer k = 0; k < DOF; k++) v[k] -= f[k] * ndotr * rinv * rinv * rinv;
     }
@@ -674,20 +624,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Biot
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
-
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec rinv3 = rinv * rinv * rinv;
       v[0] -= (f[1]*dx[2] - dx[1]*f[2]) * rinv3;
       v[1] -= (f[2]*dx[0] - dx[2]*f[0]) * rinv3;
@@ -892,24 +829,12 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Helm
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec r = r2 * rinv;
 
       RealVec rmu = r * mu;
       RealVec cos_rmu, sin_rmu;
-      sctl::sincos_intrin<RealVec>(sin_rmu, cos_rmu, rmu);
+      sincos(sin_rmu, cos_rmu, rmu);
 
       RealVec G[2];
       G[0] = cos_rmu * rinv;
@@ -928,25 +853,13 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Helm
       dx[2] = xt[2] - xs[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec rinv2 = rinv * rinv;
       RealVec r = r2 * rinv;
 
       RealVec rmu = r * mu;
       RealVec cos_rmu, sin_rmu;
-      sctl::sincos_intrin<RealVec>(sin_rmu, cos_rmu, rmu);
+      sincos(sin_rmu, cos_rmu, rmu);
 
       RealVec G[2], fG[2];
       G[0] = (-mu*sin_rmu - cos_rmu * rinv) * rinv2;
@@ -972,25 +885,13 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Helm
       RealVec ndotr = ns[0] * dx[0] + ns[1] * dx[1] + ns[2] * dx[2];
       RealVec r2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
 
-      RealVec rinv = approx_rsqrt(r2);
-      if (ORDER < 5) {
-      } else if (ORDER < 9) {
-        rinv *= ((3.0) - r2 * rinv * rinv) * 0.5; // 7 - cycles
-      } else if (ORDER < 15) {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<0>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      } else {
-        rinv *= ((3.0) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<0>(3)*3-1>(2.0)) - r2 * rinv * rinv); // 7 - cycles
-        rinv *= ((3.0 * sctl::pow<sctl::pow<1>(3)*3-1>(2.0)) - r2 * rinv * rinv) * (sctl::pow<(sctl::pow<1>(3)*3-1)*3/2+1>(0.5)); // 8 - cycles
-      }
-      rinv &= (r2 > eps);
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec rinv2 = rinv * rinv;
       RealVec r = r2 * rinv;
 
       RealVec rmu = r * mu;
       RealVec cos_rmu, sin_rmu;
-      sctl::sincos_intrin<RealVec>(sin_rmu, cos_rmu, rmu);
+      sincos(sin_rmu, cos_rmu, rmu);
 
       RealVec G[2];
       G[0] = (-mu*sin_rmu - cos_rmu * rinv) * rinv2 * ndotr;

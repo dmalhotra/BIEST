@@ -233,8 +233,8 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
       sctl::FFT<Real> fft_r2c0, fft_c2r_;
       { // Initialize fft_r2c0, fft_c2r_
-        sctl::StaticArray<sctl::Long, 2> fft_dim0 = {Nt0, Np0};
-        sctl::StaticArray<sctl::Long, 2> fft_dim_ = {Nt1, Np1};
+        sctl::StaticArray<sctl::Long, 2> fft_dim0{Nt0, Np0};
+        sctl::StaticArray<sctl::Long, 2> fft_dim_{Nt1, Np1};
         fft_r2c0.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim0, false), omp_get_max_threads());
         fft_c2r_.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
       }

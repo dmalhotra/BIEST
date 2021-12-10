@@ -1,4 +1,5 @@
 #include <sctl.hpp>
+#include <omp.h>
 
 namespace biest {
 
@@ -518,18 +519,26 @@ template <class Real> template <sctl::Integer KDIM0, sctl::Integer KDIM1> void S
 }
 
 template <class Real> template <class SingularCorrection, class Kernel> void SurfaceOp<Real>::SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, Real normal_scal) const {
-  sctl::Long np = comm_.Size();
-  sctl::Long rank = comm_.Rank();
-  sctl::Long Nt0 = Nt_ / TRG_SKIP;
-  sctl::Long Np0 = Np_ / TRG_SKIP;
-  sctl::Long a = (rank + 0) * Nt0 * Np0 / np;
-  sctl::Long b = (rank + 1) * Nt0 * Np0 / np;
-  singular_correction.ReInit(b - a);
+  const sctl::Long np = comm_.Size();
+  const sctl::Long rank = comm_.Rank();
+  const sctl::Long Nt0 = Nt_ / TRG_SKIP;
+  const sctl::Long Np0 = Np_ / TRG_SKIP;
+  const sctl::Long a = (rank + 0) * Nt0 * Np0 / np;
+  const sctl::Long b = (rank + 1) * Nt0 * Np0 / np;
+  const sctl::Long Nloc = b-a;
+  singular_correction.ReInit(Nloc);
+
+  const sctl::Integer Nthread = omp_get_max_threads();
+  sctl::Vector<sctl::Vector<Real>> work_buff(Nthread);
   #pragma omp parallel for schedule(static)
-  for (sctl::Long i = a; i < b; i++) {
-    sctl::Long t = (i / Np0) * TRG_SKIP;
-    sctl::Long p = (i % Np0) * TRG_SKIP;
-    singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, ker, normal_scal);
+  for (sctl::Integer tid = 0; tid < Nthread; tid++) {
+    const sctl::Long a_ = a + Nloc*(tid+0)/Nthread;
+    const sctl::Long b_ = a + Nloc*(tid+1)/Nthread;
+    for (sctl::Long i = a_; i < b_; i++) {
+      const sctl::Long t = (i / Np0) * TRG_SKIP;
+      const sctl::Long p = (i % Np0) * TRG_SKIP;
+      singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, ker, normal_scal, work_buff[tid]);
+    }
   }
 }
 

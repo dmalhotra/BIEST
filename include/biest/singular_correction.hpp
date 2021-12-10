@@ -26,7 +26,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
 
     SingularCorrection() { InitPrecomp(); }
 
-    void Setup( sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal);
+    void Setup(sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buffer);
 
     void operator()(const sctl::Vector<Real>& SrcDensity, sctl::Vector<Real>& Potential) const;
 
@@ -176,7 +176,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
   }
 }
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal) {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buff) {
   TRG_SKIP = TRG_SKIP_;
   Nt = SrcNTor;
   Np = SrcNPol;
@@ -187,25 +187,27 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
   assert(KDIM1 == ker.Dim(1));
   sctl::Matrix<Real> MGrid(KDIM0 * Ngrid, KDIM1, MGrid_, false);
 
-  sctl::StaticArray<Real,    COORD_DIM * Ngrid> G_ ;
-  sctl::StaticArray<Real,2 * COORD_DIM * Ngrid> Gg_;
-  sctl::StaticArray<Real,    COORD_DIM * Ngrid> Gn_;
-  sctl::StaticArray<Real,                Ngrid> Ga_;
+  sctl::Long Nbuff = (Ngrid+Npolar)*(COORD_DIM*4+1);
+  if (work_buff.Dim() < Nbuff) work_buff.ReInit(Nbuff);
+  //sctl::StaticArray<Real,    COORD_DIM * Ngrid> G_ ;
+  //sctl::StaticArray<Real,2 * COORD_DIM * Ngrid> Gg_;
+  //sctl::StaticArray<Real,    COORD_DIM * Ngrid> Gn_;
+  //sctl::StaticArray<Real,                Ngrid> Ga_;
 
-  sctl::StaticArray<Real,    COORD_DIM * Npolar> P_ ;
-  sctl::StaticArray<Real,2 * COORD_DIM * Npolar> Pg_;
-  sctl::StaticArray<Real,    COORD_DIM * Npolar> Pn_;
-  sctl::StaticArray<Real,                Npolar> Pa_;
+  //sctl::StaticArray<Real,    COORD_DIM * Npolar> P_ ;
+  //sctl::StaticArray<Real,2 * COORD_DIM * Npolar> Pg_;
+  //sctl::StaticArray<Real,    COORD_DIM * Npolar> Pn_;
+  //sctl::StaticArray<Real,                Npolar> Pa_;
 
-  sctl::Vector<Real> G (    COORD_DIM * Ngrid, G_ , false);
-  sctl::Vector<Real> Gg(2 * COORD_DIM * Ngrid, Gg_, false);
-  sctl::Vector<Real> Gn(    COORD_DIM * Ngrid, Gn_, false);
-  sctl::Vector<Real> Ga(                Ngrid, Ga_, false);
+  sctl::Vector<Real> G (    COORD_DIM * Ngrid, work_buff.begin() + Ngrid*COORD_DIM*0, false);
+  sctl::Vector<Real> Gg(2 * COORD_DIM * Ngrid, work_buff.begin() + Ngrid*COORD_DIM*1, false);
+  sctl::Vector<Real> Gn(    COORD_DIM * Ngrid, work_buff.begin() + Ngrid*COORD_DIM*3, false);
+  sctl::Vector<Real> Ga(                Ngrid, work_buff.begin() + Ngrid*COORD_DIM*4, false);
 
-  sctl::Vector<Real> P (    COORD_DIM * Npolar, P_ , false);
-  sctl::Vector<Real> Pg(2 * COORD_DIM * Npolar, Pg_, false);
-  sctl::Vector<Real> Pn(    COORD_DIM * Npolar, Pn_, false);
-  sctl::Vector<Real> Pa(                Npolar, Pa_, false);
+  sctl::Vector<Real> P (    COORD_DIM * Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*0, false);
+  sctl::Vector<Real> Pg(2 * COORD_DIM * Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*1, false);
+  sctl::Vector<Real> Pn(    COORD_DIM * Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*3, false);
+  sctl::Vector<Real> Pa(                Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*4, false);
 
   sctl::StaticArray<Real, COORD_DIM> TrgCoord_;
   sctl::Vector<Real> TrgCoord(COORD_DIM, TrgCoord_, false);

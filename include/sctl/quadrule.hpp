@@ -1,10 +1,10 @@
 #ifndef _SCTL_QUADRULE_HPP_
 #define _SCTL_QUADRULE_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(matrix.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(legendre_rule.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 #include <algorithm>
 
@@ -293,7 +293,7 @@ namespace SCTL_NAMESPACE {
           M_.ReInit(N0, N1);
           for (Long i = 0; i < N0; i++) {
             for (Long j = 0; j < N1; j++) {
-              M_[i][j] = M[i][j] + M[N0-1-i][j];
+              M_[i][j] = (M[i][j] + M[N0-1-i][j])/2;
             }
           }
 
@@ -410,7 +410,7 @@ namespace SCTL_NAMESPACE {
             if (pivot_norm/S[0] < tol) break;
           }
         };
-        if (1) { // orthonormalize M and get truncation errors S_vec
+        if (0) { // orthonormalize M and get truncation errors S_vec
           Matrix<Real> Q;
           Vector<Long> pivot;
           Real eps = (eps_vec.Dim() ? eps_vec[eps_vec.Dim()-1] : machine_eps<Real>());

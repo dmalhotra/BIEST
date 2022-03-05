@@ -13,11 +13,11 @@ endif
 
 #CXXFLAGS += -DSCTL_MEMDEBUG # Enable memory checks
 CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
-CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
+#CXXFLAGS += -DSCTL_QUAD_T=__float128 # Enable quadruple precision
 
 #CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 #CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
-CXXFLAGS += -mkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK
+CXXFLAGS += -qmkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK
 #CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
 #CXXFLAGS += -DSCTL_HAVE_SVML
 
@@ -45,6 +45,7 @@ TARGET_BIN = \
        $(BINDIR)/table5 \
        $(BINDIR)/table6 \
        $(BINDIR)/table7 \
+       $(BINDIR)/example1 \
        $(BINDIR)/quadrature-example \
        $(BINDIR)/force-free-fields-example \
        $(BINDIR)/double-layer-convergence \

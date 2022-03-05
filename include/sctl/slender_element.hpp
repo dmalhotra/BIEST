@@ -1,9 +1,9 @@
 #ifndef _SCTL_SLENDER_ELEMENT_HPP_
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
+#include <sctl/common.hpp>
 #include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(vector.hpp)
-#include SCTL_INCLUDE(common.hpp)
 
 namespace SCTL_NAMESPACE {
 
@@ -172,7 +172,7 @@ namespace SCTL_NAMESPACE {
       /**
        * Returns the Chebyshev node points for a given order.
        */
-      static const Vector<Real>& CenterlineNodes(Integer Order);
+      static const Vector<Real>& CenterlineNodes(const Integer Order);
 
       /**
        * Write elements to file.

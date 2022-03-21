@@ -20,7 +20,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
     sctl::Long Dim(sctl::Integer i) const { return dim[i]; }
 
-    template <class Surface, class Kernel> void Setup(const sctl::Vector<Surface>& Svec, const Kernel& ker) {
+    template <class Surface, class Kernel> void Setup(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>()) {
       dim[0] = 0;
       dim[1] = 0;
       if (!Svec.Dim()) return;
@@ -36,17 +36,43 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
       Xn_src.ReInit(Nsurf);
       Xa_src.ReInit(Nsurf);
       normal_scal.ReInit(Nsurf);
+
+      trg_idx = trg_idx_;
+      if (!trg_idx.Dim()) {
+        trg_idx.ReInit(Nsurf);
+        for (sctl::Long i = 0; i < Nsurf; i++) {
+          const sctl::Long Ntrg = Svec[i].NTor() * Svec[i].NPol();
+          trg_idx[i].ReInit(Ntrg);
+          for (sctl::Long j = 0; j < Ntrg; j++) trg_idx[i][j] = j;
+        }
+      }
+      SCTL_ASSERT(trg_idx.Dim()==Nsurf);
+
       for (sctl::Long i = 0; i < Nsurf; i++) {
         const auto& S = Svec[i];
+        const sctl::Long Nsrc0 = S.NTor() * S.NPol();
+        const sctl::Vector<Real> Xsrc0 = S.Coord();
+
+        { // Set Xtrg
+          const sctl::Long Ntrg = trg_idx[i].Dim();
+          if (Xtrg[i].Dim() != Ntrg*COORD_DIM) {
+            Xtrg[i].ReInit(COORD_DIM*Ntrg);
+          }
+          for (sctl::Long j = 0; j < Ntrg; j++) {
+            const sctl::Long trg_idx_ = trg_idx[i][j];
+            for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+              Xtrg[i][k*Ntrg+j] = Xsrc0[k*Nsrc0+trg_idx_];
+            }
+          }
+        }
+
         Nt0[i] = S.NTor();
         Np0[i] = S.NPol();
         Op[i] = SurfaceOp<Real>(comm_, Nt0[i]*UPSAMPLE, Np0[i]*UPSAMPLE);
-
-        Xtrg[i] = S.Coord();
-        Upsample(Xtrg[i], Xsrc[i], Nt0[i], Np0[i]);
+        Upsample(S.Coord(), Xsrc[i], Nt0[i], Np0[i]);
         Op[i].Grad2D(dXsrc[i], Xsrc[i]);
         normal_scal = Op[i].SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
-        dim[0] += ker.Dim(0) * (Xtrg[i].Dim() / COORD_DIM);
+        dim[0] += ker.Dim(0) * (Xsrc0.Dim() / COORD_DIM);
         dim[1] += ker.Dim(1) * (Xtrg[i].Dim() / COORD_DIM);
       }
     }
@@ -56,7 +82,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
       sctl::Long Nsurf = Svec.Dim();
       singular_correction.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) {
-        Op[i].SetupSingularCorrection(singular_correction[i], UPSAMPLE, Xsrc[i], dXsrc[i], ker, normal_scal[i]);
+        Op[i].SetupSingularCorrection(singular_correction[i], UPSAMPLE, Xsrc[i], dXsrc[i], ker, normal_scal[i], trg_idx[i]);
       }
     }
 
@@ -299,6 +325,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     sctl::Vector<Real> normal_scal;
     sctl::Vector<sctl::Vector<Real>> Xtrg, Xsrc, dXsrc, Xn_src, Xa_src;
     sctl::Vector<sctl::Vector<SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>>> singular_correction;
+    sctl::Vector<sctl::Vector<sctl::Long>> trg_idx;
 };
 
 }

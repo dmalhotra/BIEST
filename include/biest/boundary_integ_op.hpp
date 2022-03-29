@@ -77,8 +77,8 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
       }
     }
 
-    template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker) {
-      Setup(Svec, ker);
+    template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>()) {
+      Setup(Svec, ker, trg_idx_);
       sctl::Long Nsurf = Svec.Dim();
       singular_correction.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) {
@@ -96,20 +96,21 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
       }
 
       sctl::Vector<Real> Fsrc;
-      sctl::Long SrcOffset = 0;
+      sctl::Long SrcOffset = 0, SingularTrgOffset = 0;
       for (sctl::Long s = 0; s < Xsrc.Dim(); s++) {
         const sctl::Vector<Real> F_(dof * ker_ptr->Dim(0) * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + dof * ker_ptr->Dim(0) * SrcOffset, false);
         Upsample(F_, Fsrc, Nt0[s], Np0[s]);
 
         sctl::Long TrgOffset = 0;
         for (sctl::Long t = 0; t < Xtrg.Dim(); t++) {
-          sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * Nt0[t] * Np0[t], U.begin() + dof * ker_ptr->Dim(1) * TrgOffset, false);
+          sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[s].Dim(), U.begin() + dof * ker_ptr->Dim(1) * TrgOffset, false);
           Op[s].EvalSurfInteg(U_, Xtrg[t], Xsrc[s], Xn_src[s], Xa_src[s], Fsrc, *ker_ptr);
-          TrgOffset += Nt0[t] * Np0[t];
+          TrgOffset += trg_idx[s].Dim();
         }
 
-        sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * Nt0[s] * Np0[s], U.begin() + dof * ker_ptr->Dim(1) * SrcOffset, false);
+        sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[s].Dim(), U.begin() + dof * ker_ptr->Dim(1) * SingularTrgOffset, false);
         Op[s].EvalSingularCorrection(U_, singular_correction[s], ker_ptr->Dim(0), ker_ptr->Dim(1), Fsrc);
+        SingularTrgOffset += trg_idx[s].Dim();
         SrcOffset += Nt0[s] * Np0[s];
       }
     };

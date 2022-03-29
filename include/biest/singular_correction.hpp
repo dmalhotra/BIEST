@@ -26,7 +26,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
 
     SingularCorrection() { InitPrecomp(); }
 
-    void Setup(sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buffer);
+    void Setup(sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buffer);
 
     void operator()(const sctl::Vector<Real>& SrcDensity, sctl::Vector<Real>& Potential) const;
 
@@ -37,7 +37,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
     static void InitPrecomp();
 
     sctl::StaticArray<Real, KDIM0 * Ngrid * KDIM1> MGrid_;
-    sctl::Long TRG_SKIP, Nt, Np, t, p;
+    sctl::Long TRG_SKIP, Nt, Np, t, p, trg_idx, Ntrg;
 };
 
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::qx;
@@ -176,12 +176,15 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
   }
 }
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buff) {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buff) {
   TRG_SKIP = TRG_SKIP_;
   Nt = SrcNTor;
   Np = SrcNPol;
   t = t_;
   p = p_;
+
+  trg_idx = trg_idx_;
+  Ntrg = Ntrg_;
 
   assert(KDIM0 == ker.Dim(0));
   assert(KDIM1 == ker.Dim(1));
@@ -358,7 +361,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
     sctl::Matrix<Real>::GEMM(U, Vin, MGrid);
   }
   for (sctl::Integer k = 0; k < KDIM1; k++) { // Add correction to Potential
-    Potential[(k * (Nt/TRG_SKIP) + (t/TRG_SKIP)) * (Np/TRG_SKIP) + (p/TRG_SKIP)] += U[0][k];
+    Potential[k * Ntrg + trg_idx] += U[0][k];
   }
 }
 

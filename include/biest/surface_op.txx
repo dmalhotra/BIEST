@@ -57,16 +57,28 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
   sctl::Long Ntt = std::min(Nt0_, Nt1_);
   sctl::Long Npp = std::min(Np0_, Np1_);
   for (sctl::Long k = 0; k < dof; k++) {
-    for (sctl::Long t = 0; t < (Ntt + 1) / 2; t++) {
+    for (sctl::Long t = 0; t <= Ntt / 2; t++) {
+      Real scale_ = 1;
+      if (Nt0%2==0 && Nt0_ < Nt1_ && t == Ntt/2) scale_ = 0.5;
+      if (Nt1%2==0 && Nt1_ < Nt0_ && t == Ntt/2) scale_ = 2.0;
       for (sctl::Long p = 0; p < Npp; p++) {
-        tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 0] = scale * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 0];
-        tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 1] = scale * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 1];
+        Real scale__ = 1;
+        if (Np0%2==0 && Np0_ < Np1_ && p == Npp-1) scale__ = 0.5;
+        if (Np1%2==0 && Np1_ < Np0_ && p == Npp-1) scale__ = 2.0;
+        tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 0] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 0];
+        tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 1] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 1];
       }
     }
     for (sctl::Long t = 0; t < Ntt / 2; t++) {
+      Real scale_ = 1;
+      if (Nt0%2==0 && Nt0_ < Nt1_ && t == Ntt/2-1) scale_ = 0.5;
+      if (Nt1%2==0 && Nt1_ < Nt0_ && t == Ntt/2-1) scale_ = 2.0;
       for (sctl::Long p = 0; p < Npp; p++) {
-        tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 0] = scale * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 0];
-        tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 1] = scale * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 1];
+        Real scale__ = 1;
+        if (Np0%2==0 && Np0_ < Np1_ && p == Npp-1) scale__ = 0.5;
+        if (Np1%2==0 && Np1_ < Np0_ && p == Npp-1) scale__ = 2.0;
+        tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 0] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 0];
+        tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 1] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 1];
       }
     }
   }
@@ -538,7 +550,7 @@ template <class Real> template <class SingularCorrection, class Kernel> void Sur
     for (sctl::Long i = a_; i < b_; i++) {
       const sctl::Long t = (trg_idx[i] / Np0) * TRG_SKIP;
       const sctl::Long p = (trg_idx[i] % Np0) * TRG_SKIP;
-      singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, ker, normal_scal, work_buff[tid]);
+      singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, i, trg_idx.Dim(), ker, normal_scal, work_buff[tid]);
     }
   }
 }

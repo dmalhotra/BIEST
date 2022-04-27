@@ -488,8 +488,15 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Lapl
       sctl::Long NNs = ((Ns + Nv - 1) / Nv) * Nv;
       sctl::Long dof = v_src.Dim() / (Ns ? Ns : 1) / KDIM0;
       if (NNt == Nv) {
+        sctl::StaticArray<Real,COORD_DIM*Nv> Xt_;
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+          for (sctl::Integer i = 0; i < Nt; i++) {
+            Xt_[k*Nv+i] = r_trg[k*Nt+i];
+          }
+        }
+
         RealVec xt[COORD_DIM], vt[KDIM1], xs[COORD_DIM], ns[COORD_DIM], vs[KDIM0];
-        for (sctl::Integer k = 0; k < COORD_DIM; k++) xt[k] = RealVec::Load(&r_trg[k*Nt]);
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) xt[k] = RealVec::LoadAligned(&Xt_[k*Nv]);
         for (sctl::Integer i = 0; i < dof; i++) {
           for (sctl::Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
           for (sctl::Long s = 0; s < Ns; s++) {

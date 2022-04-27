@@ -354,6 +354,8 @@ template <class Real> Surface<Real>::Surface(sctl::Long Nt, sctl::Long Np, SurfT
         X0_[2*Nt0*Np0 + t*Np0 + p] = Z;
       }
     }
+  } else if (type == SurfType::None) {
+    X0_.ReInit(COORD_DIM * Nt0 * Np0);
   } else {
     SCTL_ASSERT_MSG(false, "Unknown surface type");
   }

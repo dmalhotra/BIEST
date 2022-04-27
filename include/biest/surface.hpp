@@ -16,7 +16,8 @@ enum class SurfType {
   LHD,                     // 250 x 50
   W7X,                     // 250 x 45
   Stell,                   // 250 x 50
-  W7X_                     // 250 x 50
+  W7X_,                    // 250 x 50
+  None
 };
 
 template <class Real> class Surface {

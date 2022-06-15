@@ -55,7 +55,7 @@ all : $(TARGET_BIN)
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
-	$(CXX) $(CXXFLAGS) $^ $(LDLIBS) -o $@
+	$(CXX) $^ $(LDLIBS) -o $@ $(CXXFLAGS)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)

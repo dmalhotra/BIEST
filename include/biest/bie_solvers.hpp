@@ -62,7 +62,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * Bz1, Bx2, By2, ..., BxN, ByN, BzN}. Where N is the number of target
      * points.
      *
-     * @param[out] Xtrg the location of the target points.  Xtrg = {x1, y1, z1,
+     * @param[in] Xtrg the location of the target points.  Xtrg = {x1, y1, z1,
      * x2, y2, ..., xN, yN, zN}. Where N is the number of target points.
      *
      * @param[in] Svec vector for surfaces. The vector dimension can be 1 or 2.
@@ -156,7 +156,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * Bz1, Bx2, By2, ..., BxN, ByN, BzN}. Where N is the number of target
      * points.
      *
-     * @param[out] Xtrg the location of the target points.  Xtrg = {x1, y1, z1,
+     * @param[in] Xtrg the location of the target points.  Xtrg = {x1, y1, z1,
      * x2, y2, ..., xN, yN, zN}. Where N is the number of target points.
      *
      * @param[in] Svec vector for surfaces. The vector dimension can be 1 or 2.
@@ -193,7 +193,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
 
     static void ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<sctl::Vector<Real>>& Xsrc, const sctl::Vector<sctl::Vector<Real>>& Xn_src, const sctl::Vector<sctl::Vector<Real>>& sigma, const sctl::Vector<sctl::Vector<Real>>& m, Real lambda);
 
-    static void Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter);
+    static void Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter);
     static void Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // grad_v <-- Grad(g[sigma])
     static void Compute_iQ(sctl::Vector<Real>& iQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_potn, const KernelFunction<Real,COORD_DIM,2,2>& ker_potn, Real lambda); // iQ <-- i g[m]
     static void Compute_iCurlQ(sctl::Vector<Real>& iCurlQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // iCurlQ <-- i Curl(g[m])

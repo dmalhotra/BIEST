@@ -105,7 +105,7 @@ namespace biest {
       }
 
       sctl::Vector<Real> SurfArea(Svec.Dim());
-      sctl::Vector<sctl::Vector<Real>> dX(Svec.Dim()), d2X(Svec.Dim()), Xn(Svec.Dim()), Xa(Svec.Dim());
+      sctl::Vector<sctl::Vector<Real>> dX(Svec.Dim()), Xn(Svec.Dim()), Xa(Svec.Dim());
       for (sctl::Long i = 0; i < Svec.Dim(); i++) { // Set dX, Xn, Xa
         const auto& S = Svec[i];
         sctl::Long Nt = S.NTor();
@@ -113,7 +113,6 @@ namespace biest {
 
         SurfaceOp<Real> surf_op(comm, Nt, Np);
         surf_op.Grad2D(dX[i], S.Coord());
-        surf_op.Grad2D(d2X[i], dX[i]);
         surf_op.SurfNormalAreaElem(&Xn[i], &Xa[i], dX[i], &S.Coord());
 
         SurfArea[i] = 0;
@@ -147,7 +146,7 @@ namespace biest {
 
       sctl::Profile::Tic("ComputeJ", &comm);
       sctl::Vector<sctl::Vector<Real>> J0(Nsurf);
-      auto ComputeJ = [&Svec,&SurfDim,&SurfDsp,&dX,&d2X,&Xn,&comm](sctl::Vector<Real>& J, sctl::Integer Sidx, Real gmres_tol, sctl::Long max_iter) { // Set Jp
+      auto ComputeJ = [&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& J, sctl::Integer Sidx, Real gmres_tol, sctl::Long max_iter) { // Set Jp
         const auto& S = Svec[Sidx];
         sctl::Long Nt = S.NTor();
         sctl::Long Np = S.NPol();
@@ -162,7 +161,7 @@ namespace biest {
         }
         SurfaceOp<Real> surf_op(comm, Nt, Np);
         surf_op.SurfDiv(DivV, dX[Sidx], V);
-        surf_op.GradInvSurfLap(GradInvLapDivV, dX[Sidx], d2X[Sidx], DivV, gmres_tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
+        surf_op.GradInvSurfLap(GradInvLapDivV, dX[Sidx], DivV, gmres_tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
         V = V - GradInvLapDivV;
         if (0) { // Print err
           surf_op.SurfDiv(DivV, dX[Sidx], V);
@@ -574,7 +573,7 @@ namespace biest {
 
         sctl::Vector<Real> SurfArea(Nsurf); // TODO: remove
         sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
-        sctl::Vector<sctl::Vector<Real>> dX(Nsurf), d2X(Nsurf), Xn(Nsurf), Xa(Nsurf);
+        sctl::Vector<sctl::Vector<Real>> dX(Nsurf), Xn(Nsurf), Xa(Nsurf);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Set dX, Xn, Xa
           const auto& S = Svec[i];
           sctl::Long Nt = S.NTor();
@@ -582,7 +581,6 @@ namespace biest {
 
           SurfaceOp<Real> surf_op(comm, Nt, Np);
           surf_op.Grad2D(dX[i], S.Coord());
-          surf_op.Grad2D(d2X[i], dX[i]);
           surf_op.SurfNormalAreaElem(&Xn[i], &Xa[i], dX[i], &S.Coord());
 
           SurfArea[i] = 0;
@@ -613,7 +611,7 @@ namespace biest {
         BI_potn.SetupSingular(Svec, ker_potn);
         sctl::Profile::Toc();
 
-        auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&d2X,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - Grad(invLap(sigma)) x n )
+        auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - Grad(invLap(sigma)) x n )
           sctl::Long Nsurf = SurfDim.Dim();
           sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
           if (m.Dim() != COORD_DIM * 2 * N) m.ReInit(COORD_DIM * 2 * N);
@@ -634,7 +632,7 @@ namespace biest {
               for (sctl::Long k = 0; k < 2; k++) { // Set GradInvLapSigma <-- Grad(invLap(sigma))
                 const sctl::Vector<Real> sigma__(N, (sctl::Iterator<Real>)sigma_.begin() + k * N, false);
                 if (max_norm(sigma__) > 0) {
-                  surf_op.GradInvSurfLap(GradInvLapSigma[k], dX[i], d2X[i], sigma__, gmres_tol, gmres_iter, 1.5);
+                  surf_op.GradInvSurfLap(GradInvLapSigma[k], dX[i], sigma__, gmres_tol, gmres_iter, 1.5);
                 } else {
                   GradInvLapSigma[k].ReInit(COORD_DIM * N);
                   GradInvLapSigma[k].SetZero();
@@ -1052,7 +1050,7 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter) {
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter) {
       sctl::Long Nt = S.NTor();
       sctl::Long Np = S.NPol();
       sctl::Long N= Nt * Np;
@@ -1067,7 +1065,7 @@ namespace biest {
 
       sctl::Vector<Real> Vn, Vd, Vc, Vh;
       SurfaceOp<Real> surf_op(comm, Nt, Np);
-      surf_op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, d2X, Xn, tol, max_iter);
+      surf_op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, Xn, tol, max_iter);
 
       if (mH.Dim() != COORD_DIM * 2 * N) mH.ReInit(COORD_DIM * 2 * N);
       #pragma omp parallel for schedule(static)
@@ -1155,7 +1153,7 @@ namespace biest {
 
       sctl::Vector<Real> SurfArea(Nsurf); // TODO: remove
       sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
-      sctl::Vector<sctl::Vector<Real>> dX(Nsurf), d2X(Nsurf), Xn(Nsurf), Xa(Nsurf);
+      sctl::Vector<sctl::Vector<Real>> dX(Nsurf), Xn(Nsurf), Xa(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Set dX, Xn, Xa
         const auto& S = Svec[i];
         sctl::Long Nt = S.NTor();
@@ -1163,7 +1161,6 @@ namespace biest {
 
         SurfaceOp<Real> surf_op(comm, Nt, Np);
         surf_op.Grad2D(dX[i], S.Coord());
-        surf_op.Grad2D(d2X[i], dX[i]);
         surf_op.SurfNormalAreaElem(&Xn[i], &Xa[i], dX[i], &S.Coord());
 
         SurfArea[i] = 0;
@@ -1194,7 +1191,7 @@ namespace biest {
       BI_potn.SetupSingular(Svec, ker_potn);
       sctl::Profile::Toc();
 
-      auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&d2X,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - Grad(invLap(sigma)) x n )
+      auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - Grad(invLap(sigma)) x n )
         sctl::Long Nsurf = SurfDim.Dim();
         sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
         if (m.Dim() != COORD_DIM * 2 * N) m.ReInit(COORD_DIM * 2 * N);
@@ -1215,7 +1212,7 @@ namespace biest {
             for (sctl::Long k = 0; k < 2; k++) { // Set GradInvLapSigma <-- Grad(invLap(sigma))
               const sctl::Vector<Real> sigma__(N, (sctl::Iterator<Real>)sigma_.begin() + k * N, false);
               if (max_norm(sigma__) > 0) {
-                surf_op.GradInvSurfLap(GradInvLapSigma[k], dX[i], d2X[i], sigma__, gmres_tol, gmres_iter, 1.5);
+                surf_op.GradInvSurfLap(GradInvLapSigma[k], dX[i], sigma__, gmres_tol, gmres_iter, 1.5);
               } else {
                 GradInvLapSigma[k].ReInit(COORD_DIM * N);
                 GradInvLapSigma[k].SetZero();
@@ -1439,7 +1436,7 @@ namespace biest {
       for (sctl::Long i = 0; i < Nsurf; i++) { // Compute mH, B0
         mH[i].ReInit(COORD_DIM * 2 * (SurfDim[Nsurf-1] + SurfDsp[Nsurf-1])); mH[i] = 0;
         sctl::Vector<Real> mH_(COORD_DIM * 2 * SurfDim[i], mH[i].begin() + COORD_DIM * 2 * SurfDsp[i], false);
-        Compute_mH(mH_, Svec[i], dX[i], d2X[i], Xn[i], comm, gmres_tol * LB_tol, gmres_iter);
+        Compute_mH(mH_, Svec[i], dX[i], Xn[i], comm, gmres_tol * LB_tol, gmres_iter);
         Compute_B(&B0[i], nullptr, sctl::Vector<Real>(), sctl::Vector<Real>(), mH[i]*(-1));
       }
       sctl::Profile::Toc();

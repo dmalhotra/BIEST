@@ -346,7 +346,7 @@ template <class Real> void SurfaceOp<Real>::ProjZeroMean(sctl::Vector<Real>& Fpr
   }
 }
 
-template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
+template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
   auto spectral_InvSurfLap = [this](sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, sctl::Long Nt_, sctl::Long Np_, Real tol, sctl::Integer max_iter) {
     sctl::FFT<Real> fft_r2c, fft_c2r;
     sctl::StaticArray<sctl::Long, 2> fft_dim = {Nt_, Np_};
@@ -400,7 +400,7 @@ template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLa
   Upsample(InvLapF_up, Nt_up, Np_up, InvLapF, Nt_, Np_);
 }
 
-template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
+template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
   auto spectral_GradInvSurfLap = [this](sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, sctl::Long Nt_, sctl::Long Np_, Real tol, sctl::Integer max_iter) {
     sctl::FFT<Real> fft_r2c, fft_c2r;
     sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
@@ -581,7 +581,7 @@ template <class Real> template <class SingularCorrection> void SurfaceOp<Real>::
   U += Uglb;
 }
 
-template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, sctl::Vector<Real>& Vd, sctl::Vector<Real>& Vc, sctl::Vector<Real>& Vh, const sctl::Vector<Real>& V, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& normal, Real tol, sctl::Long max_iter) const {
+template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, sctl::Vector<Real>& Vd, sctl::Vector<Real>& Vc, sctl::Vector<Real>& Vh, const sctl::Vector<Real>& V, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, Real tol, sctl::Long max_iter) const {
   sctl::Long N = Nt_ * Np_;
   SCTL_ASSERT(V.Dim() == COORD_DIM * N);
   if (Vn.Dim() != COORD_DIM * N) Vn.ReInit(COORD_DIM * N);
@@ -599,7 +599,7 @@ template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, 
   { // Set Vd = Grad(InvLap(Div(V)))
     sctl::Vector<Real> DivV, GradInvLapDivV;
     SurfDiv(DivV, dX, V);
-    GradInvSurfLap(Vd, dX, d2X, DivV, tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
+    GradInvSurfLap(Vd, dX, DivV, tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
   }
   { // Set Vc = n x Grad(InvLap(Div(V x n)))
     auto cross_prod = [](sctl::Vector<Real>& axb, const sctl::Vector<Real>& a, const sctl::Vector<Real>& b) {
@@ -616,7 +616,7 @@ template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, 
     sctl::Vector<Real> Vxn, DivVxn, GradInvLapDivVxn;
     cross_prod(Vxn, V, normal);
     SurfDiv(DivVxn, dX, Vxn);
-    GradInvSurfLap(GradInvLapDivVxn, dX, d2X, DivVxn, tol * max_norm(V) / max_norm(DivVxn), max_iter, 1.5);
+    GradInvSurfLap(GradInvLapDivVxn, dX, DivVxn, tol * max_norm(V) / max_norm(DivVxn), max_iter, 1.5);
     cross_prod(Vc, normal, GradInvLapDivVxn);
   }
   Vh = V - Vn - Vd - Vc;
@@ -685,7 +685,7 @@ template <class Real> void SurfaceOp<Real>::test_InvSurfLap(sctl::Long Nt, sctl:
 
   sctl::Profile::Tic("Solve", &comm);
   if (LeftPrecond == nullptr && RightPrecond == nullptr) {
-    Op.InvSurfLap(u1, dX, d2X, f0, gmres_tol, gmres_iter, 1.0);
+    Op.InvSurfLap(u1, dX, f0, gmres_tol, gmres_iter, 1.0);
   } else {
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> IdentityOp = [](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { Sx = x; };
     auto& LPrecond = (LeftPrecond ? *LeftPrecond : IdentityOp);
@@ -713,10 +713,9 @@ template <class Real> void SurfaceOp<Real>::test_InvSurfLap(sctl::Long Nt, sctl:
 template <class Real> void SurfaceOp<Real>::test_HodgeDecomp(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const sctl::Comm& comm) {
   sctl::Long N = Nt * Np;
   Surface<Real> S(Nt, Np, surf_type);
-  sctl::Vector<Real> dX, d2X, normal, area_elem;
+  sctl::Vector<Real> dX, normal, area_elem;
   SurfaceOp Op(comm, Nt, Np);
   Op.Grad2D(dX, S.Coord());
-  Op.Grad2D(d2X, dX);
   Op.SurfNormalAreaElem(&normal, &area_elem, dX, &S.Coord());
 
   Real tol = 1e-9;
@@ -728,7 +727,7 @@ template <class Real> void SurfaceOp<Real>::test_HodgeDecomp(sctl::Long Nt, sctl
     }
   }
 
-  Op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, d2X, normal, tol, max_iter);
+  Op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, normal, tol, max_iter);
 
   auto l2norm = [](const sctl::Vector<Real>& v) {
     Real sum = 0;

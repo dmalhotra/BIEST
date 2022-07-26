@@ -447,6 +447,7 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
       AdotB[i] = AdotB_;
     }
   };
+  SCTL_UNUSED(WriteVTK_);
 
   sctl::Comm comm = sctl::Comm::Self();
   sctl::Vector<biest::Surface<Real>> Svec(1);
@@ -541,7 +542,6 @@ int main(int argc, char** argv) {
     long Nt0 = 70*32, Np0 = 14*32; // reference solution resolution
     sctl::Vector<Real> B, Bext;
     if (0) {
-      constexpr sctl::Integer COORD_DIM = 3;
       sctl::Comm comm = sctl::Comm::Self();
 
       Real gmres_tol = 1e-12;

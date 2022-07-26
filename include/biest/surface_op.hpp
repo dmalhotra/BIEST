@@ -65,11 +65,11 @@ template <class Real> class SurfaceOp {
     /**
      * Computes the gradient of data X(t,p) defined on a periodic 2D grid.
      *
-     * @param[in] X the vector of input data X(t,p) sampled on a grid of
-     * dimensions NtxNp stored in row-major order and as a structure-of-arrays.
-     *
      * @param[out] dX the output vector containing {dX/dt, dX/dp} for each grid
      * point stored in SoA order.
+     *
+     * @param[in] X the vector of input data X(t,p) sampled on a grid of
+     * dimensions NtxNp stored in row-major order and as a structure-of-arrays.
      */
     void Grad2D(sctl::Vector<Real>& dX, const sctl::Vector<Real>& X) const;
 
@@ -163,7 +163,7 @@ template <class Real> class SurfaceOp {
      *
      * @param[out] the vector containing the output surface integral.
      *
-     * @param[out] area_elem the vector of differential area-element values at
+     * @param[in] area_elem the vector of differential area-element values at
      * each grid point.
      *
      * @param[in] F the vector of data values at each grid point in SoA order.
@@ -182,19 +182,138 @@ template <class Real> class SurfaceOp {
      */
     void ProjZeroMean(sctl::Vector<Real>& Fproj, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const;
 
-    void InvSurfLap(sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1, Real upsample = 1.0) const;
+    /**
+     * Compute the inverse of the surface-Laplacian (solve Laplace-Beltrami
+     * problem) using the exact inverse (implemented using FFT) for a flat
+     * surface.
+     *
+     * @param[out] InvLapF the solution to the Laplace-Beltrami problem
+     * evaluated at each grid point.
+     *
+     * @param[in] dX the vector of the surface gradient of the position vector
+     * at each grid point in SoA order.
+     *
+     * @param[in] F the RHS in the Laplace-Beltrami problem evaluated at each
+     * grid point.
+     *
+     * @param[in] tol the tolerance for the GMRES solve.
+     *
+     * @param[in] max_iter the maximum number of GMRES iterations.
+     *
+     * @param[in] upsample the upsample factor for the solve. The final result
+     * is downsampled back to the original resolution.
+     */
+    void InvSurfLap(sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1, Real upsample = 1.0) const;
 
-    void GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1, Real upsample = 1.0) const;
+    /**
+     * Compute the gradient of the inverse of the Laplace-Beltrami operator
+     * using the exact inverse (implemented using FFT) for a flat surface.
+     *
+     * @param[out] GradInvLapF the gradient of the solution to the
+     * Laplace-Beltrami problem evaluated at each grid point.
+     *
+     * @param[in] dX the vector of the surface gradient of the position vector
+     * at each grid point in SoA order.
+     *
+     * @param[in] F the RHS in the Laplace-Beltrami problem evaluated at each
+     * grid point.
+     *
+     * @param[in] tol the tolerance for the GMRES solve.
+     *
+     * @param[in] max_iter the maximum number of GMRES iterations.
+     *
+     * @param[in] upsample the upsample factor for the solve. The final result
+     * is downsampled back to the original resolution.
+     */
+    void GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1, Real upsample = 1.0) const;
 
+    /**
+     * Compute the inverse of the surface-Laplacian (solve Laplace-Beltrami
+     * problem) using given preconditioner.
+     *
+     * @param[out] InvLapF the solution to the Laplace-Beltrami problem
+     * evaluated at each grid point.
+     *
+     * @param[in] LeftPrecond the left preconditioner.
+     *
+     * @param[in] RightPrecond the right preconditioner.
+     *
+     * @param[in] dX the vector of the surface gradient of the position vector
+     * at each grid point in SoA order.
+     *
+     * @param[in] F the RHS in the Laplace-Beltrami problem evaluated at each
+     * grid point.
+     *
+     * @param[in] tol the tolerance for the GMRES solve.
+     *
+     * @param[in] max_iter the maximum number of GMRES iterations.
+     */
     void InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> LeftPrecond, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1) const;
 
+    /**
+     * Evaluate the potential from a given surface density at target point by
+     * computing the integral using periodic trapezoidal rule. Can be used to
+     * evaluate the potential at off-surface points (sufficiently far away from
+     * the surface).
+     *
+     * @tparam KDIM0 degrees-of-freedom of the density per source point.
+     *
+     * @tparam KDIM1 degrees-of-freedom of the potential per target point.
+     *
+     * @param[out] Utrg the potential at each target point in SoA order.
+     *
+     * @param[in] Xtrg the location of the target points in SoA order.
+     *
+     * @param[in] Xsrc the location of the source points in SoA order.
+     *
+     * @param[in] Xn_src the surface normals at the source points in SoA order.
+     *
+     * @param[in] Xa_src the differential area-element at the source points in
+     * SoA order.
+     *
+     * @param[in] Fsrc the density function at the source points in SoA order.
+     *
+     * @param[in] ker the kernel function.
+     */
     template <sctl::Integer KDIM0, sctl::Integer KDIM1> void EvalSurfInteg(sctl::Vector<Real>& Utrg, const sctl::Vector<Real>& Xtrg, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& Xn_src, const sctl::Vector<Real>& Xa_src, const sctl::Vector<Real>& Fsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker) const;
 
+    /**
+     * Computes the singular corrections at each target point.  Used in class
+     * BoundaryIntegralOp.
+     */
     template <class SingularCorrection, class Kernel> void SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, const Real normal_scal, const sctl::Vector<sctl::Long>& trg_idx) const;
 
+    /**
+     * Evaluates the singular corrections at each target point.  Used in class
+     * BoundaryIntegralOp.
+     */
     template <class SingularCorrection> void EvalSingularCorrection(sctl::Vector<Real>& U, const sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer kdim0, sctl::Integer kdim1, const sctl::Vector<Real>& F) const;
 
-    void HodgeDecomp(sctl::Vector<Real>& Vn, sctl::Vector<Real>& Vd, sctl::Vector<Real>& Vc, sctl::Vector<Real>& Vh, const sctl::Vector<Real>& V, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X, const sctl::Vector<Real>& normal, Real tol, sctl::Long max_iter = -1) const;
+    /**
+     * Computes the Hodge decomposition of the given vector field on a surface.
+     *
+     * @param[out] Vn the normal part of the field at each grid point in SoA
+     * order.
+     *
+     * @param[out] Vd the gradient part of the field at each grid point in SoA
+     * order.
+     *
+     * @param[out] Vc the solenoidal part of the field at each grid point in SoA
+     * order.
+     *
+     * @param[out] Vh the harmonic part of the field at each grid point in SoA
+     * order.
+     *
+     * @param[in] V the input vector field at each grid point in SoA order.
+     *
+     * @param[in] dX the vector of the surface gradient of the position vector
+     * at each grid point in SoA order.
+     *
+     * @param[in] normal the surface normals at each grid point in SoA order.
+     *
+     * @praam[in] max_iter maximum number of GMRES iterations.
+     */
+    void HodgeDecomp(sctl::Vector<Real>& Vn, sctl::Vector<Real>& Vd, sctl::Vector<Real>& Vc, sctl::Vector<Real>& Vh, const sctl::Vector<Real>& V, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, Real tol, sctl::Long max_iter = -1) const;
 
 
 

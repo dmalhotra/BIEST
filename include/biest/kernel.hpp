@@ -367,7 +367,7 @@ template <class Real> class Stokes3D_ {
       for (sctl::Integer k = 0; k < COORD_DIM; k++) v[k] -= x[k] * ker_term0;
     }
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class Stokes3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Stokes3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
@@ -462,7 +462,7 @@ template <class Real> class Laplace3D_ {
       v[0] += f[0] * ndotr * invr3 * scal;
     }
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class Laplace3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Laplace3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 1;
   static constexpr sctl::Integer KDIM1 = 1;
@@ -658,7 +658,7 @@ template <class Real> class BiotSavart3D_ {
       v[2] -= (f[0]*x[1] - x[0]*f[1]) * ker_term0;
     }
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class BiotSavart3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class BiotSavart3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
@@ -755,7 +755,7 @@ template <class Real> class Helmholtz3D_ {
     KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker_FxU;
     KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker_FxdU;
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class Helmholtz3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Helmholtz3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 2;
   static constexpr sctl::Integer KDIM1 = 2;

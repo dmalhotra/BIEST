@@ -81,10 +81,6 @@ template <class Real> class Surface {
     sctl::Vector<Real> X0_;
 };
 
-// Forward declare
-struct VTKData;
-struct VTUData;
-
 template <class Real> void WriteVTK(const char* fname, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real> F = sctl::Vector<Real>(), const sctl::Comm& comm = sctl::Comm::Self());
 
 template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, const sctl::Vector<Real> F = sctl::Vector<Real>(), const sctl::Comm& comm = sctl::Comm::Self());

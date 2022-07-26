@@ -34,10 +34,44 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
 
   public:
 
+    /**
+     * Constructor.
+     *
+     * @param[in] kerfn_ the kernel evaluation function.
+     *
+     * @param[in] cost_ the cost in FLOPs per kernel evaluation (used for profiling).
+     *
+     * @param[in] ctx_ a context pointer passed to the kernel evaluation
+     * function.
+     */
     KernelFunction(std::function<KerFn> kerfn_, sctl::Long cost_, const void* ctx_) : kerfn(kerfn_), ctx(ctx_), cost(cost_) {}
 
+    /**
+     * Gives the number of degrees-of-freedom per-source or target.
+     *
+     * @param[in] i integrer value in {0, 1} which indicates sources (for 0) and
+     * targets (for 1).
+     *
+     * @return the number of degrees-of-freedom per-source (when i==0) and
+     * per-target (when i==1).
+     */
     static constexpr sctl::Integer Dim(sctl::Integer i) { return i == 0 ? KDIM0 : KDIM1; }
 
+    /**
+     * Evaluates the kernel function.
+     *
+     * @param[in] r_src the coordinates of the source points in
+     * structure-of-array (SoA) order i.e.  {x1, ..., xn, y1, ..., z1, ...}.
+     *
+     * @param[in] n_src the normals at each source point in SoA order.
+     *
+     * @param[in] v_src the density values at each source point in SoA order.
+     *
+     * @param[in] r_trg the coordinates of the target points in SoA order.
+     *
+     * @param[out] v_trg the computed potential values at each target point in
+     * SoA order.
+     */
     void operator()(const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& v_src, const sctl::Vector<Real>& r_trg, sctl::Vector<Real>& v_trg) const {
       sctl::Long Ns = r_src.Dim() / COORD_DIM;
       sctl::Long Nt = r_trg.Dim() / COORD_DIM;
@@ -54,6 +88,22 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
       sctl::Profile::Add_FLOP(Ns * Nt * cost);
     }
 
+    /**
+     * Build the kernel matrix.
+     *
+     * @param[in] r_src the coordinates of the source points in
+     * structure-of-array (SoA) order i.e.  {x1, ..., xn, y1, ..., z1, ...}.
+     *
+     * @param[in] n_src the normals at each source point in SoA order.
+     *
+     * @param[in] r_trg the coordinates of the target points in SoA order.
+     *
+     * @param[out] M the kernel matrix of dimensions (KDIM0*Ns)x(KDIM1*Nt),
+     * where Ns is the number of sources, Nt is the number of targets, KDIM0 is
+     * the number of degrees-of-freedom (DOF) per source and KDIM1 is the number
+     * of DOF per target.
+     *
+     */
     void BuildMatrix(const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& r_trg, sctl::Matrix<Real>& M) const {
       sctl::Integer kdim[2] = {this->Dim(0), this->Dim(1)};
       sctl::Long Ns = r_src.Dim() / COORD_DIM;
@@ -317,7 +367,7 @@ template <class Real> class Stokes3D_ {
       for (sctl::Integer k = 0; k < COORD_DIM; k++) v[k] -= x[k] * ker_term0;
     }
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Stokes3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class Stokes3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
@@ -412,7 +462,7 @@ template <class Real> class Laplace3D_ {
       v[0] += f[0] * ndotr * invr3 * scal;
     }
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Laplace3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class Laplace3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 1;
   static constexpr sctl::Integer KDIM1 = 1;
@@ -608,7 +658,7 @@ template <class Real> class BiotSavart3D_ {
       v[2] -= (f[0]*x[1] - x[0]*f[1]) * ker_term0;
     }
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class BiotSavart3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class BiotSavart3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
@@ -705,7 +755,7 @@ template <class Real> class Helmholtz3D_ {
     KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker_FxU;
     KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker_FxdU;
 };
-template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = 4> class Helmholtz3D {
+template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = DefaultVecLen<Real>()> class Helmholtz3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 2;
   static constexpr sctl::Integer KDIM1 = 2;

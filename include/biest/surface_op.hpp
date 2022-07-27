@@ -18,7 +18,7 @@ template <class Real> class SurfaceOp {
     /**
      * Constructor.
      *
-     * @param[in] comm the MPI communicator (optional and not fully supported
+     * @param[in] comm the communicator (optional and not fully supported
      * yet).
      *
      * @param[in] Nt number of surface discretization points in the toroidal

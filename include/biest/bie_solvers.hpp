@@ -46,7 +46,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * @see biest::Surface
      * @see sctl::Vector
      *
-     * @param[in] comm the MPI communicator when running in parallel.
+     * @param[in] comm the communicator when running in parallel.
      *
      * @param[in] gmres_tol the tolerance for the GMRES linear solve.
      *
@@ -73,7 +73,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * Jx22, ... , JxNtNp, Jy11, ... , Jz11, ...}, where Nt and Np are the
      * number of discretizations in toroidal and poloidal directions.
      *
-     * @param[in] comm the MPI communicator when running in parallel.
+     * @param[in] comm the communicator when running in parallel.
      */
     static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm);
 
@@ -128,7 +128,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * @see biest::Surface
      * @see sctl::Vector
      *
-     * @param[in] comm the MPI communicator when running in parallel.
+     * @param[in] comm the communicator when running in parallel.
      *
      * @param[in] gmres_tol the tolerance for the GMRES linear solve.
      *
@@ -178,7 +178,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * ..., sigma1Np, sigma21, sigma22, ... , sigmaNtNp}, where Nt and Np are
      * the number of discretizations in toroidal and poloidal directions.
      *
-     * @param[in] comm the MPI communicator when running in parallel.
+     * @param[in] comm the communicator when running in parallel.
      */
     static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m, const sctl::Vector<sctl::Vector<Real>>& sigma, const sctl::Comm& comm);
 

@@ -859,5 +859,134 @@ template <class Real> void SurfaceOp<Real>::LaplaceBeltramiReference(sctl::Vecto
   }
 }
 
+
+
+
+template <class Real> void SurfaceOp<Real>::RotateToroidal(sctl::Vector<Real>& X_, const sctl::Vector<Real>& X, const sctl::Long Nt_, const sctl::Long Np_, const Real dtheta) {
+  const sctl::Long dof = X.Dim() / (Nt_*Np_);
+  SCTL_ASSERT(X.Dim() == dof*Nt_*Np_);
+  if (X_.Dim() != dof*Nt_*Np_) X_.ReInit(dof*Nt_*Np_);
+
+  sctl::FFT<Real> fft_r2c, fft_c2r;
+  sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
+  fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
+  fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
+
+  sctl::Long Nt = Nt_;
+  sctl::Long Np = fft_r2c.Dim(1) / (Nt * 2);
+  SCTL_ASSERT(fft_r2c.Dim(1) == Nt * Np * 2);
+  sctl::Vector<Real> coeff(fft_r2c.Dim(1));
+  sctl::Vector<Real> coeff_(fft_r2c.Dim(1));
+  for (sctl::Long k = 0; k < dof; k++) {
+    fft_r2c.Execute(sctl::Vector<Real>(Nt_*Np_, (sctl::Iterator<Real>)X.begin() + k*Nt_*Np_, false), coeff);
+
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long t = 0; t < Nt; t++) { // coeff_(t,p) <-- imag * t * coeff(t,p)
+      const Real cos_tdt = sctl::cos<Real>((t - (t > Nt / 2 ? Nt : 0))*dtheta);
+      const Real sin_tdt = sctl::sin<Real>((t - (t > Nt / 2 ? Nt : 0))*dtheta);
+      for (sctl::Long p = 0; p < Np; p++) {
+        Real real = coeff[(t * Np + p) * 2 + 0];
+        Real imag = coeff[(t * Np + p) * 2 + 1];
+        coeff_[(t * Np + p) * 2 + 0] = real*cos_tdt - imag*sin_tdt;
+        coeff_[(t * Np + p) * 2 + 1] = real*sin_tdt + imag*cos_tdt;
+      }
+    }
+    { // X_ <-- IFFT(coeff_)
+      sctl::Vector<Real> fft_out(Nt_*Np_, X_.begin() + k*Nt_*Np_, false);
+      fft_c2r.Execute(coeff_, fft_out);
+    }
+  }
+}
+template <class Real> void SurfaceOp<Real>::CompleteVecField(sctl::Vector<Real>& X, const bool is_surf, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Real dtheta) {
+  static constexpr sctl::Integer COORD_DIM = 3;
+  const sctl::Long dof = Y.Dim() / (Nt*Np);
+  SCTL_ASSERT(Y.Dim() == dof*Nt*Np);
+
+  if (half_period) {
+    sctl::Vector<Real> Y_(dof*(Nt*2)*Np);
+    if (dof == COORD_DIM) {
+      const Real cos_theta = sctl::cos<Real>(2*sctl::const_pi<Real>()/NFP);
+      const Real sin_theta = sctl::sin<Real>(2*sctl::const_pi<Real>()/NFP);
+
+      for (sctl::Long t = 0; t < Nt; t++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          Y_[(0*2*Nt+t)*Np+p] = Y[(0*Nt+t)*Np+p];
+          Y_[(1*2*Nt+t)*Np+p] = Y[(1*Nt+t)*Np+p];
+          Y_[(2*2*Nt+t)*Np+p] = Y[(2*Nt+t)*Np+p];
+
+          const Real x =  Y[(0*Nt+Nt-t-1)*Np+((Np-p)%Np)] * (is_surf?1:-1);
+          const Real y = -Y[(1*Nt+Nt-t-1)*Np+((Np-p)%Np)] * (is_surf?1:-1);
+          const Real z = -Y[(2*Nt+Nt-t-1)*Np+((Np-p)%Np)] * (is_surf?1:-1);
+          Y_[(0*2*Nt+Nt+t)*Np+p] = x*cos_theta - y*sin_theta;
+          Y_[(1*2*Nt+Nt+t)*Np+p] = x*sin_theta + y*cos_theta;
+          Y_[(2*2*Nt+Nt+t)*Np+p] = z;
+        }
+      }
+    } else {
+      for (sctl::Long t = 0; t < Nt; t++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          for (sctl::Long k = 0; k < dof; k++) {
+            Y_[(k*2*Nt+t)*Np+p] = Y[(k*Nt+t)*Np+p];
+            Y_[(k*2*Nt+Nt+t)*Np+p] = Y[(k*Nt+Nt-t-1)*Np+((Np-p)%Np)];
+          }
+        }
+      }
+    }
+    return CompleteVecField(X, is_surf, false, NFP, 2*Nt, Np, Y_, dtheta);
+  }
+
+  if (X.Dim() != dof*NFP*Nt*Np) X.ReInit(dof*NFP*Nt*Np);
+  if (dof == COORD_DIM) {
+    for (sctl::Long j = 0; j < NFP; j++) {
+      const Real cost = sctl::cos<Real>(2*sctl::const_pi<Real>()*j/NFP);
+      const Real sint = sctl::sin<Real>(2*sctl::const_pi<Real>()*j/NFP);
+      for (sctl::Long i = 0; i < Nt*Np; i++) {
+        const Real x0 = Y[0*Nt*Np+i];
+        const Real y0 = Y[1*Nt*Np+i];
+        const Real z0 = Y[2*Nt*Np+i];
+
+        const Real x = x0*cost - y0*sint;
+        const Real y = x0*sint + y0*cost;
+        const Real z = z0;
+
+        X[(0*NFP+j)*Nt*Np+i] = x;
+        X[(1*NFP+j)*Nt*Np+i] = y;
+        X[(2*NFP+j)*Nt*Np+i] = z;
+      }
+    }
+  } else {
+    for (sctl::Long j = 0; j < NFP; j++) {
+      for (sctl::Long i = 0; i < Nt*Np; i++) {
+        for (sctl::Long k = 0; k < dof; k++) {
+          X[(k*NFP+j)*Nt*Np+i] = Y[k*Nt*Np+i];
+        }
+      }
+    }
+  }
+  if (dtheta != (Real)0) { // rotate by dtheta
+    sctl::Vector<Real> X_;
+    RotateToroidal(X_, X, NFP*Nt, Np, dtheta);
+    X = X_;
+  }
+}
+template <class Real> void SurfaceOp<Real>::Resample(sctl::Vector<Real>& X1, const sctl::Long Nt1, const sctl::Long Np1, const sctl::Vector<Real>& X0, const sctl::Long Nt0, const sctl::Long Np0) {
+  const sctl::Long skip_tor = (sctl::Long)std::ceil(Nt0/(Real)Nt1);
+  const sctl::Long skip_pol = (sctl::Long)std::ceil(Np0/(Real)Np1);
+  const sctl::Long dof = X0.Dim() / (Nt0 * Np0);
+  SCTL_ASSERT(X0.Dim() == dof*Nt0*Np0);
+
+  sctl::Vector<Real> XX;
+  biest::SurfaceOp<Real>::Upsample(X0, Nt0, Np0, XX, Nt1*skip_tor, Np1*skip_pol);
+
+  if (X1.Dim() != dof * Nt1*Np1) X1.ReInit(dof * Nt1*Np1);
+  for (sctl::Long k = 0; k < dof; k++) {
+    for (sctl::Long i = 0; i < Nt1; i++) {
+      for (sctl::Long j = 0; j < Np1; j++) {
+        X1[(k*Nt1+i)*Np1+j] = XX[((k*Nt1+i)*skip_tor*Np1+j)*skip_pol];
+      }
+    }
+  }
+}
+
 }
 

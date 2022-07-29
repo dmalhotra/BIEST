@@ -104,12 +104,21 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     sctl::Vector<sctl::Vector<sctl::Long>> trg_idx;
 };
 
-template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> class BIOpWrapper {
+/**
+ * Compute layer-potentials on toroidal surfaces with field-period symmetry.
+ *
+ * @tparam Real datatype for reals can be float, double or sctl::QuadReal.
+ *
+ * @tparam KDIM0 degrees-of-freedom of the density per source point.
+ *
+ * @tparam KDIM1 degrees-of-freedom of the potential per target point.
+ */
+template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> class FieldPeriodBIOp {
   public:
 
-    BIOpWrapper(const sctl::Comm& comm);
+    explicit FieldPeriodBIOp(const sctl::Comm& comm = sctl::Comm::Self());
 
-    ~BIOpWrapper();
+    ~FieldPeriodBIOp();
 
     void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt = 0, const sctl::Long qNp = 0);
 
@@ -119,8 +128,6 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
     sctl::Long QuadNp() const { return quad_Np_; }
 
   private:
-
-    static void Resample(sctl::Vector<Real>& X1, const sctl::Long Nt1, const sctl::Long Np1, const sctl::Vector<Real>& X0, const sctl::Long Nt0, const sctl::Long Np0);
 
     template <sctl::Integer PDIM, sctl::Integer RDIM> static void* BIOpBuild(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
     template <sctl::Integer PDIM, sctl::Integer RDIM> static void BIOpDelete(void** self);

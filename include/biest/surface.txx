@@ -708,4 +708,15 @@ template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, c
   WriteVTK(fname, sctl::Vector<Surface<Real>>(1,sctl::Ptr2Itr<Surface<Real>>((Surface<Real>*)&S,1),false), F, comm);
 }
 
+template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F) {
+  sctl::Vector<Real> X_, F_;
+  sctl::Vector<biest::Surface<Real>> Svec(1);
+  Svec[0] = biest::Surface<Real>(NFP*(half_period?2:1)*src_Nt, src_Np, biest::SurfType::None);
+  SurfaceOp<Real>::CompleteVecField(X_, true, half_period, NFP, surf_Nt, surf_Np, X, (half_period?sctl::const_pi<Real>()/(NFP*src_Nt*2):0)-(half_period?sctl::const_pi<Real>()/(NFP*surf_Nt*2):0));
+  SurfaceOp<Real>::Resample(Svec[0].Coord(), NFP*(half_period?2:1)*src_Nt, src_Np, X_, NFP*(half_period?2:1)*surf_Nt, surf_Np);
+
+  SurfaceOp<Real>::CompleteVecField(F_, false, half_period, NFP, src_Nt, src_Np, F);
+  biest::WriteVTK(fname.c_str(), Svec, F_);
+}
+
 }

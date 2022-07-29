@@ -17,14 +17,14 @@ CXXFLAGS += -DSCTL_PROFILE=5 -DSCTL_VERBOSE # Enable profiling
 
 #CXXFLAGS += -lblas -DSCTL_HAVE_BLAS # use BLAS
 #CXXFLAGS += -llapack -DSCTL_HAVE_LAPACK # use LAPACK
-CXXFLAGS += -qmkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK
+CXXFLAGS += -qmkl -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK -DSCTL_HAVE_FFTW3_MKL # use MKL BLAS, LAPACK and FFTW (Intel compiler)
 #CXXFLAGS += -lmkl_intel_lp64 -lmkl_sequential -lmkl_core -lpthread -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK # use MKL BLAS and LAPACK (non-Intel compiler)
 #CXXFLAGS += -DSCTL_HAVE_SVML
 
-CXXFLAGS += -lfftw3_omp -DSCTL_FFTW_THREADS
-CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
-CXXFLAGS += -lfftw3f -DSCTL_HAVE_FFTWF
-CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
+#CXXFLAGS += -lfftw3_omp -DSCTL_FFTW_THREADS
+#CXXFLAGS += -lfftw3 -DSCTL_HAVE_FFTW
+#CXXFLAGS += -lfftw3f -DSCTL_HAVE_FFTWF
+#CXXFLAGS += -lfftw3l -DSCTL_HAVE_FFTWL
 
 #PSC_INC = -I$(PETSC_DIR)/include -I$(PETSC_DIR)/$(PETSC_ARCH)/include
 #PSC_LIB = -L$(PETSC_DIR)/lib -L$(PETSC_DIR)/$(PETSC_ARCH)/lib -lpetsc
@@ -49,7 +49,8 @@ TARGET_BIN = \
        $(BINDIR)/quadrature-example \
        $(BINDIR)/force-free-fields-example \
        $(BINDIR)/double-layer-convergence \
-       $(BINDIR)/virtual-casing-principle
+       $(BINDIR)/virtual-casing-principle \
+       $(BINDIR)/test-vacuum-field
 
 all : $(TARGET_BIN)
 

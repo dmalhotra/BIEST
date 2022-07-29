@@ -2,6 +2,7 @@
 #define _BIE_SOLVERS_HPP_
 
 #include <biest/boundary_integ_op.hpp>
+#include <biest/surface_op.hpp>
 #include <biest/surface.hpp>
 #include <sctl.hpp>
 

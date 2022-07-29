@@ -307,7 +307,7 @@ namespace biest {
 
 
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::BIOpWrapper(const sctl::Comm& comm) : biop(nullptr), comm_(comm) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::FieldPeriodBIOp(const sctl::Comm& comm) : biop(nullptr), comm_(comm) {
       NFP_ = 0;
       trg_Nt_ = 0;
       trg_Np_ = 0;
@@ -315,11 +315,11 @@ namespace biest {
       quad_Np_ = 0;
     }
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::~BIOpWrapper() {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::~FieldPeriodBIOp() {
       if (biop) biop_delete(&biop);
     }
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt, const sctl::Long qNp) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt, const sctl::Long qNp) {
       SCTL_ASSERT(Svec[0].NTor() % NFP == 0);
       trg_Nt_ = trg_Nt;
       trg_Np_ = trg_Np;
@@ -378,7 +378,7 @@ namespace biest {
           sctl::Long quad_Nt = (sctl::Long)std::ceil(quad_Nt_ / (Real)surf_Nt) * surf_Nt;
           sctl::Long quad_Np = (sctl::Long)std::ceil(quad_Np_ / (Real)surf_Np) * surf_Np;
 
-          BIOpWrapper<Real, COORD_DIM, 1, 1> dbl_op(comm_);
+          FieldPeriodBIOp<Real, COORD_DIM, 1, 1> dbl_op(comm_);
           dbl_op.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, NFP_, 0, 0, surf_Nt/NFP_, surf_Np, quad_Nt, quad_Np);
           sctl::Vector<Real> U, F(quad_Nt * quad_Np); F = 1;
           dbl_op.Eval(U, F);
@@ -419,7 +419,7 @@ namespace biest {
       }
       { // Setup singular
         sctl::Vector<Real> XX;
-        Resample(XX, quad_Nt_, quad_Np_, Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
+        SurfaceOp<Real>::Resample(XX, quad_Nt_, quad_Np_, Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
 
         Svec_.ReInit(1);
         Svec_[0] = biest::Surface<Real>(quad_Nt_, quad_Np_, biest::SurfType::None);
@@ -439,47 +439,28 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) const {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) const {
       SCTL_ASSERT(F.Dim() == KDIM0 * quad_Nt_ * quad_Np_);
       biop_eval(U, F, biop);
     }
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::Resample(sctl::Vector<Real>& X1, const sctl::Long Nt1, const sctl::Long Np1, const sctl::Vector<Real>& X0, const sctl::Long Nt0, const sctl::Long Np0) {
-      const sctl::Long skip_tor = (sctl::Long)std::ceil(Nt0/(Real)Nt1);
-      const sctl::Long skip_pol = (sctl::Long)std::ceil(Np0/(Real)Np1);
-      const sctl::Long dof = X0.Dim() / (Nt0 * Np0);
-      SCTL_ASSERT(X0.Dim() == dof*Nt0*Np0);
-
-      sctl::Vector<Real> XX;
-      biest::SurfaceOp<Real>::Upsample(X0, Nt0, Np0, XX, Nt1*skip_tor, Np1*skip_pol);
-
-      if (X1.Dim() != dof * Nt1*Np1) X1.ReInit(dof * Nt1*Np1);
-      for (sctl::Long k = 0; k < dof; k++) {
-        for (sctl::Long i = 0; i < Nt1; i++) {
-          for (sctl::Long j = 0; j < Np1; j++) {
-            X1[(k*Nt1+i)*Np1+j] = XX[((k*Nt1+i)*skip_tor*Np1+j)*skip_pol];
-          }
-        }
-      }
-    }
-
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void* BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::BIOpBuild(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void* FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::BIOpBuild(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
       using BIOp = biest::BoundaryIntegralOp<Real,KDIM0,KDIM1,1,PDIM,RDIM>;
       BIOp* biop = new BIOp(comm);
       biop[0].SetupSingular(Svec, ker, trg_idx);
       return biop;
     }
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::BIOpDelete(void** self) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::BIOpDelete(void** self) {
       using BIOp = biest::BoundaryIntegralOp<Real,KDIM0,KDIM1,1,PDIM,RDIM>;
       delete (BIOp*)self[0];
       self[0] = nullptr;
     }
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::BIOpEval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::BIOpEval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self) {
       using BIOp = biest::BoundaryIntegralOp<Real,KDIM0,KDIM1,1,PDIM,RDIM>;
       ((BIOp*)self)[0](U, F);
     }
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::SetupSingular0(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> template <sctl::Integer PDIM, sctl::Integer RDIM> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::SetupSingular0(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
       if (biop) biop_delete(&biop);
 
       biop_build = BIOpBuild<PDIM,RDIM>;
@@ -488,7 +469,7 @@ namespace biest {
 
       biop = biop_build(Svec, ker, comm_, trg_idx);
     }
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void BIOpWrapper<Real,COORD_DIM,KDIM0,KDIM1>::SetupSingular_(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer PDIM_, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1>::SetupSingular_(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer PDIM_, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
       SCTL_ASSERT(Svec.Dim() == 1);
       if (PDIM_ >= 64) {
         static constexpr sctl::Integer PDIM = 64, RDIM = PDIM*1.6;

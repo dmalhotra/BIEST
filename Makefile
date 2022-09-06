@@ -49,8 +49,7 @@ TARGET_BIN = \
        $(BINDIR)/quadrature-example \
        $(BINDIR)/force-free-fields-example \
        $(BINDIR)/double-layer-convergence \
-       $(BINDIR)/virtual-casing-principle \
-       $(BINDIR)/test-vacuum-field
+       $(BINDIR)/virtual-casing-principle
 
 all : $(TARGET_BIN)
 

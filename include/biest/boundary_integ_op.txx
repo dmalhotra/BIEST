@@ -93,9 +93,10 @@ namespace biest {
 
         sctl::Long TrgOffset = 0;
         for (sctl::Long t = 0; t < Xtrg.Dim(); t++) {
-          sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[s].Dim(), U.begin() + dof * ker_ptr->Dim(1) * TrgOffset, false);
+          sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[t].Dim(), U.begin() + dof * ker_ptr->Dim(1) * TrgOffset, false);
           Op[s].EvalSurfInteg(U_, Xtrg[t], Xsrc[s], Xn_src[s], Xa_src[s], Fsrc, *ker_ptr);
-          TrgOffset += trg_idx[s].Dim();
+          SCTL_ASSERT(Xtrg[t].Dim()/COORD_DIM == trg_idx[t].Dim());
+          TrgOffset += trg_idx[t].Dim();
         }
 
         sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[s].Dim(), U.begin() + dof * ker_ptr->Dim(1) * SingularTrgOffset, false);

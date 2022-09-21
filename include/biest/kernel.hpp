@@ -298,9 +298,13 @@ template <sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, cla
   sctl::Long Nt = r_trg.Dim() / COORD_DIM;
   sctl::Long NNt = ((Nt + Nv - 1) / Nv) * Nv;
   if (NNt == Nv) {
+    sctl::StaticArray<Real,Nv> tmp_xt;
     RealVec xt[COORD_DIM], vt[KDIM1], xs[COORD_DIM], ns[COORD_DIM], vs[KDIM0];
     for (sctl::Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
-    for (sctl::Integer k = 0; k < COORD_DIM; k++) xt[k] = RealVec::Load(&r_trg[k*Nt]);
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+      for (sctl::Integer i = 0; i < Nt; i++) tmp_xt[i] = r_trg[k*Nt+i];
+      xt[k] = RealVec::Load(&tmp_xt[0]);
+    }
     for (sctl::Long s = 0; s < Ns; s++) {
       for (sctl::Integer k = 0; k < COORD_DIM; k++) xs[k] = RealVec::Load1(&r_src[k*Ns+s]);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) ns[k] = RealVec::Load1(&n_src[k*Ns+s]);
@@ -831,8 +835,12 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       sctl::Long NNs = ((Ns + Nv - 1) / Nv) * Nv;
       sctl::Long dof = v_src.Dim() / (Ns ? Ns : 1) / KDIM0;
       if (NNt == Nv) {
+        sctl::StaticArray<Real,Nv> tmp_xt;
         RealVec xt[COORD_DIM], vt[KDIM1], xs[COORD_DIM], ns[COORD_DIM], vs[KDIM0];
-        for (sctl::Integer k = 0; k < COORD_DIM; k++) xt[k] = RealVec::Load(&r_trg[k*Nt]);
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+          for (sctl::Integer i = 0; i < Nt; i++) tmp_xt[i] = r_trg[k*Nt+i];
+          xt[k] = RealVec::Load(&tmp_xt[0]);
+        }
         for (sctl::Integer i = 0; i < dof; i++) {
           for (sctl::Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
           for (sctl::Long s = 0; s < Ns; s++) {

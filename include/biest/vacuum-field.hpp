@@ -61,14 +61,17 @@ namespace biest {
     std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
 
     /**
-     * Computes grad(phi) on the exterior of a toroidal surface such that
-     * grad(phi).n=BdotN on the surface. phi is represented as a layer potential
-     * phi=S[sigma] and compute the unknown sigma by solving a boundary integral
-     * equation (BIE) formulation using gmres. grad(phi) and sigma are returned.
+     * Computes Bplasma on the exterior of a toroidal surface such that
+     * Bplasma.n + Bcoil_dot_N = 0 on the surface and poloidal circulation of
+     * Bplasma equals  Jplasma. Bplasma is represented using layer potentials as
+     * grad(S[sigma]) + curl(S[J]). The surface current J is harmonic surface
+     * vector field and sigma is computed by solving a boundary integral
+     * equation (BIE) formulation using GMRES. Bplasma, sigma and J are
+     * returned.
      *
-     * @return grad(phi) and sigma on the Nt x Np grid (in row-major order).
+     * @return Bplasma, sigma and J on the Nt x Np grid (in row-major order).
      */
-    std::tuple<std::vector<Real>,std::vector<Real>> ComputeGradPhi(const std::vector<Real>& BdotN) const;
+    std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma = 0) const;
 
     private:
 
@@ -80,7 +83,8 @@ namespace biest {
     sctl::Long Nt_, Np_;
     bool verbose_;
     mutable sctl::Long quad_Nt_, quad_Np_;
-    mutable sctl::Vector<Real> normal;
+    mutable sctl::Vector<Real> normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
+    mutable sctl::Vector<Real> normal, Xp; // Nt_ * Np_
     mutable bool dosetup;
   };
 

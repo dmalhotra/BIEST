@@ -2,14 +2,17 @@
 
 namespace biest {
 
-  template <class Real> ExtVacuumField<Real>::ExtVacuumField(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), verbose_(verbose), dosetup(true) {
+  template <class Real> ExtVacuumField<Real>::ExtVacuumField(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true) {
   }
 
   template <class Real> void ExtVacuumField<Real>::Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
     bool half_period = false;
+    digits_ = digits;
+    NFP_ = NFP;
+    Nt_ = Nt;
+    Np_ = Np;
 
     dosetup = true;
-    normal.ReInit(0);
     SCTL_ASSERT(surf_Nt*surf_Np*COORD_DIM == (sctl::Long)X.size());
     if (half_period) { // upsample surf_Nt by 1
       sctl::Vector<Real> X0, X1;
@@ -21,29 +24,39 @@ namespace biest {
       Svec[0] = biest::Surface<Real>(NFP*surf_Nt, surf_Np, biest::SurfType::None);
       SurfaceOp<Real>::CompleteVecField(Svec[0].Coord(), true, half_period, NFP, surf_Nt, surf_Np, sctl::Vector<Real>(X), (Real)0);
     }
-
-    NFP_ = NFP;
-    Nt_ = Nt;
-    Np_ = Np;
-    digits_ = digits;
-  }
-
-  template <class Real> std::vector<Real> ExtVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {
-    SCTL_ASSERT((sctl::Long)B.size() == COORD_DIM * Nt_ * Np_);
-    if (!normal.Dim()) {
-      sctl::Vector<Real> XX, dX_, normal_;
+    { // Set normal_, dX_, Xt_, normal, Xp
+      sctl::Vector<Real> XX;
       SurfaceOp<Real>::Resample(XX, NFP_*Nt_, Np_, Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
 
       biest::SurfaceOp<Real> SurfOp(sctl::Comm::Self(), NFP_*Nt_, Np_);
       SurfOp.Grad2D(dX_, XX);
       SurfOp.SurfNormalAreaElem(&normal_, nullptr, dX_, &XX);
 
+      Xt_.ReInit(COORD_DIM*NFP_*Nt_*Np_);
+      Xp_.ReInit(COORD_DIM*NFP_*Nt_*Np_);
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) { // Set Xt_, Xp_
+        for (sctl::Long i = 0; i < NFP_*Nt_*Np_; i++) {
+          Xt_[k*NFP_*Nt_*Np_+i] = dX_[(k*2+0)*NFP_*Nt_*Np_+i];
+          Xp_[k*NFP_*Nt_*Np_+i] = dX_[(k*2+1)*NFP_*Nt_*Np_+i];
+        }
+      }
+
+      Xp.ReInit(COORD_DIM*Nt_*Np_);
       normal.ReInit(COORD_DIM*Nt_*Np_);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) { // Set normal
-        sctl::Vector<Real> n(Nt_*Np_, normal.begin() + k*Nt_*Np_, false);
-        n = sctl::Vector<Real>(Nt_*Np_, normal_.begin() + k*NFP_*Nt_*Np_, false);
+        for (sctl::Long i = 0; i < Nt_*Np_; i++) {
+          Xp[k*Nt_*Np_+i] = dX_[(k*2+1)*NFP_*Nt_*Np_+i];
+          normal[k*Nt_*Np_+i] = normal_[k*NFP_*Nt_*Np_+i];
+        }
       }
+
+      J0_.ReInit(0);
     }
+  }
+
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {
+    SCTL_ASSERT((sctl::Long)B.size() == COORD_DIM * Nt_ * Np_);
+
     sctl::Vector<Real> BdotN;
     DotProd(BdotN, sctl::Vector<Real>(B), normal);
 
@@ -52,10 +65,11 @@ namespace biest {
     return BdotN_;
   }
 
-  template <class Real> std::tuple<std::vector<Real>,std::vector<Real>> ExtVacuumField<Real>::ComputeGradPhi(const std::vector<Real>& BdotN) const {
+  template <class Real> std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ExtVacuumField<Real>::ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma) const {
     bool half_period_ = false;
+    const sctl::Integer max_iter = 200;
 
-    if (dosetup) {
+    if (dosetup) { // Quadrature setup
       LaplaceFxdU.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU(), digits_, NFP_*(half_period_?2:1), NFP_*(half_period_?2:1)*Nt_, Np_, Nt_, Np_);
       quad_Nt_ = LaplaceFxdU.QuadNt();
       quad_Np_ = LaplaceFxdU.QuadNp();
@@ -72,28 +86,74 @@ namespace biest {
       (*Ax) -= x*0.5;
     };
 
+    sctl::Vector<Real> Bplasma, Bplasma_dot_N;
+    Bplasma_dot_N.ReInit(Nt_ * Np_); Bplasma_dot_N = 0;
+    Bplasma.ReInit(COORD_DIM * Nt_ * Np_); Bplasma = 0;
+    if (Jplasma != 0) { // Set Bplasma, Bplasma_dot_N
+      if (J0_.Dim() == 0) { // Compute J0
+        sctl::Vector<Real> Vn, Vd, Vc;
+        SurfaceOp<Real> surf_op(sctl::Comm::Self(), NFP_*Nt_, Np_);
+        surf_op.HodgeDecomp(Vn, Vd, Vc, J0_, Xt_, dX_, normal_, sctl::pow<Real>(0.1,digits_), max_iter);
+
+        { // normalize J0
+          Real Jtor_flux = 0;
+          const sctl::Long N = NFP_*Nt_*Np_;
+          for (sctl::Long i = 0; i < N; i++) {
+            for (sctl::Integer k0 = 0; k0 < COORD_DIM; k0++) {
+              sctl::Integer k1 = (k0+1)%COORD_DIM;
+              sctl::Integer k2 = (k0+2)%COORD_DIM;
+              Jtor_flux += J0_[k0*N+i] * Xp_[k1*N+i] * normal_[k2*N+i];
+              Jtor_flux -= J0_[k0*N+i] * Xp_[k2*N+i] * normal_[k1*N+i];
+            }
+          }
+          J0_ *= (NFP_*Nt_*Np_)/Jtor_flux;
+        }
+      }
+
+      sctl::Vector<Real> J, gradG_Jk(COORD_DIM * Nt_ * Np_);
+      SurfaceOp<Real>::Resample(J, quad_Nt_, quad_Np_, J0_*Jplasma, NFP_*Nt_, Np_);
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+        gradG_Jk = 0;
+        LaplaceFxdU.Eval(gradG_Jk, sctl::Vector<Real>(quad_Nt_*quad_Np_, J.begin() + k*quad_Nt_*quad_Np_, false));
+
+        sctl::Integer k1 = (k+1)%COORD_DIM;
+        sctl::Integer k2 = (k+2)%COORD_DIM;
+        for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
+          Bplasma[k2 * Nt_*Np_ + i] += gradG_Jk[k1 * Nt_*Np_ + i] - 0.5*Jplasma * J0_[k * NFP_*Nt_*Np_ + i] * normal[k1 * Nt_*Np_ + i];
+          Bplasma[k1 * Nt_*Np_ + i] -= gradG_Jk[k2 * Nt_*Np_ + i] - 0.5*Jplasma * J0_[k * NFP_*Nt_*Np_ + i] * normal[k2 * Nt_*Np_ + i];
+        }
+      }
+
+      DotProd(Bplasma_dot_N, Bplasma, normal);
+    }
+
     sctl::Vector<Real> sigma, grad_phi;
     { // Solve for sigma
       sctl::ParallelSolver<Real> solver(sctl::Comm::Self(), verbose_);
-      solver(&sigma, LinOp, sctl::Vector<Real>(BdotN), sctl::pow<Real>(0.1,digits_), 200);
+      solver(&sigma, LinOp, sctl::Vector<Real>(Bcoil_dot_N) + Bplasma_dot_N, sctl::pow<Real>(0.1,digits_), max_iter);
     }
-    { // Compute grad_phi <-- LaplaceFxdU[sigma] - 0.5*sigma*normal
+    { // Compute Bplasma <-- Bplasma - (LaplaceFxdU[sigma] - 0.5*sigma*normal)
       sctl::Vector<Real> sigma_, sigma__;
       SurfaceOp<Real>::CompleteVecField(sigma_, false, false, NFP_, Nt_, Np_, sigma);
       SurfaceOp<Real>::Resample(sigma__, quad_Nt_, quad_Np_, sigma_, NFP_*Nt_, Np_);
       LaplaceFxdU.Eval(grad_phi, sigma__);
 
-      for (sctl::Long i = 0; i < Nt_*Np_; i++) { // grad_phi <-- grad_phi - 0.5*sigma*normal
+      for (sctl::Long i = 0; i < Nt_*Np_; i++) { // Bplasma <-- Bplasma - (grad_phi - 0.5*sigma*normal)
         for (sctl::Integer k = 0; k < COORD_DIM; k++) {
-          grad_phi[k*Nt_*Np_+i] -= 0.5*sigma[i] * normal[k*Nt_*Np_+i];
+          Bplasma[k*Nt_*Np_+i] -= grad_phi[k*Nt_*Np_+i] - 0.5*sigma[i] * normal[k*Nt_*Np_+i];
         }
       }
     }
 
-    std::vector<Real> grad_phi_(COORD_DIM * Nt_*Np_), sigma_(Nt_*Np_);
-    grad_phi_.assign(grad_phi.begin(), grad_phi.end());
+    std::vector<Real> Bplasma_(COORD_DIM * Nt_*Np_), sigma_(Nt_*Np_), Jplasma_(COORD_DIM*Nt_*Np_);
+    Bplasma_.assign(Bplasma.begin(), Bplasma.end());
     sigma_.assign(sigma.begin(), sigma.end());
-    return std::make_tuple(std::move(grad_phi_), std::move(sigma_));
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+      for (sctl::Long i = 0; i < Nt_*Np_; i++) {
+        Jplasma_[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * Jplasma;
+      }
+    }
+    return std::make_tuple(std::move(Bplasma_), std::move(sigma_), std::move(Jplasma_));
   }
 
   template <class Real> void ExtVacuumField<Real>::DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B) {

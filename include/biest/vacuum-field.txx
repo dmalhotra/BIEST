@@ -145,12 +145,15 @@ namespace biest {
       }
     }
 
-    std::vector<Real> Bplasma_(COORD_DIM * Nt_*Np_), sigma_(Nt_*Np_), Jplasma_(COORD_DIM*Nt_*Np_);
+    std::vector<Real> Bplasma_(COORD_DIM * Nt_*Np_), sigma_(Nt_*Np_), Jplasma_;
     Bplasma_.assign(Bplasma.begin(), Bplasma.end());
     sigma_.assign(sigma.begin(), sigma.end());
-    for (sctl::Integer k = 0; k < COORD_DIM; k++) {
-      for (sctl::Long i = 0; i < Nt_*Np_; i++) {
-        Jplasma_[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * Jplasma;
+    if (Jplasma != 0) {
+      Jplasma_.ReInit(COORD_DIM*Nt_*Np_);
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+        for (sctl::Long i = 0; i < Nt_*Np_; i++) {
+          Jplasma_[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * Jplasma;
+        }
       }
     }
     return std::make_tuple(std::move(Bplasma_), std::move(sigma_), std::move(Jplasma_));

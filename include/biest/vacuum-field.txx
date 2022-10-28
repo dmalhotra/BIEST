@@ -149,7 +149,7 @@ namespace biest {
     Bplasma_.assign(Bplasma.begin(), Bplasma.end());
     sigma_.assign(sigma.begin(), sigma.end());
     if (Jplasma != 0) {
-      Jplasma_.ReInit(COORD_DIM*Nt_*Np_);
+      Jplasma_.resize(COORD_DIM*Nt_*Np_);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) {
         for (sctl::Long i = 0; i < Nt_*Np_; i++) {
           Jplasma_[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * Jplasma;

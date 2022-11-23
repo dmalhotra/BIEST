@@ -484,8 +484,18 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       return ker;
     }
 
+    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM*COORD_DIM>& Fxd2U() {
+      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM*COORD_DIM> ker(GenericKerWrapperVec<COORD_DIM, KDIM0, KDIM1*COORD_DIM*COORD_DIM, uker_Fxd2U<1>, uker_Fxd2U<2>, uker_Fxd2U<3>>, 61, nullptr);
+      return ker;
+    }
+
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& DxU() {
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(GenericKerWrapperVec<COORD_DIM, KDIM0, KDIM1, uker_DxU<1>, uker_DxU<2>, uker_DxU<3>>, 20, nullptr);
+      return ker;
+    }
+
+    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& DxdU() {
+      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(GenericKerWrapperVec<COORD_DIM, KDIM0, KDIM1*COORD_DIM, uker_DxdU<1>, uker_DxdU<2>, uker_DxdU<3>>, 39, nullptr);
       return ker;
     }
 
@@ -596,7 +606,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       }
     }
 
-    template <sctl::Integer DOF> static void uker_FxU(RealVec v[KDIM1], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[KDIM1]) {
+    template <sctl::Integer DOF> static void uker_FxU(RealVec v[DOF*KDIM1], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[DOF*KDIM1]) {
       constexpr Real eps = (Real)1e-30;
       RealVec dx[COORD_DIM];
       dx[0] = xt[0] - xs[0];
@@ -608,7 +618,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       for (sctl::Integer k = 0; k < DOF; k++) v[k] += f[k] * rinv;
     }
 
-    template <sctl::Integer DOF> static void uker_FxdU(RealVec v[KDIM1*COORD_DIM], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[KDIM1]) {
+    template <sctl::Integer DOF> static void uker_FxdU(RealVec v[DOF*KDIM1*COORD_DIM], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[DOF*KDIM1]) {
       constexpr Real eps = (Real)1e-30;
       RealVec dx[COORD_DIM];
       dx[0] = xt[0] - xs[0];
@@ -623,7 +633,38 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       }
     }
 
-    template <sctl::Integer DOF> static void uker_DxU(RealVec v[KDIM1], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[KDIM1]) {
+    template <sctl::Integer DOF> static void uker_Fxd2U(RealVec v[DOF*KDIM1*COORD_DIM*COORD_DIM], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[DOF*KDIM1]) {
+      constexpr Real eps = (Real)1e-30;
+      RealVec r[COORD_DIM];
+      r[0] = xt[0] - xs[0];
+      r[1] = xt[1] - xs[1];
+      r[2] = xt[2] - xs[2];
+      const RealVec r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
+      const RealVec rinv2 = rinv * rinv;
+      const RealVec rinv3 = rinv * rinv2;
+      const RealVec rinv5 = rinv3 * rinv2;
+
+      RealVec u[9];
+      u[0+3*0] = -rinv3 + (Real)3 * r[0] * r[0] * rinv5;
+      u[1+3*0] =          (Real)3 * r[0] * r[1] * rinv5;
+      u[2+3*0] =          (Real)3 * r[0] * r[2] * rinv5;
+
+      u[0+3*1] =          (Real)3 * r[1] * r[0] * rinv5;
+      u[1+3*1] = -rinv3 + (Real)3 * r[1] * r[1] * rinv5;
+      u[2+3*1] =          (Real)3 * r[1] * r[2] * rinv5;
+
+      u[0+3*2] =          (Real)3 * r[2] * r[0] * rinv5;
+      u[1+3*2] =          (Real)3 * r[2] * r[1] * rinv5;
+      u[2+3*2] = -rinv3 + (Real)3 * r[2] * r[2] * rinv5;
+
+      for (sctl::Integer k = 0; k < DOF; k++) {
+        for (sctl::Integer i = 0; i < COORD_DIM*COORD_DIM; i++) v[k*COORD_DIM*COORD_DIM+i] += u[i] * f[k];
+      }
+    }
+
+    template <sctl::Integer DOF> static void uker_DxU(RealVec v[DOF*KDIM1], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[DOF*KDIM1]) {
       constexpr Real eps = (Real)1e-30;
       RealVec dx[COORD_DIM];
       dx[0] = xt[0] - xs[0];
@@ -636,6 +677,31 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       for (sctl::Integer k = 0; k < DOF; k++) v[k] -= f[k] * ndotr * rinv * rinv * rinv;
     }
 
+    template <sctl::Integer DOF> static void uker_DxdU(RealVec v[DOF*KDIM1*COORD_DIM], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[DOF*KDIM1]) {
+      constexpr Real eps = (Real)1e-30;
+      RealVec r[COORD_DIM];
+      r[0] = xt[0] - xs[0];
+      r[1] = xt[1] - xs[1];
+      r[2] = xt[2] - xs[2];
+      const RealVec r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+      const RealVec rdotn = r[0]*ns[0] + r[1]*ns[1] + r[2]*ns[2];
+
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
+      const RealVec rinv2 = rinv * rinv;
+      const RealVec rinv3 = rinv * rinv2;
+      const RealVec rinv5 = rinv3 * rinv2;
+
+      RealVec u[3];
+      u[0] = ns[0] * rinv3 - (Real)3*rdotn * r[0] * rinv5;
+      u[1] = ns[1] * rinv3 - (Real)3*rdotn * r[1] * rinv5;
+      u[2] = ns[2] * rinv3 - (Real)3*rdotn * r[2] * rinv5;
+
+      for (sctl::Integer k = 0; k < DOF; k++) {
+        v[k*COORD_DIM+0] -= f[k] * u[0];
+        v[k*COORD_DIM+1] -= f[k] * u[1];
+        v[k*COORD_DIM+2] -= f[k] * u[2];
+      }
+    }
 };
 
 template <class Real> class BiotSavart3D_ {
@@ -675,6 +741,11 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       return ker;
     }
 
+    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() {
+      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(GenericKerWrapperVec<COORD_DIM, KDIM0, KDIM1*COORD_DIM, Real, RealVec, uker_FxdU>, 127, nullptr);
+      return ker;
+    }
+
   private:
 
     static void uker_FxU(RealVec v[KDIM1], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[KDIM1]) {
@@ -690,6 +761,63 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       v[0] -= (f[1]*dx[2] - dx[1]*f[2]) * rinv3;
       v[1] -= (f[2]*dx[0] - dx[2]*f[0]) * rinv3;
       v[2] -= (f[0]*dx[1] - dx[0]*f[1]) * rinv3;
+    }
+
+    static void uker_FxdU(RealVec v[KDIM1*COORD_DIM], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[KDIM1]) {
+      constexpr Real eps = (Real)1e-30;
+      RealVec r[COORD_DIM];
+      r[0] = xt[0] - xs[0];
+      r[1] = xt[1] - xs[1];
+      r[2] = xt[2] - xs[2];
+      RealVec r2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+
+      const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
+      RealVec rinv2 = rinv * rinv;
+      RealVec rinv3 = rinv2 * rinv;
+      RealVec rinv5 = rinv2 * rinv3;
+
+      RealVec u[3][9];
+      u[0][0] =                                      0; u[1][0] =        + (Real)3 * r[2] * r[0] * rinv5; u[2][0] =        - (Real)3 * r[1] * r[0] * rinv5;
+      u[0][1] =                                      0; u[1][1] =        + (Real)3 * r[2] * r[1] * rinv5; u[2][1] =  rinv3 - (Real)3 * r[1] * r[1] * rinv5;
+      u[0][2] =                                      0; u[1][2] = -rinv3 + (Real)3 * r[2] * r[2] * rinv5; u[2][2] =        - (Real)3 * r[1] * r[2] * rinv5;
+
+      u[0][3] =        - (Real)3 * r[2] * r[0] * rinv5; u[1][3] =                                      0; u[2][3] = -rinv3 + (Real)3 * r[0] * r[0] * rinv5;
+      u[0][4] =        - (Real)3 * r[2] * r[1] * rinv5; u[1][4] =                                      0; u[2][4] =        + (Real)3 * r[0] * r[1] * rinv5;
+      u[0][5] =  rinv3 - (Real)3 * r[2] * r[2] * rinv5; u[1][5] =                                      0; u[2][5] =        + (Real)3 * r[0] * r[2] * rinv5;
+
+      u[0][6] =        + (Real)3 * r[1] * r[0] * rinv5; u[1][6] =  rinv3 - (Real)3 * r[0] * r[0] * rinv5; u[2][6] =                                      0;
+      u[0][7] = -rinv3 + (Real)3 * r[1] * r[1] * rinv5; u[1][7] =        - (Real)3 * r[0] * r[1] * rinv5; u[2][7] =                                      0;
+      u[0][8] =        + (Real)3 * r[1] * r[2] * rinv5; u[1][8] =        - (Real)3 * r[0] * r[2] * rinv5; u[2][8] =                                      0;
+
+      v[0] += u[0][0] * f[0];
+      v[1] += u[0][1] * f[0];
+      v[2] += u[0][2] * f[0];
+      v[3] += u[0][3] * f[0];
+      v[4] += u[0][4] * f[0];
+      v[5] += u[0][5] * f[0];
+      v[6] += u[0][6] * f[0];
+      v[7] += u[0][7] * f[0];
+      v[8] += u[0][8] * f[0];
+
+      v[0] += u[1][0] * f[1];
+      v[1] += u[1][1] * f[1];
+      v[2] += u[1][2] * f[1];
+      v[3] += u[1][3] * f[1];
+      v[4] += u[1][4] * f[1];
+      v[5] += u[1][5] * f[1];
+      v[6] += u[1][6] * f[1];
+      v[7] += u[1][7] * f[1];
+      v[8] += u[1][8] * f[1];
+
+      v[0] += u[2][0] * f[2];
+      v[1] += u[2][1] * f[2];
+      v[2] += u[2][2] * f[2];
+      v[3] += u[2][3] * f[2];
+      v[4] += u[2][4] * f[2];
+      v[5] += u[2][5] * f[2];
+      v[6] += u[2][6] * f[2];
+      v[7] += u[2][7] * f[2];
+      v[8] += u[2][8] * f[2];
     }
 };
 

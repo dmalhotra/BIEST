@@ -7,11 +7,11 @@
 
 namespace biest {
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> class SingularCorrection {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder = 1> class SingularCorrection {
     static constexpr sctl::Integer COORD_DIM = 3;
     static constexpr sctl::Integer PATCH_DIM = 2 * PATCH_DIM0 + 1; // <= 55 (odd)
-    //static constexpr sctl::Integer RAD_DIM = 18; // <= 18
-    static constexpr sctl::Integer ANG_DIM = 2 * RAD_DIM; // <= 39
+    static constexpr sctl::Integer RAD_DIM = (HedgehogOrder > 1 ? RAD_DIM_ * 3 : RAD_DIM_);
+    static constexpr sctl::Integer ANG_DIM = 2 * RAD_DIM_; // <= 39
     static constexpr sctl::Integer INTERP_ORDER = 12;
     static constexpr sctl::Integer Ngrid = PATCH_DIM * PATCH_DIM;
     static constexpr sctl::Integer Npolar = RAD_DIM * ANG_DIM;
@@ -26,7 +26,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
 
     SingularCorrection() { InitPrecomp(); }
 
-    void Setup(sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buffer);
+    void Setup(sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, sctl::Vector<Real>& work_buffer);
 
     void operator()(const sctl::Vector<Real>& SrcDensity, sctl::Vector<Real>& Potential) const;
 
@@ -40,14 +40,14 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
     sctl::Long TRG_SKIP, Nt, Np, t, p, trg_idx, Ntrg;
 };
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::qx;
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::qw;
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Gpou_;
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Ppou_;
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::M_G2P;
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> std::vector<sctl::Integer> SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::I_G2P;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::qx;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::qw;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Gpou_;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Ppou_;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::M_G2P;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<sctl::Integer> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::I_G2P;
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::InitPrecomp() {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::InitPrecomp() {
   if (!qx.size()) { // Set qx, qw
     sctl::Integer order = RAD_DIM;
     std::vector<Real> qx_(order);
@@ -56,6 +56,13 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
       sctl::Vector<Real> qx__(qx_.size(), sctl::Ptr2Itr<Real>(qx_.data(), qx_.size()), false);
       sctl::Vector<Real> qw__(qw_.size(), sctl::Ptr2Itr<Real>(qw_.data(), qw_.size()), false);
       sctl::ChebBasis<Real>::quad_rule(order, qx__, qw__);
+
+      if (HedgehogOrder > 1) {
+        for (long i = 0; i < qx__.Dim(); i++) {
+          qw__[i] *= (Real)2 * qx__[i];
+          qx__[i] = qx__[i] * qx__[i];
+        }
+      }
     } else { // Trapezoidal rule (does not work for Helmholtz imaginary part)
       for (sctl::Long i = 0; i < order; i++) {
         qx_[i] = (2 * i + 1) / (Real)(2 * order);
@@ -176,7 +183,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
   }
 }
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_scal, sctl::Vector<Real>& work_buff) {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, sctl::Vector<Real>& work_buff) {
   TRG_SKIP = TRG_SKIP_;
   Nt = SrcNTor;
   Np = SrcNPol;
@@ -185,6 +192,9 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
 
   trg_idx = trg_idx_;
   Ntrg = Ntrg_;
+
+  Real invNt = 1 / (Real)Nt;
+  Real invNp = 1 / (Real)Np;
 
   assert(KDIM0 == ker.Dim(0));
   assert(KDIM1 == ker.Dim(1));
@@ -218,27 +228,65 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
     TrgCoord[k] = SrcCoord[(k * Nt + t) * Np + p];
   }
 
+  constexpr sctl::Integer Ntrg = (HedgehogOrder > 1 ? HedgehogOrder : 1);
+  sctl::StaticArray<Real, COORD_DIM*Ntrg> TrgCoordPolar_;
+  sctl::StaticArray<Real, Ntrg> TrgWts;
+  sctl::Vector<Real> TrgCoordPolar;
+  if (Ntrg > 1) {
+    Real interp_nds[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+
+    Real n[COORD_DIM];
+    const sctl::Long N = Nt * Np;
+    const sctl::Long offset = t * Np + p;
+    n[0] = SrcGrad[2 * N + offset] * SrcGrad[5 * N + offset] - SrcGrad[3 * N + offset] * SrcGrad[4 * N + offset];
+    n[1] = SrcGrad[4 * N + offset] * SrcGrad[1 * N + offset] - SrcGrad[5 * N + offset] * SrcGrad[0 * N + offset];
+    n[2] = SrcGrad[0 * N + offset] * SrcGrad[3 * N + offset] - SrcGrad[1 * N + offset] * SrcGrad[2 * N + offset];
+    Real r = sctl::sqrt<Real>(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+
+    Real scal = sctl::sqrt<Real>(r * invNt * invNp) * normal_orient / r * -20.0/RAD_DIM;
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) n[k] *= scal;
+
+    TrgCoordPolar.ReInit(COORD_DIM*Ntrg, TrgCoordPolar_, false);
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+      for (sctl::Integer i = 0; i < Ntrg; i++) {
+        TrgCoordPolar[k*Ntrg+i] = TrgCoord[k] + interp_nds[i]*n[k];
+      }
+    }
+
+    for (sctl::Integer k = 0; k < Ntrg; k++) { // Set TrgWts // TODO: precompute
+      Real Pn = 1, Pd = 1;
+      for (sctl::Integer i = 0; i < Ntrg; i++) {
+        if (i != k) {
+          Pn *= (interp_nds[i]);
+          Pd *= (interp_nds[i]-interp_nds[k]);
+        }
+      }
+      TrgWts[k] = Pn/Pd;
+    }
+  } else {
+    TrgCoordPolar.ReInit(COORD_DIM, TrgCoord.begin(), false);
+    TrgWts[0] = (Real)1;
+  }
+
   SetPatch(G , t, p, SrcCoord     , Nt, Np);
   SetPatch(Gg, t, p, SrcGrad      , Nt, Np);
 
-  Real invNt = 1 / (Real)Nt;
-  Real invNp = 1 / (Real)Np;
   for (sctl::Integer i = 0; i < Ngrid; i++) {
-     Real n0 = Gg[2 * Ngrid + i] * Gg[5 * Ngrid + i] - Gg[3 * Ngrid + i] * Gg[4 * Ngrid + i];
-     Real n1 = Gg[4 * Ngrid + i] * Gg[1 * Ngrid + i] - Gg[5 * Ngrid + i] * Gg[0 * Ngrid + i];
-     Real n2 = Gg[0 * Ngrid + i] * Gg[3 * Ngrid + i] - Gg[1 * Ngrid + i] * Gg[2 * Ngrid + i];
-     Real r = sqrt(n0 * n0 + n1 * n1 + n2 * n2);
-     Real inv_r = 1 / r;
-     Gn[0 * Ngrid + i] = n0 * inv_r * normal_scal;
-     Gn[1 * Ngrid + i] = n1 * inv_r * normal_scal;
-     Gn[2 * Ngrid + i] = n2 * inv_r * normal_scal;
-     Ga[i] = r * invNt * invNp;
-     Gg[0 * Ngrid + i] *= invNt;
-     Gg[2 * Ngrid + i] *= invNt;
-     Gg[4 * Ngrid + i] *= invNt;
-     Gg[1 * Ngrid + i] *= invNp;
-     Gg[3 * Ngrid + i] *= invNp;
-     Gg[5 * Ngrid + i] *= invNp;
+    Real n0 = Gg[2 * Ngrid + i] * Gg[5 * Ngrid + i] - Gg[3 * Ngrid + i] * Gg[4 * Ngrid + i];
+    Real n1 = Gg[4 * Ngrid + i] * Gg[1 * Ngrid + i] - Gg[5 * Ngrid + i] * Gg[0 * Ngrid + i];
+    Real n2 = Gg[0 * Ngrid + i] * Gg[3 * Ngrid + i] - Gg[1 * Ngrid + i] * Gg[2 * Ngrid + i];
+    Real r = sqrt(n0 * n0 + n1 * n1 + n2 * n2);
+    Real inv_r = 1 / r;
+    Gn[0 * Ngrid + i] = n0 * inv_r * normal_orient;
+    Gn[1 * Ngrid + i] = n1 * inv_r * normal_orient;
+    Gn[2 * Ngrid + i] = n2 * inv_r * normal_orient;
+    Ga[i] = r * invNt * invNp;
+    Gg[0 * Ngrid + i] *= invNt;
+    Gg[2 * Ngrid + i] *= invNt;
+    Gg[4 * Ngrid + i] *= invNt;
+    Gg[1 * Ngrid + i] *= invNp;
+    Gg[3 * Ngrid + i] *= invNp;
+    Gg[5 * Ngrid + i] *= invNp;
   }
 
   { // Lagrange interpolation
@@ -295,9 +343,9 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
        n0 /= r;
        n1 /= r;
        n2 /= r;
-       Pn[0 * Npolar + i] = n0 * normal_scal;
-       Pn[1 * Npolar + i] = n1 * normal_scal;
-       Pn[2 * Npolar + i] = n2 * normal_scal;
+       Pn[0 * Npolar + i] = n0 * normal_orient;
+       Pn[1 * Npolar + i] = n1 * normal_orient;
+       Pn[2 * Npolar + i] = n2 * normal_orient;
        Pa[i] = r;
     }
   }
@@ -318,13 +366,13 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
       #endif
     }
     { // Add singular part to U
-      sctl::Matrix<Real> MPolar(KDIM0 * Npolar, KDIM1);
+      sctl::Matrix<Real> MPolar(KDIM0 * Npolar, KDIM1 * Ntrg); // TODO: Static allocation?
 
-      ker.BuildMatrix(P, Pn, TrgCoord, MPolar); // MPolar <-- ker(P, Pn, TrgCoord)
+      ker.BuildMatrix(P, Pn, TrgCoordPolar, MPolar); // MPolar <-- ker(P, Pn, TrgCoordPolar)
       for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) { // MPolar <-- Mpolar * Pa * Ppou
-        for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
+        for (sctl::Integer j = 0; j < KDIM1*Ntrg; j++) {
           for (sctl::Integer i = 0; i < Npolar; i++) {
-            MPolar[k0 * Npolar + i][k1] *= Pa[i] * Ppou_[i];
+            MPolar[k0 * Npolar + i][j] *= Pa[i] * Ppou_[i];
           }
         }
       }
@@ -338,7 +386,9 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
             sctl::Iterator<Real> MGrid__ = MGrid_ + (i0 * PATCH_DIM + i1) * KDIM1;
             for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) {
               for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
-                MGrid__[k0 * Ngrid * KDIM1 + k1] += M_G2P__ * MPolar_[k0 * Npolar * KDIM1 + k1];
+                for (sctl::Integer l = 0; l < Ntrg; l++) {
+                  MGrid__[k0 * Ngrid * KDIM1 + k1] += M_G2P__ * MPolar_[(k0 * Npolar * KDIM1 + k1) * Ntrg + l] * TrgWts[l];
+                }
               }
             }
           }
@@ -348,7 +398,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
   }
 }
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::operator()(const sctl::Vector<Real>& SrcDensity, sctl::Vector<Real>& Potential) const {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::operator()(const sctl::Vector<Real>& SrcDensity, sctl::Vector<Real>& Potential) const {
   sctl::StaticArray<Real, KDIM0*Ngrid> GF_;
   sctl::Vector<Real> GF(KDIM0 * Ngrid, GF_, false);
   SetPatch(GF, t, p, SrcDensity, Nt, Np);
@@ -365,7 +415,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Int
   }
 }
 
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>::SetPatch(sctl::Vector<Real>& out, sctl::Long t0, sctl::Long p0, const sctl::Vector<Real>& in, sctl::Long Nt, sctl::Long Np) const {
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::SetPatch(sctl::Vector<Real>& out, sctl::Long t0, sctl::Long p0, const sctl::Vector<Real>& in, sctl::Long Nt, sctl::Long Np) const {
   SCTL_ASSERT(Nt >= PATCH_DIM);
   SCTL_ASSERT(Np >= PATCH_DIM);
 

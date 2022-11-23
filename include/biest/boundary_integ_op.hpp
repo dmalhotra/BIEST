@@ -23,7 +23,7 @@ namespace biest {
  * @tparam RAD_DIM the order of the polar quadrature rule. Radial dimension is
  * RAD_DIM and angular dimension is 2*RAD_DIM
  */
-template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 25, sctl::Integer RAD_DIM = 18> class BoundaryIntegralOp {
+template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 25, sctl::Integer RAD_DIM = 18, sctl::Integer HedgehogOrder = 1> class BoundaryIntegralOp {
     static constexpr sctl::Integer COORD_DIM = 3;
 
   public:
@@ -98,9 +98,9 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>* ker_ptr;
 
     sctl::StaticArray<sctl::Long,2> dim;
-    sctl::Vector<Real> normal_scal;
+    sctl::Vector<Real> normal_orient;
     sctl::Vector<sctl::Vector<Real>> Xtrg, Xsrc, dXsrc, Xn_src, Xa_src;
-    sctl::Vector<sctl::Vector<SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1>>> singular_correction;
+    sctl::Vector<sctl::Vector<SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1,HedgehogOrder>>> singular_correction;
     sctl::Vector<sctl::Vector<sctl::Long>> trg_idx;
 };
 
@@ -113,7 +113,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
  *
  * @tparam KDIM1 degrees-of-freedom of the potential per target point.
  */
-template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> class FieldPeriodBIOp {
+template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
   public:
 
     explicit FieldPeriodBIOp(const sctl::Comm& comm = sctl::Comm::Self());

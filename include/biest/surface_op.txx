@@ -190,20 +190,20 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
     }
   }
 
-  Real normal_scal = 0;
+  Real normal_orient = 0;
   if (X != nullptr && normal != nullptr) { // Set Orientation
     sctl::Long idx = 0;
     for (sctl::Long j = 0; j < Nt_*Np_; j++) {
       if ((*X)[idx] < (*X)[j]) idx = j;
     }
     if ((*normal)[idx] < 0) {
-      normal_scal = -1;
-      (*normal) = (*normal) * normal_scal;
+      normal_orient = -1;
+      (*normal) = (*normal) * normal_orient;
     } else {
-      normal_scal = 1;
+      normal_orient = 1;
     }
   }
-  return normal_scal;
+  return normal_orient;
 }
 
 template <class Real> void SurfaceOp<Real>::SurfCurl(sctl::Vector<Real>& CurlF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, const sctl::Vector<Real>& F) const {
@@ -530,7 +530,7 @@ template <class Real> template <sctl::Integer KDIM0, sctl::Integer KDIM1> void S
   }
 }
 
-template <class Real> template <class SingularCorrection, class Kernel> void SurfaceOp<Real>::SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, const Real normal_scal, const sctl::Vector<sctl::Long>& trg_idx) const {
+template <class Real> template <class SingularCorrection, class Kernel> void SurfaceOp<Real>::SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, const Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) const {
   const sctl::Long np = comm_.Size();
   const sctl::Long rank = comm_.Rank();
   const sctl::Long Ntrg = trg_idx.Dim();
@@ -550,7 +550,7 @@ template <class Real> template <class SingularCorrection, class Kernel> void Sur
     for (sctl::Long i = a_; i < b_; i++) {
       const sctl::Long t = (trg_idx[i] / Np0) * TRG_SKIP;
       const sctl::Long p = (trg_idx[i] % Np0) * TRG_SKIP;
-      singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, i, trg_idx.Dim(), ker, normal_scal, work_buff[tid]);
+      singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, i, trg_idx.Dim(), ker, normal_orient, work_buff[tid]);
     }
   }
 }

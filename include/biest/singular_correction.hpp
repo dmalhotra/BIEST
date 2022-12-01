@@ -15,12 +15,17 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     static constexpr sctl::Integer INTERP_ORDER = 12;
     static constexpr sctl::Integer Ngrid = PATCH_DIM * PATCH_DIM;
     static constexpr sctl::Integer Npolar = RAD_DIM * ANG_DIM;
+    static constexpr sctl::Integer HedgehogOrder_ = (HedgehogOrder > 1 ? HedgehogOrder : 1);
     static_assert(INTERP_ORDER <= PATCH_DIM, "Must have INTERP_ORDER <= PATCH_DIM");
+
+    using Vec = sctl::Vec<Real>;
+    static constexpr sctl::Integer VecLen = Vec::Size();
 
     static std::vector<Real> qx, qw;
     static std::vector<Real> Gpou_, Ppou_;
     static std::vector<sctl::Integer> I_G2P;
     static std::vector<Real> M_G2P;
+    static std::vector<Real> HedgehogWts_;
 
   public:
 
@@ -45,6 +50,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Gpou_;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Ppou_;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::M_G2P;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::HedgehogWts_;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> std::vector<sctl::Integer> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::I_G2P;
 
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::InitPrecomp() {
@@ -131,7 +137,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
   }
   if (!I_G2P.size()) { // Set I_G2P, M_G2P
     std::vector<sctl::Integer> I_G2P__(Npolar);
-    std::vector<Real> M_G2P__(Npolar * INTERP_ORDER * INTERP_ORDER);
+    std::vector<Real> M_G2P__(Npolar * INTERP_ORDER * INTERP_ORDER + VecLen);
     sctl::Vector<sctl::Integer> I_G2P_(I_G2P__.size(), sctl::Ptr2Itr<sctl::Integer>(I_G2P__.data(), I_G2P__.size()), false);
     sctl::Vector<Real> M_G2P_(M_G2P__.size(), sctl::Ptr2Itr<Real>(M_G2P__.data(), M_G2P__.size()), false);
 
@@ -181,6 +187,28 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
       M_G2P.swap(M_G2P__);
     }
   }
+  if (!HedgehogWts_.size()) { // Set HedgehogWts_
+    std::vector<Real> HedgehogWts(HedgehogOrder_);
+    if (HedgehogOrder_ > 1) {
+      constexpr Real interp_nds[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+      for (sctl::Integer k = 0; k < HedgehogOrder_; k++) {
+        Real Pn = 1, Pd = 1;
+        for (sctl::Integer i = 0; i < HedgehogOrder_; i++) {
+          if (i != k) {
+            Pn *= (interp_nds[i]);
+            Pd *= (interp_nds[i]-interp_nds[k]);
+          }
+        }
+        HedgehogWts[k] = Pn/Pd;
+      }
+    } else {
+      HedgehogWts[0] = (Real)1;
+    }
+    #pragma omp critical (SingularCorrection_InitPrecomp)
+    if (!HedgehogWts_.size()) {
+      HedgehogWts_.swap(HedgehogWts);
+    }
+  }
 }
 
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Setup(sctl::Integer TRG_SKIP_, sctl::Long SrcNTor, sctl::Long SrcNPol, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, sctl::Long t_, sctl::Long p_, sctl::Long trg_idx_, sctl::Long Ntrg_, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, sctl::Vector<Real>& work_buff) {
@@ -200,7 +228,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
   assert(KDIM1 == ker.Dim(1));
   sctl::Matrix<Real> MGrid(KDIM0 * Ngrid, KDIM1, MGrid_, false);
 
-  sctl::Long Nbuff = (Ngrid+Npolar)*(COORD_DIM*4+1);
+  sctl::Long Nbuff = (Ngrid+VecLen+Npolar)*(COORD_DIM*4+1) + KDIM0*Npolar*KDIM1*HedgehogOrder_;
   if (work_buff.Dim() < Nbuff) work_buff.ReInit(Nbuff);
   //sctl::StaticArray<Real,    COORD_DIM * Ngrid> G_ ;
   //sctl::StaticArray<Real,2 * COORD_DIM * Ngrid> Gg_;
@@ -212,15 +240,15 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
   //sctl::StaticArray<Real,    COORD_DIM * Npolar> Pn_;
   //sctl::StaticArray<Real,                Npolar> Pa_;
 
-  sctl::Vector<Real> G (    COORD_DIM * Ngrid, work_buff.begin() + Ngrid*COORD_DIM*0, false);
-  sctl::Vector<Real> Gg(2 * COORD_DIM * Ngrid, work_buff.begin() + Ngrid*COORD_DIM*1, false);
-  sctl::Vector<Real> Gn(    COORD_DIM * Ngrid, work_buff.begin() + Ngrid*COORD_DIM*3, false);
-  sctl::Vector<Real> Ga(                Ngrid, work_buff.begin() + Ngrid*COORD_DIM*4, false);
+  sctl::Vector<Real> G (    COORD_DIM * Ngrid, work_buff.begin() + (Ngrid+VecLen)*COORD_DIM*0, false);
+  sctl::Vector<Real> Gg(2 * COORD_DIM * Ngrid, work_buff.begin() + (Ngrid+VecLen)*COORD_DIM*1, false);
+  sctl::Vector<Real> Gn(    COORD_DIM * Ngrid, work_buff.begin() + (Ngrid+VecLen)*COORD_DIM*3, false);
+  sctl::Vector<Real> Ga(                Ngrid, work_buff.begin() + (Ngrid+VecLen)*COORD_DIM*4, false);
 
-  sctl::Vector<Real> P (    COORD_DIM * Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*0, false);
-  sctl::Vector<Real> Pg(2 * COORD_DIM * Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*1, false);
-  sctl::Vector<Real> Pn(    COORD_DIM * Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*3, false);
-  sctl::Vector<Real> Pa(                Npolar, work_buff.begin() + Ngrid*(COORD_DIM*4+1) + Npolar*COORD_DIM*4, false);
+  sctl::Vector<Real> P (    COORD_DIM * Npolar, work_buff.begin() + (Ngrid+VecLen)*(COORD_DIM*4+1) + Npolar*COORD_DIM*0, false);
+  sctl::Vector<Real> Pg(2 * COORD_DIM * Npolar, work_buff.begin() + (Ngrid+VecLen)*(COORD_DIM*4+1) + Npolar*COORD_DIM*1, false);
+  sctl::Vector<Real> Pn(    COORD_DIM * Npolar, work_buff.begin() + (Ngrid+VecLen)*(COORD_DIM*4+1) + Npolar*COORD_DIM*3, false);
+  sctl::Vector<Real> Pa(                Npolar, work_buff.begin() + (Ngrid+VecLen)*(COORD_DIM*4+1) + Npolar*COORD_DIM*4, false);
 
   sctl::StaticArray<Real, COORD_DIM> TrgCoord_;
   sctl::Vector<Real> TrgCoord(COORD_DIM, TrgCoord_, false);
@@ -228,12 +256,10 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     TrgCoord[k] = SrcCoord[(k * Nt + t) * Np + p];
   }
 
-  constexpr sctl::Integer Ntrg = (HedgehogOrder > 1 ? HedgehogOrder : 1);
-  sctl::StaticArray<Real, COORD_DIM*Ntrg> TrgCoordPolar_;
-  sctl::StaticArray<Real, Ntrg> TrgWts;
+  sctl::StaticArray<Real, COORD_DIM*HedgehogOrder_> TrgCoordPolar_;
   sctl::Vector<Real> TrgCoordPolar;
-  if (Ntrg > 1) {
-    Real interp_nds[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
+  if (HedgehogOrder_ > 1) {
+    constexpr Real interp_nds[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
 
     Real n[COORD_DIM];
     const sctl::Long N = Nt * Np;
@@ -243,29 +269,17 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     n[2] = SrcGrad[0 * N + offset] * SrcGrad[3 * N + offset] - SrcGrad[1 * N + offset] * SrcGrad[2 * N + offset];
     Real r = sctl::sqrt<Real>(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
 
-    Real scal = sctl::sqrt<Real>(r * invNt * invNp) * normal_orient / r * -20.0/RAD_DIM;
+    Real scal = sctl::sqrt<Real>(r * invNt * invNp) * normal_orient / r * (-20.0/RAD_DIM);
     for (sctl::Integer k = 0; k < COORD_DIM; k++) n[k] *= scal;
 
-    TrgCoordPolar.ReInit(COORD_DIM*Ntrg, TrgCoordPolar_, false);
+    TrgCoordPolar.ReInit(COORD_DIM*HedgehogOrder_, TrgCoordPolar_, false);
     for (sctl::Integer k = 0; k < COORD_DIM; k++) {
-      for (sctl::Integer i = 0; i < Ntrg; i++) {
-        TrgCoordPolar[k*Ntrg+i] = TrgCoord[k] + interp_nds[i]*n[k];
+      for (sctl::Integer i = 0; i < HedgehogOrder_; i++) {
+        TrgCoordPolar[k*HedgehogOrder_+i] = TrgCoord[k] + interp_nds[i]*n[k];
       }
-    }
-
-    for (sctl::Integer k = 0; k < Ntrg; k++) { // Set TrgWts // TODO: precompute
-      Real Pn = 1, Pd = 1;
-      for (sctl::Integer i = 0; i < Ntrg; i++) {
-        if (i != k) {
-          Pn *= (interp_nds[i]);
-          Pd *= (interp_nds[i]-interp_nds[k]);
-        }
-      }
-      TrgWts[k] = Pn/Pd;
     }
   } else {
     TrgCoordPolar.ReInit(COORD_DIM, TrgCoord.begin(), false);
-    TrgWts[0] = (Real)1;
   }
 
   SetPatch(G , t, p, SrcCoord     , Nt, Np);
@@ -295,38 +309,30 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
       SCTL_ASSERT(Vin.Dim() == dof * Ngrid);
       SCTL_ASSERT(Vout.Dim() == dof * Npolar);
       Vout.SetZero();
-      for (sctl::Integer k = 0; k < dof; k++) {
-        for (sctl::Integer j = 0; j < Npolar; j++) {
+      for (sctl::Integer j = 0; j < Npolar; j++) {
+        sctl::ConstIterator<Real> M_ = sctl::Ptr2ConstItr<Real>(M.data(), M.size()) + j * INTERP_ORDER * INTERP_ORDER;
+        for (sctl::Integer k = 0; k < dof; k++) {
           Real tmp = 0;
-          sctl::ConstIterator<Real> M_ = sctl::Ptr2ConstItr<Real>(M.data(), M.size()) + j * INTERP_ORDER * INTERP_ORDER;
           sctl::ConstIterator<Real> Vin_ = Vin.begin() + k * Ngrid + I_G2P[j];
-          if (1) {
+          if (1) { // Vectorized
+            constexpr sctl::Integer Ntmp = (INTERP_ORDER+VecLen-1)/VecLen;
+
+            Vec Vtmp[Ntmp];
+            for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) Vtmp[i1] = Vec::Zero();
+            for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
+              for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) {
+                Vtmp[i1] = FMA(Vec::Load(M_ + i0 * INTERP_ORDER + i1 * VecLen), Vec::Load(Vin_ + i0 * PATCH_DIM + i1 * VecLen), Vtmp[i1]);
+              }
+            }
+            alignas(VecLen*sizeof(Real)) Real tmp_[Ntmp * VecLen];
+            for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) Vtmp[i1].StoreAligned(tmp_ + i1*VecLen);
+            for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) tmp += tmp_[i1];
+          } else {
             for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
               for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) {
                 tmp += M_[i0 * INTERP_ORDER + i1] * Vin_[i0 * PATCH_DIM + i1];
               }
             }
-          }
-          if (0 && PATCH_DIM == 4) {
-            tmp += M_[ 0] * Vin_[0*PATCH_DIM+0];
-            tmp += M_[ 1] * Vin_[0*PATCH_DIM+1];
-            tmp += M_[ 2] * Vin_[0*PATCH_DIM+2];
-            tmp += M_[ 3] * Vin_[0*PATCH_DIM+3];
-
-            tmp += M_[ 4] * Vin_[1*PATCH_DIM+0];
-            tmp += M_[ 5] * Vin_[1*PATCH_DIM+1];
-            tmp += M_[ 6] * Vin_[1*PATCH_DIM+2];
-            tmp += M_[ 7] * Vin_[1*PATCH_DIM+3];
-
-            tmp += M_[ 8] * Vin_[2*PATCH_DIM+0];
-            tmp += M_[ 9] * Vin_[2*PATCH_DIM+1];
-            tmp += M_[10] * Vin_[2*PATCH_DIM+2];
-            tmp += M_[11] * Vin_[2*PATCH_DIM+3];
-
-            tmp += M_[12] * Vin_[3*PATCH_DIM+0];
-            tmp += M_[13] * Vin_[3*PATCH_DIM+1];
-            tmp += M_[14] * Vin_[3*PATCH_DIM+2];
-            tmp += M_[15] * Vin_[3*PATCH_DIM+3];
           }
           Vout[k * Npolar + j] = tmp;
         }
@@ -366,11 +372,11 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
       #endif
     }
     { // Add singular part to U
-      sctl::Matrix<Real> MPolar(KDIM0 * Npolar, KDIM1 * Ntrg); // TODO: Static allocation?
+      sctl::Matrix<Real> MPolar(KDIM0 * Npolar, KDIM1 * HedgehogOrder_, work_buff.begin() + (Ngrid+VecLen+Npolar)*(COORD_DIM*4+1), false);
 
       ker.BuildMatrix(P, Pn, TrgCoordPolar, MPolar); // MPolar <-- ker(P, Pn, TrgCoordPolar)
       for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) { // MPolar <-- Mpolar * Pa * Ppou
-        for (sctl::Integer j = 0; j < KDIM1*Ntrg; j++) {
+        for (sctl::Integer j = 0; j < KDIM1*HedgehogOrder_; j++) {
           for (sctl::Integer i = 0; i < Npolar; i++) {
             MPolar[k0 * Npolar + i][j] *= Pa[i] * Ppou_[i];
           }
@@ -386,8 +392,8 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
             sctl::Iterator<Real> MGrid__ = MGrid_ + (i0 * PATCH_DIM + i1) * KDIM1;
             for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) {
               for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
-                for (sctl::Integer l = 0; l < Ntrg; l++) {
-                  MGrid__[k0 * Ngrid * KDIM1 + k1] += M_G2P__ * MPolar_[(k0 * Npolar * KDIM1 + k1) * Ntrg + l] * TrgWts[l];
+                for (sctl::Integer l = 0; l < HedgehogOrder_; l++) {
+                  MGrid__[k0 * Ngrid * KDIM1 + k1] += M_G2P__ * MPolar_[(k0 * Npolar * KDIM1 + k1) * HedgehogOrder_ + l] * HedgehogWts_[l];
                 }
               }
             }

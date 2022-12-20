@@ -723,9 +723,9 @@ template <class Real> class BiotSavart3D_ {
       Real r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
       Real invr = (r > eps ? 1 / r : 0);
       Real ker_term0 = invr * invr * invr * scal;
-      v[0] -= (f[1]*x[2] - x[1]*f[2]) * ker_term0;
-      v[1] -= (f[2]*x[0] - x[2]*f[0]) * ker_term0;
-      v[2] -= (f[0]*x[1] - x[0]*f[1]) * ker_term0;
+      v[0] += (f[1]*x[2] - x[1]*f[2]) * ker_term0;
+      v[1] += (f[2]*x[0] - x[2]*f[0]) * ker_term0;
+      v[2] += (f[0]*x[1] - x[0]*f[1]) * ker_term0;
     }
 };
 template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class BiotSavart3D {
@@ -758,9 +758,9 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
 
       const RealVec rinv = sctl::approx_rsqrt<ORDER>(r2, r2 > eps);
       RealVec rinv3 = rinv * rinv * rinv;
-      v[0] -= (f[1]*dx[2] - dx[1]*f[2]) * rinv3;
-      v[1] -= (f[2]*dx[0] - dx[2]*f[0]) * rinv3;
-      v[2] -= (f[0]*dx[1] - dx[0]*f[1]) * rinv3;
+      v[0] += (f[1]*dx[2] - dx[1]*f[2]) * rinv3;
+      v[1] += (f[2]*dx[0] - dx[2]*f[0]) * rinv3;
+      v[2] += (f[0]*dx[1] - dx[0]*f[1]) * rinv3;
     }
 
     static void uker_FxdU(RealVec v[KDIM1*COORD_DIM], const RealVec xt[COORD_DIM], const RealVec xs[COORD_DIM], const RealVec ns[COORD_DIM], const RealVec f[KDIM1]) {
@@ -789,35 +789,35 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       u[0][7] = -rinv3 + (Real)3 * r[1] * r[1] * rinv5; u[1][7] =        - (Real)3 * r[0] * r[1] * rinv5; u[2][7] =                                      0;
       u[0][8] =        + (Real)3 * r[1] * r[2] * rinv5; u[1][8] =        - (Real)3 * r[0] * r[2] * rinv5; u[2][8] =                                      0;
 
-      v[0] += u[0][0] * f[0];
-      v[1] += u[0][1] * f[0];
-      v[2] += u[0][2] * f[0];
-      v[3] += u[0][3] * f[0];
-      v[4] += u[0][4] * f[0];
-      v[5] += u[0][5] * f[0];
-      v[6] += u[0][6] * f[0];
-      v[7] += u[0][7] * f[0];
-      v[8] += u[0][8] * f[0];
+      v[0] += -u[0][0] * f[0];
+      v[1] += -u[0][1] * f[0];
+      v[2] += -u[0][2] * f[0];
+      v[3] += -u[0][3] * f[0];
+      v[4] += -u[0][4] * f[0];
+      v[5] += -u[0][5] * f[0];
+      v[6] += -u[0][6] * f[0];
+      v[7] += -u[0][7] * f[0];
+      v[8] += -u[0][8] * f[0];
 
-      v[0] += u[1][0] * f[1];
-      v[1] += u[1][1] * f[1];
-      v[2] += u[1][2] * f[1];
-      v[3] += u[1][3] * f[1];
-      v[4] += u[1][4] * f[1];
-      v[5] += u[1][5] * f[1];
-      v[6] += u[1][6] * f[1];
-      v[7] += u[1][7] * f[1];
-      v[8] += u[1][8] * f[1];
+      v[0] += -u[1][0] * f[1];
+      v[1] += -u[1][1] * f[1];
+      v[2] += -u[1][2] * f[1];
+      v[3] += -u[1][3] * f[1];
+      v[4] += -u[1][4] * f[1];
+      v[5] += -u[1][5] * f[1];
+      v[6] += -u[1][6] * f[1];
+      v[7] += -u[1][7] * f[1];
+      v[8] += -u[1][8] * f[1];
 
-      v[0] += u[2][0] * f[2];
-      v[1] += u[2][1] * f[2];
-      v[2] += u[2][2] * f[2];
-      v[3] += u[2][3] * f[2];
-      v[4] += u[2][4] * f[2];
-      v[5] += u[2][5] * f[2];
-      v[6] += u[2][6] * f[2];
-      v[7] += u[2][7] * f[2];
-      v[8] += u[2][8] * f[2];
+      v[0] += -u[2][0] * f[2];
+      v[1] += -u[2][1] * f[2];
+      v[2] += -u[2][2] * f[2];
+      v[3] += -u[2][3] * f[2];
+      v[4] += -u[2][4] * f[2];
+      v[5] += -u[2][5] * f[2];
+      v[6] += -u[2][6] * f[2];
+      v[7] += -u[2][7] * f[2];
+      v[8] += -u[2][8] * f[2];
     }
 };
 

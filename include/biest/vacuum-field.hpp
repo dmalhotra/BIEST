@@ -63,7 +63,7 @@ namespace biest {
     /**
      * Computes Bplasma on the exterior of a toroidal surface such that
      * Bplasma.n + Bcoil_dot_N = 0 on the surface and poloidal circulation of
-     * Bplasma equals  Jplasma. Bplasma is represented using layer potentials as
+     * Bplasma equals Jplasma. Bplasma is represented using layer potentials as
      * grad(S[sigma]) + curl(S[J]). The surface current J is harmonic surface
      * vector field and sigma is computed by solving a boundary integral
      * equation (BIE) formulation using GMRES. Bplasma, sigma and J are
@@ -72,6 +72,8 @@ namespace biest {
      * @return Bplasma, sigma and J on the Nt x Np grid (in row-major order).
      */
     std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma = 0) const;
+
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const;
 
     private:
 
@@ -83,8 +85,8 @@ namespace biest {
     sctl::Long Nt_, Np_;
     bool verbose_;
     mutable sctl::Long quad_Nt_, quad_Np_;
-    mutable sctl::Vector<Real> normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
-    mutable sctl::Vector<Real> normal, Xp; // Nt_ * Np_
+    mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
+    mutable sctl::Vector<Real> normal; // Nt_ * Np_
     mutable bool dosetup;
   };
 
@@ -118,9 +120,9 @@ namespace biest {
     static std::vector<Real> SurfaceCoordinates(const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const SurfType surf_type = SurfType::AxisymNarrow);
 
     /**
-     * Generate a vector field grad(S[sigma]), where S is the single-layer
-     * Laplace kernel 1/(4 pi |r|) and sigma is a line source inside the
-     * surface.
+     * Generate a vector field grad(S[sigma]) + BiotSavart(J), where S is the
+     * single-layer Laplace kernel 1/(4 pi |r|), sigma is a line source inside
+     * the surface and J is a current loop in the torus.
      *
      * @param[in] NFP number of toroidal field periods.
      *
@@ -138,18 +140,27 @@ namespace biest {
      * @param[in] Np the output field discretization order in poloidal
      * direction.
      *
-     * @return the surface vector field B = grad(S[sigma]) in one field period
-     * on the Nt x Np grid in the order B = {Bx11, Bx12, ..., Bx1Np, Bx21, Bx22,
-     * ... , BxNtNp, By11, ... , Bz11, ...},
+     * @param[in] Xt exterior off-surface target points in the order {x1, x2,
+     * ..., xNtrg, y1, ..., z1, ...}.
+     *
+     * @return the vector field B = grad(S[sigma]) at on-surface points in one
+     * field period on the Nt x Np grid in the order B = {Bx11, Bx12, ...,
+     * Bx1Np, Bx21, Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, Also returns
+     * the B field at the exterior off-surface target points Xt in the order
+     * {Bx1, Bx2, ..., BxNtrg, By1, ..., Bz1, ...}.
      */
-    static std::vector<Real> BFieldData(const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
+    static std::tuple<std::vector<Real>,std::vector<Real>> BFieldData(const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const std::vector<Real>& Xt = std::vector<Real>());
 
     /**
      * Test the ExtVacuumField class.
      */
     static void test(int digits, int NFP, long surf_Nt, long surf_Np, SurfType surf_type, long Nt, long Np) {
       // Construct the surface
-      std::vector<Real> X(3*surf_Nt*surf_Np);
+      std::vector<Real> X(3*surf_Nt*surf_Np), X_offsurf;
+      { // Set X_offsurf
+        Surface<Real> S(NFP*Nt, Np, SurfType::AxisymCircleWide);
+        X_offsurf.assign(S.Coord().begin(), S.Coord().end());
+      }
       X = ExtVacuumFieldTest<Real>::SurfaceCoordinates(NFP, surf_Nt, surf_Np, surf_type);
       //for (long t = 0; t < surf_Nt; t++) { // toroidal direction
       //  for (long p = 0; p < surf_Np; p++) { // poloidal direction
@@ -162,25 +173,34 @@ namespace biest {
       //  }
       //}
 
+      // Generate B field for testing exterior vacuum fields
+      std::vector<Real> B, B_pts;
+      std::tie(B, B_pts) = ExtVacuumFieldTest<Real>::BFieldData(NFP, surf_Nt, surf_Np, X, Nt, Np, X_offsurf);
+
       // Setup
       ExtVacuumField<Real> vacuum_field;
       vacuum_field.Setup(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
 
-      // Generate B field for testing exterior vacuum fields
-      std::vector<Real> B = ExtVacuumFieldTest<Real>::BFieldData(NFP, surf_Nt, surf_Np, X, Nt, Np);
+      // Compute Bplassma field such that Bplasma.n = -BdotN
+      std::vector<Real> Bplasma, sigma, J;
       const auto BdotN = vacuum_field.ComputeBdotN(B);
-
-      // Compute grad_phi field such that grad_phi.n = BdotN
-      std::vector<Real> sigma, grad_phi;
-      std::tie(grad_phi, sigma) = vacuum_field.ComputeGradPhi(BdotN);
+      std::tie(Bplasma, sigma, J) = vacuum_field.ComputeBplasma(BdotN, (Real)-1);
+      std::vector<Real> Bplasma_pts = vacuum_field.EvalOffSurface(X_offsurf, sigma, J);
 
       // print error
-      Real max_err=0, max_val=0;
+      Real max_err = 0, max_val = 0;
       std::vector<Real> Berr = B;
-      for (long i = 0; i < (long)Berr.size(); i++) Berr[i] -= grad_phi[i];
+      for (long i = 0; i < (long)Berr.size(); i++) Berr[i] += Bplasma[i];
       for (const auto& x:B   ) max_val = std::max<Real>(max_val,fabs(x));
       for (const auto& x:Berr) max_err = std::max<Real>(max_err,fabs(x));
       std::cout<<"Maximum relative error: "<<max_err/max_val<<'\n';
+
+      Berr = B_pts;
+      max_err = 0, max_val = 0;
+      for (long i = 0; i < (long)Berr.size(); i++) Berr[i] += Bplasma_pts[i];
+      for (const auto& x:B   ) max_val = std::max<Real>(max_val,fabs(x));
+      for (const auto& x:Berr) max_err = std::max<Real>(max_err,fabs(x));
+      std::cout<<"Maximum relative error (off-surface): "<<max_err/max_val<<'\n';
     }
 
   };

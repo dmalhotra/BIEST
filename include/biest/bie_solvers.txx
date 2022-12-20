@@ -184,7 +184,7 @@ namespace biest {
 
       sctl::Profile::Tic("ComputeB0", &comm);
       sctl::Vector<sctl::Vector<Real>> B0(Nsurf);
-      auto eval_B0 = [Nsurf,&SurfDim,&SurfDsp,&Xn,&BI_biot_savart](sctl::Vector<Real>& B, const sctl::Vector<Real>& J) { // B <-- BiotSavart[J] - 0.5 * Xn x J
+      auto eval_B0 = [Nsurf,&SurfDim,&SurfDsp,&Xn,&BI_biot_savart](sctl::Vector<Real>& B, const sctl::Vector<Real>& J) { // B <-- BiotSavart[J] + 0.5 * Xn x J
         sctl::Long N = J.Dim();
         sctl::Vector<Real> NcrossJ(N);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Set NcrossJ
@@ -208,7 +208,7 @@ namespace biest {
           }
         }
         BI_biot_savart(B, J);
-        B -= NcrossJ * 0.5;
+        B += NcrossJ * 0.5;
       };
       for (sctl::Long i = 0; i < Nsurf; i++) eval_B0(B0[i], J0[i]);
       sctl::Profile::Toc();
@@ -249,7 +249,7 @@ namespace biest {
         eval_B(B, F);
         eval_BdotXn(*BdotXn, B);
       };
-      auto compute_J = [&Nsurf,&SurfDim,&SurfDsp,&Xn](sctl::Vector<Real>& J, const sctl::Vector<Real>& B) { // J <-- Xn x B
+      auto compute_J = [&Nsurf,&SurfDim,&SurfDsp,&Xn](sctl::Vector<Real>& J, const sctl::Vector<Real>& B) { // J <-- B x Xn
         J.ReInit(B.Dim());
         for (sctl::Long i = 0; i < Nsurf; i++) {
           sctl::Long N = SurfDim[i];
@@ -260,9 +260,9 @@ namespace biest {
               B_[k] = B[COORD_DIM*offset + k*N + j];
               Xn_[k] = Xn[i][k*N + j];
             }
-            J_[0] = Xn_[1]*B_[2] - Xn_[2]*B_[1];
-            J_[1] = Xn_[2]*B_[0] - Xn_[0]*B_[2];
-            J_[2] = Xn_[0]*B_[1] - Xn_[1]*B_[0];
+            J_[0] = B_[1]*Xn_[2] - B_[2]*Xn_[1];
+            J_[1] = B_[2]*Xn_[0] - B_[0]*Xn_[2];
+            J_[2] = B_[0]*Xn_[1] - B_[1]*Xn_[0];
             for (sctl::Long k = 0; k < COORD_DIM; k++) {
               J[COORD_DIM*offset + k*N + j] = J_[k];
             }
@@ -382,8 +382,8 @@ namespace biest {
         pol_flux.ReInit(Nsurf);
         for (sctl::Long i = 0; i < Nsurf; i++) {
           BI_laplace(A, J[i]);
-          tor_flux[i] = compute_pol_circ(nullptr, A, i);
-          pol_flux[i] = compute_tor_circ(nullptr, A, i);
+          tor_flux[i] = -compute_pol_circ(nullptr, A, i);
+          pol_flux[i] = -compute_tor_circ(nullptr, A, i);
         }
       }
       sctl::Profile::Toc();

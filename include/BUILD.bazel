@@ -20,6 +20,12 @@ cc_library(
   deps = [
     "@sctl//include:sctl",
   ],
+  data = [
+    "//geom:lhd",
+    "//geom:ncsx",
+    "//geom:quas3",
+    "//geom:w7x",
+  ],
   includes = ["."],
   copts = [
     "-DSCTL_GLOBAL_MEM_BUFF=0",

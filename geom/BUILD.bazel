@@ -1,0 +1,37 @@
+filegroup(
+    name = "lhd",
+    visibility = ["//visibility:public"],
+    srcs = [
+        "LHD-X.mat",
+        "LHD-Y.mat",
+        "LHD-Z.mat",
+    ],
+)
+
+filegroup(
+    name = "ncsx",
+    visibility = ["//visibility:public"],
+    srcs = [
+        "NCSX",
+    ],
+)
+
+filegroup(
+    name = "quas3",
+    visibility = ["//visibility:public"],
+    srcs = [
+        "Quas3-X.mat",
+        "Quas3-Y.mat",
+        "Quas3-Z.mat",
+    ],
+)
+
+filegroup(
+    name = "w7x",
+    visibility = ["//visibility:public"],
+    srcs = [
+        "W7X-X.mat",
+        "W7X-Y.mat",
+        "W7X-Z.mat",
+    ],
+)

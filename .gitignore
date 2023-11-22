@@ -5,3 +5,5 @@
 *.log
 /vis*
 *.swo
+
+bazel-*

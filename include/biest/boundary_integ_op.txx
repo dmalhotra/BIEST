@@ -1,4 +1,8 @@
+#include "biest/boundary_integ_op.hpp"
+
 #include <biest/singular_correction.hpp>
+#include <biest/surface.hpp>
+#include <sctl.hpp>
 
 namespace biest {
 

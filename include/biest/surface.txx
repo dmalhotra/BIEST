@@ -1,3 +1,5 @@
+#include "biest/surface.hpp"
+
 #include <biest/surface_op.hpp>
 #include <sctl.hpp>
 

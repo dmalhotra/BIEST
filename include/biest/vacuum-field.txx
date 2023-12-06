@@ -1,4 +1,9 @@
+#include "biest/vacuum-field.hpp"
+
+#include <biest/boundary_integ_op.hpp>
+#include <biest/surface.hpp>
 #include <biest/surface_op.hpp>
+#include <sctl.hpp>
 
 namespace biest {
 

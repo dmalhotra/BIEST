@@ -204,6 +204,4 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
 
 }
 
-#include <biest/bie_solvers.txx>
-
 #endif  //_BIE_SOLVERS_HPP_

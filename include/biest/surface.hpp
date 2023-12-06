@@ -89,6 +89,4 @@ template <class Real> void WriteVTK(const std::string& fname, const sctl::Intege
 
 }
 
-#include <biest/surface.txx>
-
 #endif  //_SURFACE_HPP_

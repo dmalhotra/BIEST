@@ -149,6 +149,4 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
 
 }
 
-#include <biest/boundary_integ_op.txx>
-
 #endif  //_BOUNDARY_INTEG_OP_HPP_

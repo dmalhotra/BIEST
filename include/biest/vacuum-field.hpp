@@ -207,6 +207,4 @@ namespace biest {
 
 }
 
-#include <biest/vacuum-field.txx>
-
 #endif  //_VACUUM_FIELD_HPP_

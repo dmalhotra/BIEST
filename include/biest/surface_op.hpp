@@ -350,6 +350,4 @@ template <class Real> class SurfaceOp {
 
 }
 
-#include <biest/surface_op.txx>
-
 #endif  //_SURFACE_OP_HPP_

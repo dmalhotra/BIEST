@@ -13,11 +13,3 @@ http_archive(
 )
 load("@hedron_compile_commands//:workspace_setup.bzl", "hedron_compile_commands_setup")
 hedron_compile_commands_setup()
-
-# stand-alone SCTL
-http_archive(
-  name = "sctl",
-  urls = [ "https://github.com/jons-pf/SCTL/archive/e1d2d81b69a07608f469993b9944db6b5f2b2490.zip" ],
-  strip_prefix = "SCTL-e1d2d81b69a07608f469993b9944db6b5f2b2490",
-  sha256 = "618356078c138085dc3cef9e2e8d8e76e3c31acb7e974fcb0cc765f5158b3f7e",
-)

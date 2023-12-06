@@ -1,4 +1,9 @@
+#include "biest/surface_op.hpp"
+
+#include <biest/surface.hpp>
+#include <biest/singular_correction.hpp>
 #include <sctl.hpp>
+
 #include <omp.h>
 
 namespace biest {

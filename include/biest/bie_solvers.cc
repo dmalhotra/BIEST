@@ -1,4 +1,4 @@
-#include "niest/bie_solvers.hpp"
+#include "biest/bie_solvers.hpp"
 
 #include <biest/boundary_integ_op.hpp>
 #include <biest/kernel.hpp>

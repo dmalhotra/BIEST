@@ -35,8 +35,6 @@ cc_library(
     "sctl/tree.hpp",
     "sctl/vec-test.hpp",
     "sctl/vtudata.hpp",
-  ],
-  srcs = [
     "sctl/math_utils.txx",
     "sctl/mem_mgr.txx",
     "sctl/ode-solver.txx",
@@ -78,6 +76,7 @@ cc_library(
   name = "biest",
   hdrs = [
     "biest.hpp",
+    "biest/paraview.hpp",
     "biest/bie_solvers.hpp",
     "biest/boundary_integ_op.hpp",
     "biest/kernel.hpp",
@@ -88,11 +87,11 @@ cc_library(
     "biest/vacuum-field.hpp",
   ],
   srcs = [
-    "biest/bie_solvers.txx",
-    "biest/boundary_integ_op.txx",
-    "biest/surface_op.txx",
-    "biest/surface.txx",
-    "biest/vacuum-field.txx",
+    "biest/bie_solvers.cc",
+    "biest/boundary_integ_op.cc",
+    "biest/surface_op.cc",
+    "biest/surface.cc",
+    "biest/vacuum-field.cc",
   ],
   visibility = ["//visibility:public"],
   deps = [

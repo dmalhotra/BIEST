@@ -5,6 +5,8 @@
 #include <biest/surface_op.hpp>
 #include <sctl.hpp>
 
+#include "biest/paraview.hpp"
+
 namespace biest {
 
   template <class Real> ExtVacuumField<Real>::ExtVacuumField(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true) {

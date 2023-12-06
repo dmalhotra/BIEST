@@ -2,6 +2,7 @@
 #define _BOUNDARY_INTEG_OP_HPP_
 
 #include <biest/surface.hpp>
+#include <biest/surface_op.hpp>
 #include <sctl.hpp>
 
 namespace biest {

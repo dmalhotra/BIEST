@@ -2,8 +2,11 @@
 #define _SCTL_SLENDER_ELEMENT_HPP_
 
 #include <sctl/common.hpp>
+
+#include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(boundary_integral.hpp)
 
 namespace SCTL_NAMESPACE {
 
@@ -217,7 +220,5 @@ namespace SCTL_NAMESPACE {
   };
 
 }
-
-#include SCTL_INCLUDE(slender_element.txx)
 
 #endif //_SCTL_SLENDER_ELEMENT_HPP_

@@ -1,4 +1,8 @@
+#include "sctl/lagrange-interp.hpp"
+
+#include SCTL_INCLUDE(vec.hpp)
 #include SCTL_INCLUDE(vector.hpp)
+#include SCTL_INCLUDE(matrix.hpp)
 
 namespace SCTL_NAMESPACE {
 

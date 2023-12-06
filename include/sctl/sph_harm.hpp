@@ -4,6 +4,7 @@
 #define SCTL_SHMAXDEG 1024
 
 #include <sctl/common.hpp>
+#include SCTL_INCLUDE(comm.hpp)
 #include SCTL_INCLUDE(math_utils.hpp)
 #include SCTL_INCLUDE(mem_mgr.hpp)
 
@@ -514,8 +515,6 @@ template <class Real> class SphericalHarmonics{
 //template class SphericalHarmonics<double>;
 
 }  // end namespace
-
-#include SCTL_INCLUDE(sph_harm.txx)
 
 #endif // _SCTL_SPH_HARM_HPP_
 

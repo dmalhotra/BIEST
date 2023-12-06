@@ -1,3 +1,5 @@
+#include "sctl/mem_mgr.hpp"
+
 #include <omp.h>
 #include <cmath>
 #include <cstring>

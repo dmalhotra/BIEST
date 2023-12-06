@@ -1,4 +1,8 @@
+#include "sctl/comm.hpp"
+
+#include <algorithm>
 #include <type_traits>
+#include SCTL_INCLUDE(mem_mgr.hpp)
 #include SCTL_INCLUDE(ompUtils.hpp)
 #include SCTL_INCLUDE(vector.hpp)
 

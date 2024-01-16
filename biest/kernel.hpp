@@ -1,7 +1,7 @@
 #ifndef _KERNEL_HPP_
 #define _KERNEL_HPP_
 
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
 
 namespace biest {
 

@@ -1,7 +1,7 @@
 #include "biest/surface.hpp"
 
-#include <biest/surface_op.hpp>
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
+#include "biest/surface_op.hpp"
 
 namespace biest {
 

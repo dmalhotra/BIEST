@@ -1,10 +1,10 @@
 #include "biest/bie_solvers.hpp"
 
-#include <biest/boundary_integ_op.hpp>
-#include <biest/kernel.hpp>
-#include <biest/surface_op.hpp>
-#include <biest/surface.hpp>
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
+#include "biest/boundary_integ_op.hpp"
+#include "biest/kernel.hpp"
+#include "biest/surface_op.hpp"
+#include "biest/surface.hpp"
 
 namespace biest {
 

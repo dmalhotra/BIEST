@@ -1,9 +1,9 @@
 #ifndef _SINGULAR_CORRECTION_HPP_
 #define _SINGULAR_CORRECTION_HPP_
 
-#include <biest/kernel.hpp>
-#include <biest/mat.hpp>
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
+#include "biest/kernel.hpp"
+#include "biest/mat.hpp"
 
 namespace biest {
 

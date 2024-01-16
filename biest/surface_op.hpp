@@ -1,9 +1,9 @@
 #ifndef _SURFACE_OP_HPP_
 #define _SURFACE_OP_HPP_
 
-#include <biest/surface.hpp>
-#include <biest/singular_correction.hpp>
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
+#include "biest/surface.hpp"
+#include "biest/singular_correction.hpp"
 
 namespace biest {
 

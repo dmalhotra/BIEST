@@ -1,7 +1,7 @@
 #ifndef _SURFACE_HPP_
 #define _SURFACE_HPP_
 
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
 
 namespace biest {
 

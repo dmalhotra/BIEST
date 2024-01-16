@@ -1,9 +1,9 @@
 #ifndef _BOUNDARY_INTEG_OP_HPP_
 #define _BOUNDARY_INTEG_OP_HPP_
 
-#include <biest/surface.hpp>
-#include <biest/surface_op.hpp>
-#include <sctl.hpp>
+#include "sctl/sctl.hpp"
+#include "biest/surface.hpp"
+#include "biest/surface_op.hpp"
 
 namespace biest {
 

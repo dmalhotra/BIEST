@@ -1,10 +1,10 @@
 #include "biest/surface_op.hpp"
 
-#include <biest/surface.hpp>
-#include <biest/singular_correction.hpp>
-#include <sctl.hpp>
-
 #include <omp.h>
+
+#include "sctl/sctl.hpp"
+#include "biest/surface.hpp"
+#include "biest/singular_correction.hpp"
 
 namespace biest {
 

@@ -1,0 +1,210 @@
+#ifndef _VACUUM_FIELD_HPP_
+#define _VACUUM_FIELD_HPP_
+
+#include "sctl/sctl.hpp"
+#include "biest/boundary_integ_op.hpp"
+#include "biest/surface.hpp"
+
+namespace biest {
+
+  /**
+   * Constructs a vacuum field in the exterior of a surface given B.n on the
+   * surface.
+   */
+  template <class Real> class ExtVacuumField {
+    static constexpr sctl::Integer COORD_DIM = 3;
+
+    public:
+
+    /**
+     * Constructor
+     */
+    explicit ExtVacuumField(bool verbose = false);
+
+    /**
+     * Setup the ExtVacuumField object.
+     *
+     * @param[in] digits number of decimal digits of accuracy.
+     *
+     * @param[in] NFP number of toroidal field periods. The surface as well as
+     * the magnetic field must have this toroidal periodic symmetry.
+     *
+     * @param[in] surf_Nt surface discretization order in toroidal direction (in
+     * one field period).
+     *
+     * @param[in] surf_Np surface discretization order in poloidal direction.
+     *
+     * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}.
+     *
+     * @param[in] Nt B-field discretization order in toroidal direction (in one
+     * field period).
+     *
+     * @param[in] Np B-field discretization order in poloidal direction.
+     *
+     * The resolution parameters for the surface shape (Nt, Np), and the
+     * magnetic field (Nt, Np) do not need to be related to each other in any
+     * particular way.
+     */
+    void Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
+
+    /**
+     * Compute the dot product of a given vector field B on the surface with the
+     * surface normal vector.
+     *
+     * @param[in] B the surface vector field B = {Bx11, Bx12, ..., Bx1Np, Bx21,
+     * Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, where Nt and Np are the
+     * number of discretizations in toroidal and poloidal directions.
+     *
+     * @return the dot product of the surface field B with the surface normal.
+     */
+    std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
+
+    /**
+     * Computes Bplasma on the exterior of a toroidal surface such that
+     * Bplasma.n + Bcoil_dot_N = 0 on the surface and poloidal circulation of
+     * Bplasma equals Jplasma. Bplasma is represented using layer potentials as
+     * grad(S[sigma]) + curl(S[J]). The surface current J is harmonic surface
+     * vector field and sigma is computed by solving a boundary integral
+     * equation (BIE) formulation using GMRES. Bplasma, sigma and J are
+     * returned.
+     *
+     * @return Bplasma, sigma and J on the Nt x Np grid (in row-major order).
+     */
+    std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma = 0) const;
+
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const;
+
+    private:
+
+    static void DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B);
+
+    mutable FieldPeriodBIOp<Real,COORD_DIM,1,3> LaplaceFxdU;
+    sctl::Vector<Surface<Real>> Svec;
+    sctl::Integer NFP_, digits_;
+    sctl::Long Nt_, Np_;
+    bool verbose_;
+    mutable sctl::Long quad_Nt_, quad_Np_;
+    mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
+    mutable sctl::Vector<Real> normal; // Nt_ * Np_
+    mutable bool dosetup;
+  };
+
+  /**
+   * Generate data for testing class ExtVacuumField.
+   */
+  template <class Real> class ExtVacuumFieldTest {
+    static constexpr int COORD_DIM = 3;
+
+    public:
+
+    /**
+     * Generate nodal coordinates for toroidal surfaces.
+     *
+     * @param[in] NFP number of toroidal field periods.
+     *
+     * @param[in] Nt surface discretization order in toroidal direction (in one
+     * field period).
+     *
+     * @param[in] Np surface discretization order in poloidal direction.
+     *
+     * @param[in] surf_type prebuilt surface geometries. Possible values
+     * SurfType::{AxisymCircleWide, AxisymCircleNarrow, AxisymWide,
+     * AxisymNarrow, RotatingEllipseWide, RotatingEllipseNarrow, Quas3, LHD,
+     * W7X, Stell}
+     *
+     * @return the surface coordinates in the order {x11, x12, ..., x1Np,
+     * x21, x22, ... , xNtNp, y11, ... , z11, ...}. The coordinates correspond
+     * to the surface in the toroidal angle interval [0, 2*pi/NFP).
+     */
+    static std::vector<Real> SurfaceCoordinates(const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const SurfType surf_type = SurfType::AxisymNarrow);
+
+    /**
+     * Generate a vector field grad(S[sigma]) + BiotSavart(J), where S is the
+     * single-layer Laplace kernel 1/(4 pi |r|), sigma is a line source inside
+     * the surface and J is a current loop in the torus.
+     *
+     * @param[in] NFP number of toroidal field periods.
+     *
+     * @param[in] surf_Nt surface discretization order in toroidal direction (in
+     * one field period).
+     *
+     * @param[in] surf_Np surface discretization order in poloidal direction.
+     *
+     * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}.
+     *
+     * @param[in] Nt the output field discretization order in toroidal direction
+     * (in one field period).
+     *
+     * @param[in] Np the output field discretization order in poloidal
+     * direction.
+     *
+     * @param[in] Xt exterior off-surface target points in the order {x1, x2,
+     * ..., xNtrg, y1, ..., z1, ...}.
+     *
+     * @return the vector field B = grad(S[sigma]) at on-surface points in one
+     * field period on the Nt x Np grid in the order B = {Bx11, Bx12, ...,
+     * Bx1Np, Bx21, Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, Also returns
+     * the B field at the exterior off-surface target points Xt in the order
+     * {Bx1, Bx2, ..., BxNtrg, By1, ..., Bz1, ...}.
+     */
+    static std::tuple<std::vector<Real>,std::vector<Real>> BFieldData(const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const std::vector<Real>& Xt = std::vector<Real>());
+
+    /**
+     * Test the ExtVacuumField class.
+     */
+    static void test(int digits, int NFP, long surf_Nt, long surf_Np, SurfType surf_type, long Nt, long Np) {
+      // Construct the surface
+      std::vector<Real> X(3*surf_Nt*surf_Np), X_offsurf;
+      { // Set X_offsurf
+        Surface<Real> S(NFP*Nt, Np, SurfType::AxisymCircleWide);
+        X_offsurf.assign(S.Coord().begin(), S.Coord().end());
+      }
+      X = ExtVacuumFieldTest<Real>::SurfaceCoordinates(NFP, surf_Nt, surf_Np, surf_type);
+      //for (long t = 0; t < surf_Nt; t++) { // toroidal direction
+      //  for (long p = 0; p < surf_Np; p++) { // poloidal direction
+      //    Real x = (2 + 0.5*cos(2*M_PI*p/surf_Np)) * cos(2*M_PI*t/(NFP*surf_Nt));
+      //    Real y = (2 + 0.5*cos(2*M_PI*p/surf_Np)) * sin(2*M_PI*t/(NFP*surf_Nt));
+      //    Real z = 0.5*sin(2*M_PI*p/surf_Np);
+      //    X[(0*surf_Nt+t)*surf_Np+p] = x;
+      //    X[(1*surf_Nt+t)*surf_Np+p] = y;
+      //    X[(2*surf_Nt+t)*surf_Np+p] = z;
+      //  }
+      //}
+
+      // Generate B field for testing exterior vacuum fields
+      std::vector<Real> B, B_pts;
+      std::tie(B, B_pts) = ExtVacuumFieldTest<Real>::BFieldData(NFP, surf_Nt, surf_Np, X, Nt, Np, X_offsurf);
+
+      // Setup
+      ExtVacuumField<Real> vacuum_field;
+      vacuum_field.Setup(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
+
+      // Compute Bplassma field such that Bplasma.n = -BdotN
+      std::vector<Real> Bplasma, sigma, J;
+      const auto BdotN = vacuum_field.ComputeBdotN(B);
+      std::tie(Bplasma, sigma, J) = vacuum_field.ComputeBplasma(BdotN, (Real)-1);
+      std::vector<Real> Bplasma_pts = vacuum_field.EvalOffSurface(X_offsurf, sigma, J);
+
+      // print error
+      Real max_err = 0, max_val = 0;
+      std::vector<Real> Berr = B;
+      for (long i = 0; i < (long)Berr.size(); i++) Berr[i] += Bplasma[i];
+      for (const auto& x:B   ) max_val = std::max<Real>(max_val,fabs(x));
+      for (const auto& x:Berr) max_err = std::max<Real>(max_err,fabs(x));
+      std::cout<<"Maximum relative error: "<<max_err/max_val<<'\n';
+
+      Berr = B_pts;
+      max_err = 0, max_val = 0;
+      for (long i = 0; i < (long)Berr.size(); i++) Berr[i] += Bplasma_pts[i];
+      for (const auto& x:B   ) max_val = std::max<Real>(max_val,fabs(x));
+      for (const auto& x:Berr) max_err = std::max<Real>(max_err,fabs(x));
+      std::cout<<"Maximum relative error (off-surface): "<<max_err/max_val<<'\n';
+    }
+
+  };
+
+}
+
+#endif  //_VACUUM_FIELD_HPP_

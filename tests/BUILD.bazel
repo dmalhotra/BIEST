@@ -1,0 +1,230 @@
+cc_test(
+  name = "double-layer-convergence",
+  srcs = ["double-layer-convergence.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "example1",
+  srcs = ["example1.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "force-free-fields-example",
+  srcs = ["force-free-fields-example.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "quadrature-example",
+  srcs = ["quadrature-example.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "table1",
+  srcs = ["table1.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "table3",
+  srcs = ["table3.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "table4",
+  srcs = ["table4.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "table5",
+  srcs = ["table5.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "table6",
+  srcs = ["table6.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "table7",
+  srcs = ["table7.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)
+
+cc_test(
+  name = "virtual-casing-principle",
+  srcs = ["virtual-casing-principle.cpp"],
+  deps = [
+    "//biest:biest",
+  ],
+  copts = [
+    "-DSCTL_GLOBAL_MEM_BUFF=0",
+    "-DSCTL_QUAD_T=__float128",
+    "-DSCTL_DOUBLE",
+    "-DSCTL_HAVE_BLAS",
+    "-DSCTL_HAVE_LAPACK",
+    "-DSCTL_HAVE_FFTW",
+  ],
+  linkopts = [
+    "-lblas",
+    "-llapack",
+    "-lfftw3",
+  ],
+)

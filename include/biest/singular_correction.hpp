@@ -105,7 +105,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     for (sctl::Integer i = 0; i < PATCH_DIM; i++){
       for (sctl::Integer j = 0; j < PATCH_DIM; j++){
         Real dr[2] = {(i - PATCH_RAD) * h, (j - PATCH_RAD) * h};
-        Real r = sqrt(dr[0] * dr[0] + dr[1] * dr[1]);
+        Real r = sctl::sqrt<Real>(dr[0] * dr[0] + dr[1] * dr[1]);
         Gpou[i * PATCH_DIM + j] = -pou(r);
       }
     }
@@ -163,8 +163,8 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     Real h_ang = 2 * sctl::const_pi<Real>() / ANG_DIM;
     for (sctl::Integer i0 = 0; i0 < RAD_DIM; i0++) {
       for (sctl::Integer i1 = 0; i1 < ANG_DIM; i1++) {
-        Real x0 = (Real)0.5 + (Real)0.5 * qx[i0] * cos(h_ang * i1);
-        Real x1 = (Real)0.5 + (Real)0.5 * qx[i0] * sin(h_ang * i1);
+        Real x0 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::cos<Real>(h_ang * i1);
+        Real x1 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::sin<Real>(h_ang * i1);
 
         sctl::Integer y0 = std::max<sctl::Integer>(0, std::min<sctl::Integer>((sctl::Integer)(x0 * (PATCH_DIM - 1) - (INTERP_ORDER - 1) / 2), PATCH_DIM - INTERP_ORDER));
         sctl::Integer y1 = std::max<sctl::Integer>(0, std::min<sctl::Integer>((sctl::Integer)(x1 * (PATCH_DIM - 1) - (INTERP_ORDER - 1) / 2), PATCH_DIM - INTERP_ORDER));
@@ -289,7 +289,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     Real n0 = Gg[2 * Ngrid + i] * Gg[5 * Ngrid + i] - Gg[3 * Ngrid + i] * Gg[4 * Ngrid + i];
     Real n1 = Gg[4 * Ngrid + i] * Gg[1 * Ngrid + i] - Gg[5 * Ngrid + i] * Gg[0 * Ngrid + i];
     Real n2 = Gg[0 * Ngrid + i] * Gg[3 * Ngrid + i] - Gg[1 * Ngrid + i] * Gg[2 * Ngrid + i];
-    Real r = sqrt(n0 * n0 + n1 * n1 + n2 * n2);
+    Real r = sctl::sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
     Real inv_r = 1 / r;
     Gn[0 * Ngrid + i] = n0 * inv_r * normal_orient;
     Gn[1 * Ngrid + i] = n1 * inv_r * normal_orient;
@@ -345,7 +345,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
        Real n0 = Pg[2 * Npolar + i] * Pg[5 * Npolar + i] - Pg[3 * Npolar + i] * Pg[4 * Npolar + i];
        Real n1 = Pg[4 * Npolar + i] * Pg[1 * Npolar + i] - Pg[5 * Npolar + i] * Pg[0 * Npolar + i];
        Real n2 = Pg[0 * Npolar + i] * Pg[3 * Npolar + i] - Pg[1 * Npolar + i] * Pg[2 * Npolar + i];
-       Real r = sqrt(n0 * n0 + n1 * n1 + n2 * n2);
+       Real r = sctl::sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
        n0 /= r;
        n1 /= r;
        n2 /= r;

@@ -364,7 +364,7 @@ namespace biest {
         std::cout<<"Mesh anisotropy = "<<cond<<'\n';
       }
 
-      const sctl::Integer PDIM = digits*cond*1.6;
+      const sctl::Integer PDIM = (sctl::Integer)(digits*cond*1.6);
       if (qNt > 0 && qNp > 0) { // Set quad_Nt_, quad_Np_
         quad_Nt_ = qNt;
         quad_Np_ = qNp;
@@ -385,11 +385,11 @@ namespace biest {
           dbl_op.Eval(U, F);
 
           Real err = 0;
-          for (const auto& a : U) err = std::max<Real>(err, fabs(a-0.5));
+          for (const auto& a : U) err = std::max<Real>(err, sctl::fabs<Real>(a-(Real)0.5));
           Real scal = std::max<Real>(1, (digits+1)/(sctl::log(err)/sctl::log((Real)0.1))); // assuming exponential/geometric convergence
           quad_Nt_ = (sctl::Long)(scal * quad_Nt);
           quad_Np_ = (sctl::Long)(scal * quad_Np);
-          if (err < sctl::pow<Real>(0.1,digits) || scal < 1.5) break;
+          if (err < sctl::pow<Real>((Real)0.1,digits) || scal < 1.5) break;
         }
 
         // quad_Nt_/quad_Np_ ~ optim_aspect_ratio

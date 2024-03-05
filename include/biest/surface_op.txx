@@ -770,7 +770,7 @@ template <class Real> Real SurfaceOp<Real>::compute_area_elem(sctl::StaticArray<
     xn[0] = xt[1] * xp[2] - xp[1] * xt[2];
     xn[1] = xt[2] * xp[0] - xp[2] * xt[0];
     xn[2] = xt[0] * xp[1] - xp[0] * xt[1];
-    Real xa = sqrt(xn[0] * xn[0] + xn[1] * xn[1] + xn[2] * xn[2]);
+    Real xa = sctl::sqrt<Real>(xn[0] * xn[0] + xn[1] * xn[1] + xn[2] * xn[2]);
     Real xa_inv = 1 / xa;
     xn[0] *= xa_inv;
     xn[1] *= xa_inv;

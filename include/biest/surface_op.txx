@@ -970,8 +970,8 @@ template <class Real> void SurfaceOp<Real>::CompleteVecField(sctl::Vector<Real>&
   }
 }
 template <class Real> void SurfaceOp<Real>::Resample(sctl::Vector<Real>& X1, const sctl::Long Nt1, const sctl::Long Np1, const sctl::Vector<Real>& X0, const sctl::Long Nt0, const sctl::Long Np0) {
-  const sctl::Long skip_tor = (sctl::Long)std::ceil(Nt0/(Real)Nt1);
-  const sctl::Long skip_pol = (sctl::Long)std::ceil(Np0/(Real)Np1);
+  const sctl::Long skip_tor = (sctl::Long)sctl::ceil(Nt0/(Real)Nt1);
+  const sctl::Long skip_pol = (sctl::Long)sctl::ceil(Np0/(Real)Np1);
   const sctl::Long dof = X0.Dim() / (Nt0 * Np0);
   SCTL_ASSERT(X0.Dim() == dof*Nt0*Np0);
 

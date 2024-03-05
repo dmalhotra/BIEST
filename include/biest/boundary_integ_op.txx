@@ -372,12 +372,12 @@ namespace biest {
         const sctl::Long surf_Nt = Svec[0].NTor();
         const sctl::Long surf_Np = Svec[0].NPol();
 
-        quad_Np_ =       trg_Np_  * (sctl::Long)std::ceil(std::max<sctl::Long>(std::max<sctl::Long>(surf_Np, src_Np),                    2*PDIM+1) / (Real)      trg_Np_ );
-        quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)std::ceil(std::max<Real>((Real)std::max<sctl::Long>(surf_Nt, src_Nt), optim_aspect_ratio*quad_Np_) / (Real)(NFP_*trg_Nt_));
+        quad_Np_ =       trg_Np_  * (sctl::Long)sctl::ceil(std::max<sctl::Long>(std::max<sctl::Long>(surf_Np, src_Np),                    2*PDIM+1) / (Real)      trg_Np_ );
+        quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)sctl::ceil(std::max<Real>((Real)std::max<sctl::Long>(surf_Nt, src_Nt), optim_aspect_ratio*quad_Np_) / (Real)(NFP_*trg_Nt_));
 
         for (sctl::Integer i = 0; i < 3; i++) { // adaptive refinement using double-layer test
-          sctl::Long quad_Nt = (sctl::Long)std::ceil(quad_Nt_ / (Real)surf_Nt) * surf_Nt;
-          sctl::Long quad_Np = (sctl::Long)std::ceil(quad_Np_ / (Real)surf_Np) * surf_Np;
+          sctl::Long quad_Nt = (sctl::Long)sctl::ceil(quad_Nt_ / (Real)surf_Nt) * surf_Nt;
+          sctl::Long quad_Np = (sctl::Long)sctl::ceil(quad_Np_ / (Real)surf_Np) * surf_Np;
 
           FieldPeriodBIOp<Real, COORD_DIM, 1, 1> dbl_op(comm_);
           dbl_op.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, NFP_, 0, 0, surf_Nt/NFP_, surf_Np, quad_Nt, quad_Np);
@@ -386,15 +386,15 @@ namespace biest {
 
           Real err = 0;
           for (const auto& a : U) err = std::max<Real>(err, fabs(a-0.5));
-          Real scal = std::max<Real>(1, (digits+1)/(std::log(err)/std::log((Real)0.1))); // assuming exponential/geometric convergence
-          quad_Nt_ = scal * quad_Nt;
-          quad_Np_ = scal * quad_Np;
+          Real scal = std::max<Real>(1, (digits+1)/(sctl::log(err)/sctl::log((Real)0.1))); // assuming exponential/geometric convergence
+          quad_Nt_ = (sctl::Long)(scal * quad_Nt);
+          quad_Np_ = (sctl::Long)(scal * quad_Np);
           if (err < sctl::pow<Real>(0.1,digits) || scal < 1.5) break;
         }
 
         // quad_Nt_/quad_Np_ ~ optim_aspect_ratio
-        quad_Np_ =       trg_Np_  * (sctl::Long)std::round((quad_Nt_/optim_aspect_ratio) / (Real)      trg_Np_ );
-        quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)std::round((optim_aspect_ratio*quad_Np_) / (Real)(NFP_*trg_Nt_));
+        quad_Np_ =       trg_Np_  * (sctl::Long)sctl::round((quad_Nt_/optim_aspect_ratio) / (Real)      trg_Np_ );
+        quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)sctl::round((optim_aspect_ratio*quad_Np_) / (Real)(NFP_*trg_Nt_));
       }
       if (!(quad_Np_ > 2*PDIM  ) ||
           !(quad_Nt_ >= Svec[0].NTor()) ||
@@ -473,52 +473,52 @@ namespace biest {
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::SetupSingular_(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer PDIM_, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx) {
       SCTL_ASSERT(Svec.Dim() == 1);
       if (PDIM_ >= 64) {
-        static constexpr sctl::Integer PDIM = 64, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 64, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 60) {
-        static constexpr sctl::Integer PDIM = 60, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 60, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 56) {
-        static constexpr sctl::Integer PDIM = 56, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 56, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 52) {
-        static constexpr sctl::Integer PDIM = 52, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 52, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 48) {
-        static constexpr sctl::Integer PDIM = 48, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 48, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 44) {
-        static constexpr sctl::Integer PDIM = 44, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 44, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 40) {
-        static constexpr sctl::Integer PDIM = 40, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 40, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 36) {
-        static constexpr sctl::Integer PDIM = 36, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 36, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 32) {
-        static constexpr sctl::Integer PDIM = 32, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 32, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 28) {
-        static constexpr sctl::Integer PDIM = 28, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 28, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 24) {
-        static constexpr sctl::Integer PDIM = 24, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 24, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 20) {
-        static constexpr sctl::Integer PDIM = 20, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 20, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 16) {
-        static constexpr sctl::Integer PDIM = 16, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 16, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >= 12) {
-        static constexpr sctl::Integer PDIM = 12, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM = 12, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else if (PDIM_ >=  8) {
-        static constexpr sctl::Integer PDIM =  8, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM =  8, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       } else {
-        static constexpr sctl::Integer PDIM =  6, RDIM = PDIM*1.6;
+        static constexpr sctl::Integer PDIM =  6, RDIM = (sctl::Integer)(PDIM*1.6);
         SetupSingular0<PDIM,RDIM>(Svec, ker, trg_idx);
       }
     }

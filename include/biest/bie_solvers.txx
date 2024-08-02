@@ -243,7 +243,7 @@ namespace biest {
           }
         }
       };
-      typename sctl::ParallelSolver<Real>::ParallelOp fn = [&eval_B,&eval_BdotXn](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& F) {
+      typename sctl::GMRES<Real>::ParallelOp fn = [&eval_B,&eval_BdotXn](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& F) {
         SCTL_ASSERT(BdotXn);
         sctl::Vector<Real> B;
         eval_B(B, F);
@@ -275,7 +275,7 @@ namespace biest {
         B.ReInit(Nsurf);
         J.ReInit(Nsurf);
         sctl::Vector<Real> u0dotXn, F;
-        sctl::ParallelSolver<Real> solver(comm, true);
+        sctl::GMRES<Real> solver(comm, true);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Compute B[i], J[i]
           B[i] = B0[i];
           eval_BdotXn(u0dotXn, B[i]);
@@ -832,8 +832,8 @@ namespace biest {
         };
         auto solve_taylor = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn] (sctl::Vector<Real>& sigma, const sctl::Vector<Real>& rhs, Real gmres_tol, sctl::Long gmres_iter) {
           sctl::Profile::Tic("Solve", &comm);
-          sctl::ParallelSolver<Real> solver(comm, true);
-          typename sctl::ParallelSolver<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
+          sctl::GMRES<Real> solver(comm, true);
+          typename sctl::GMRES<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
             SCTL_ASSERT(BdotXn);
             sctl::Vector<Real> m, B;
             sctl::Profile::Tic("Compute_B", &comm);
@@ -1414,8 +1414,8 @@ namespace biest {
       };
       auto solve_taylor = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn] (sctl::Vector<Real>& sigma, const sctl::Vector<Real>& rhs, Real gmres_tol, sctl::Long gmres_iter) {
         sctl::Profile::Tic("Solve", &comm);
-        sctl::ParallelSolver<Real> solver(comm, true);
-        typename sctl::ParallelSolver<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
+        sctl::GMRES<Real> solver(comm, true);
+        typename sctl::GMRES<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
           SCTL_ASSERT(BdotXn);
           sctl::Vector<Real> m, B;
           sctl::Profile::Tic("Compute_B", &comm);

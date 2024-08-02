@@ -137,7 +137,7 @@ namespace biest {
 
     sctl::Vector<Real> sigma, grad_phi;
     { // Solve for sigma
-      sctl::ParallelSolver<Real> solver(sctl::Comm::Self(), verbose_);
+      sctl::GMRES<Real> solver(sctl::Comm::Self(), verbose_);
       solver(&sigma, LinOp, sctl::Vector<Real>(Bcoil_dot_N) + Bplasma_dot_N, sctl::pow<Real>(0.1,digits_), max_iter);
     }
     { // Compute Bplasma <-- Bplasma - (LaplaceFxdU[sigma] - 0.5*sigma*normal)

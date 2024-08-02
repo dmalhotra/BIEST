@@ -459,7 +459,7 @@ template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& G
 }
 
 template <class Real> void SurfaceOp<Real>::InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> LeftPrecond, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter) const {
-  typename sctl::ParallelSolver<Real>::ParallelOp fn = [this,&LeftPrecond,&RightPrecond,&dX](sctl::Vector<Real>* fx, const sctl::Vector<Real>& x) {
+  typename sctl::GMRES<Real>::ParallelOp fn = [this,&LeftPrecond,&RightPrecond,&dX](sctl::Vector<Real>* fx, const sctl::Vector<Real>& x) {
     (*fx) = 0;
     SCTL_ASSERT(fx);
     sctl::Vector<Real> Sx, LSx;
@@ -521,7 +521,7 @@ template <class Real> template <sctl::Integer KDIM0, sctl::Integer KDIM1> void S
         Uloc[k * Ntrg + i] = TrgU[k * (b - a) + i - a];
       }
     }
-    comm_.template Allreduce<Real>(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::Comm::CommOp::SUM);
+    comm_.template Allreduce<Real>(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::CommOp::SUM);
     if (Utrg.Dim() != dof * KDIM1 * Ntrg) {
       Utrg.ReInit(dof * KDIM1 * Ntrg);
       Utrg = 0;
@@ -559,7 +559,7 @@ template <class Real> template <class SingularCorrection> void SurfaceOp<Real>::
   sctl::Long Ntrg;
   { // Set N
     sctl::Long Nloc = singular_correction.Dim();
-    comm_.Allreduce(sctl::Ptr2ConstItr<sctl::Long>(&Nloc,1), sctl::Ptr2Itr<sctl::Long>(&Ntrg,1), 1, sctl::Comm::CommOp::SUM);
+    comm_.Allreduce(sctl::Ptr2ConstItr<sctl::Long>(&Nloc,1), sctl::Ptr2Itr<sctl::Long>(&Ntrg,1), 1, sctl::CommOp::SUM);
   }
   sctl::Long dof = F.Dim() / (kdim0 * Nt_ * Np_);
   SCTL_ASSERT(F.Dim() == dof * kdim0 * Nt_ * Np_);
@@ -573,7 +573,7 @@ template <class Real> template <class SingularCorrection> void SurfaceOp<Real>::
       singular_correction[i](F_, U_);
     }
   }
-  comm_.Allreduce(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::Comm::CommOp::SUM);
+  comm_.Allreduce(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::CommOp::SUM);
   if (U.Dim() != dof * kdim1 * Ntrg) { // Init U
     U.ReInit(dof * kdim1 * Ntrg);
     U = 0;
@@ -752,7 +752,7 @@ template <class Real> void SurfaceOp<Real>::Init(const sctl::Comm& comm, sctl::L
   Nt_ = Nt;
   Np_ = Np;
   comm_ = comm;
-  solver = sctl::ParallelSolver<Real>(comm_,false);
+  solver = sctl::GMRES<Real>(comm_,false);
 
   if (!Nt_ || !Np_) return;
   sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};

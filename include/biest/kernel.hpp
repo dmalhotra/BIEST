@@ -85,7 +85,7 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
         v_trg = 0;
       }
       kerfn(r_src, n_src, v_src, r_trg, v_trg, 0, ctx);
-      sctl::Profile::Add_FLOP(Ns * Nt * cost);
+      sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, Ns * Nt * cost);
     }
 
     /**
@@ -207,7 +207,7 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
           }
         }
       }
-      sctl::Profile::Add_FLOP(Ns * Nt * cost);
+      sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, Ns * Nt * cost);
     }
 
   private:

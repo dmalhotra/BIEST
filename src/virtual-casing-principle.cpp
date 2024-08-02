@@ -153,7 +153,7 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
       LaplaceDxU(*u, phi*(1));
       (*u) += phi * 0.5;
     };
-    sctl::ParallelSolver<Real> solve(comm,1);
+    sctl::GMRES<Real> solve(comm,1);
     solve(&phi, BIEOp, rhs, gmres_tol, 100);
 
     { // Set Baux
@@ -259,7 +259,7 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
       LaplaceDxU(*u, phi*(1));
       (*u) += phi * 0.5;
     };
-    sctl::ParallelSolver<Real> solve(comm,1);
+    sctl::GMRES<Real> solve(comm,1);
     solve(&phi, BIEOp, rhs, gmres_tol, 100);
 
     { // Set Baux

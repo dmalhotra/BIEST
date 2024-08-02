@@ -345,7 +345,7 @@ template <class Real> class SurfaceOp {
     sctl::Comm comm_;
     sctl::Long Nt_, Np_;
     mutable sctl::FFT<Real> fft_r2c, fft_c2r;
-    mutable sctl::ParallelSolver<Real> solver;
+    mutable sctl::GMRES<Real> solver;
 };
 
 }

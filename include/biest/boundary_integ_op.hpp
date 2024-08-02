@@ -112,20 +112,120 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
  * @tparam KDIM0 degrees-of-freedom of the density per source point.
  *
  * @tparam KDIM1 degrees-of-freedom of the potential per target point.
+ *
+ * @tparam HedgehogOrder Use Hedgehog quadrature (required for hyper-singular kernels) when HedgehogOrder > 1
  */
-template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
+template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::Integer KDIM1=1, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
   public:
 
     explicit FieldPeriodBIOp(const sctl::Comm& comm = sctl::Comm::Self());
 
     ~FieldPeriodBIOp();
 
+    /**
+     * Build the surface object from data surface nodal data on one field period.
+     *
+     * @param[in] X the surface coordinates (in one field period) in the order
+     * {x11, x12, ..., x1Np, x21, x22, ... , xNtNp, y11, ... , z11, ...}.
+     *
+     * @param[in] NFP number of toroidal field periods. The surface as well as
+     * the magnetic field must have this toroidal periodic symmetry.
+     *
+     * @param[in] Nt surface discretization order in toroidal direction (in one field period).
+     *
+     * @param[in] Np surface discretization order in poloidal direction.
+     */
+    static biest::Surface<Real> BuildSurface(const sctl::Vector<Real>& X, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np);
+
+    /**
+     * Setup layer potential operator.
+     *
+     * @param[in] Svec vector of surface objects (currently, only one surface is supported)
+     *
+     * @param[in] ker kernel function object.
+     *
+     * @param[in] digits number of decimal digits of accuracy.
+     *
+     * @param[in] NFP number of toroidal field periods. The output potential will only be computed for one field-period.
+     *
+     * @param[in] src_Nt maximum discretization order for input density in toroidal direction (in one field period).
+     *
+     * @param[in] src_Np maximum discretization order for input density in poloidal direction.
+     *
+     * @param[in] trg_Nt output potential discretization order in toroidal direction (in one field period).
+     *
+     * @param[in] trg_Np output potential discretization order in poloidal direction.
+     */
     void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt = 0, const sctl::Long qNp = 0);
 
-    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) const;
+    /**
+     * Evaluate the potential from given density.
+     *
+     * @param[in] U output potential computed on surface nodes in one field-period.
+     *
+     * @param[in] F density function given at discretization nodes in one field-period.
+     *
+     * @param[in] NFP number of field-periods for discretizing F.
+     *
+     * @param[in] src_Nt discretization order for F in toroidal direction (in one field period).
+     *
+     * @param[in] src_Np discretization order for F in poloidal direction.
+     *
+     * The parameters NFP, src_Nt, and src_Np for F do not have to be the same as those in SetupSingular. The density F
+     * will be re-sampled to the resolution QuadNt() x QuadNp() for evaluating the quadratures. The user can avoid this
+     * extra work by providing F already sampled at this resolution (i.e. NFP=1, src_Nt=QuadNt(), src_Np=QuadNp()).
+     */
+    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP=1, const sctl::Integer src_Nt=-1, const sctl::Integer src_Np=-1) const;
 
+    /**
+     * Returns the toroidal resolution of the source data for quadrature evaluation.
+     */
     sctl::Long QuadNt() const { return quad_Nt_; }
+
+    /**
+     * Returns the poloidal resolution of the source data for quadrature evaluation.
+     */
     sctl::Long QuadNp() const { return quad_Np_; }
+
+    static void test() {
+      constexpr int DIM = 3; // dimensions of coordinate space
+      const int digits = 10; // number of digits of accuracy requested
+
+      const int NFP = 1, Nt = 70, Np = 20;
+      sctl::Vector<Real> X(DIM*Nt*Np), F(Nt*Np), U;
+      for (int i = 0; i < Nt; i++) { // initialize data X, F
+        for (int j = 0; j < Np; j++) {
+          const Real phi = 2*sctl::const_pi<Real>()*i/Nt;
+          const Real theta = 2*sctl::const_pi<Real>()*j/Np;
+
+          const Real R = 1 + 0.25*sctl::cos<Real>(theta);
+          const Real x = R * sctl::cos<Real>(phi);
+          const Real y = R * sctl::sin<Real>(phi);
+          const Real z = 0.25*sctl::sin<Real>(theta);
+
+          X[(0*Nt+i)*Np+j] = x;
+          X[(1*Nt+i)*Np+j] = y;
+          X[(2*Nt+i)*Np+j] = z;
+          F[i*Np+j] = x+y+z;
+        }
+      }
+
+      //const auto kernel = biest::Laplace3D<Real>::FxU(); // Laplace single-layer kernel function
+      const auto kernel = biest::Laplace3D<Real>::DxU(); // Laplace double-layer kernel function
+      constexpr int KER_DIM0 = 1; // input degrees-of-freedom of kernel
+      constexpr int KER_DIM1 = 1; // output degrees-of-freedom of kernel
+
+      biest::FieldPeriodBIOp<Real,DIM,KER_DIM0,KER_DIM1,0> biop; // boundary integral operator
+
+      sctl::Vector<biest::Surface<Real>> Svec(1);
+      Svec[0] = biop.BuildSurface(X, NFP, Nt, Np); // build surface object
+
+      biop.SetupSingular(Svec, kernel, digits, NFP, Nt, Np, Nt, Np); // initialize biop
+      biop.Eval(U, F, NFP, Nt, Np); // evaluate potential
+
+      WriteVTK("F", Svec, F); // visualize F
+      WriteVTK("U", Svec, U); // visualize U
+    }
 
   private:
 

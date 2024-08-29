@@ -187,9 +187,9 @@ namespace biest {
       LaplaceDxU_.EvalOffSurface(U, Xtrg_, F);
 
       Real err = 0;
-      for (const auto& x : U) err = std::max<Real>(err, fabs(x));
+      for (const auto& x : U) err = std::max<Real>(err, std::min(fabs(1.0-x), fabs(x)));
       if (err > sctl::pow((Real)0.1, digits_)) {
-        Nt *= 2; // TODO: Upsample Nt and Np independdently
+        Nt *= 2; // TODO: Upsample Nt and Np independently
         Np *= 2;
       } else break;
     }

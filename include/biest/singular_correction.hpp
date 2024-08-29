@@ -321,7 +321,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
             for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) Vtmp[i1] = Vec::Zero();
             for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
               for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) {
-                Vtmp[i1] = FMA(Vec::Load(M_ + i0 * INTERP_ORDER + i1 * VecLen), Vec::Load(Vin_ + i0 * PATCH_DIM + i1 * VecLen), Vtmp[i1]);
+                Vtmp[i1] = FMA(Vec::Load(&M_[i0 * INTERP_ORDER + i1 * VecLen]), Vec::Load(&Vin_[i0 * PATCH_DIM + i1 * VecLen]), Vtmp[i1]);
               }
             }
             alignas(VecLen*sizeof(Real)) Real tmp_[Ntmp * VecLen];

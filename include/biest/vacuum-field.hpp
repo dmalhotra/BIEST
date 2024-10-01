@@ -7,19 +7,19 @@
 
 namespace biest {
 
+  template <class Real, bool exterior> class VacuumFieldBase;
+
   /**
    * Constructs a vacuum field in the exterior of a surface given B.n on the
-   * surface.
+   * surface and magnitude of the toroidal current.
    */
-  template <class Real> class ExtVacuumField {
-    static constexpr sctl::Integer COORD_DIM = 3;
-
+  template <class Real> class ExtVacuumField : public VacuumFieldBase<Real,true> {
     public:
 
     /**
      * Constructor
      */
-    explicit ExtVacuumField(bool verbose = false);
+    explicit ExtVacuumField(bool verbose = false) : VacuumFieldBase<Real,true>(verbose) {}
 
     /**
      * Setup the ExtVacuumField object.
@@ -74,20 +74,72 @@ namespace biest {
     std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma = 0) const;
 
     std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const;
+  };
 
-    private:
+  /**
+   * Constructs a vacuum field in the interior of a surface given B.n on the
+   * surface and the magnitude of the current through the center of the torus.
+   */
+  template <class Real> class IntVacuumField : public VacuumFieldBase<Real,false> {
+    public:
 
-    static void DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B);
+    /**
+     * Constructor
+     */
+    explicit IntVacuumField(bool verbose = false) : VacuumFieldBase<Real,false>(verbose) {}
 
-    mutable FieldPeriodBIOp<Real,COORD_DIM,1,3> LaplaceFxdU;
-    sctl::Vector<Surface<Real>> Svec;
-    sctl::Integer NFP_, digits_;
-    sctl::Long Nt_, Np_;
-    bool verbose_;
-    mutable sctl::Long quad_Nt_, quad_Np_;
-    mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
-    mutable sctl::Vector<Real> normal; // Nt_ * Np_
-    mutable bool dosetup;
+    /**
+     * Setup the IntVacuumField object.
+     *
+     * @param[in] digits number of decimal digits of accuracy.
+     *
+     * @param[in] NFP number of toroidal field periods. The surface as well as
+     * the magnetic field must have this toroidal periodic symmetry.
+     *
+     * @param[in] surf_Nt surface discretization order in toroidal direction (in
+     * one field period).
+     *
+     * @param[in] surf_Np surface discretization order in poloidal direction.
+     *
+     * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}.
+     *
+     * @param[in] Nt B-field discretization order in toroidal direction (in one
+     * field period).
+     *
+     * @param[in] Np B-field discretization order in poloidal direction.
+     *
+     * The resolution parameters for the surface shape (Nt, Np), and the
+     * magnetic field (Nt, Np) do not need to be related to each other in any
+     * particular way.
+     */
+    void Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
+
+    /**
+     * Compute the dot product of a given vector field B on the surface with the
+     * surface normal vector.
+     *
+     * @param[in] B the surface vector field B = {Bx11, Bx12, ..., Bx1Np, Bx21,
+     * Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, where Nt and Np are the
+     * number of discretizations in toroidal and poloidal directions.
+     *
+     * @return the dot product of the surface field B with the surface normal.
+     */
+    std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
+
+    /**
+     * Computes B on the interior of a toroidal surface such that B.n + B1_dot_N = 0 on
+     * the surface and toroidal circulation of B equals I0. B is represented as the sum of
+     * a layer potential and the field due to a straight wire carrying a current I0
+     * through the axis of the torus: grad(S[sigma]) + I0/(2 pi R) \hat(phi). The unknown
+     * density sigma is computed by solving a boundary integral equation (BIE) formulation
+     * using GMRES. B, and sigma are returned.
+     *
+     * @return B, sigma on the Nt x Np grid (in row-major order).
+     */
+    std::tuple<std::vector<Real>,std::vector<Real>> ComputeB(const std::vector<Real>& B1_dot_N, const Real I0 = 0) const;
+
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const;
   };
 
   /**

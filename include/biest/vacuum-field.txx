@@ -2,10 +2,46 @@
 
 namespace biest {
 
-  template <class Real> ExtVacuumField<Real>::ExtVacuumField(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true) {
+  template <class Real, bool exterior> class VacuumFieldBase {
+    static constexpr sctl::Integer COORD_DIM = 3;
+
+    public:
+
+    explicit VacuumFieldBase(bool verbose = false);
+
+    protected:
+
+    void Setup_(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
+
+    std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
+
+    /**
+     * Construct a magnetic field B0 with with prescribed B0.n + B1_dot_N = 0 and circulation equal to I0.
+     */
+    std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeB_(const std::vector<Real>& B1_dot_N, const Real I0) const;
+
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const;
+
+    private:
+
+    static void DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B);
+
+    mutable FieldPeriodBIOp<Real,COORD_DIM,1,3> LaplaceFxdU;
+    sctl::Vector<Surface<Real>> Svec;
+    sctl::Integer NFP_, digits_;
+    sctl::Long Nt_, Np_;
+    bool verbose_;
+    mutable sctl::Long quad_Nt_, quad_Np_;
+    mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
+    mutable sctl::Vector<Real> normal; // Nt_ * Np_
+    mutable bool dosetup;
+  };
+
+
+  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true) {
   }
 
-  template <class Real> void ExtVacuumField<Real>::Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
+  template <class Real, bool exterior> void VacuumFieldBase<Real,exterior>::Setup_(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
     bool half_period = false;
     digits_ = digits;
     NFP_ = NFP;
@@ -51,7 +87,7 @@ namespace biest {
     }
   }
 
-  template <class Real> std::vector<Real> ExtVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {
+  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::ComputeBdotN(const std::vector<Real>& B) const {
     SCTL_ASSERT((sctl::Long)B.size() == COORD_DIM * Nt_ * Np_);
 
     sctl::Vector<Real> BdotN;
@@ -62,8 +98,8 @@ namespace biest {
     return BdotN_;
   }
 
-  template <class Real> std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ExtVacuumField<Real>::ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma) const {
-    SCTL_ASSERT((sctl::Long)Bcoil_dot_N.size() == Nt_*Np_);
+  template <class Real, bool exterior> std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> VacuumFieldBase<Real,exterior>::ComputeB_(const std::vector<Real>& B1_dot_N, const Real I0) const {
+    SCTL_ASSERT((sctl::Long)B1_dot_N.size() == Nt_*Np_);
     constexpr bool half_period = false;
     const sctl::Integer max_iter = 200;
 
@@ -81,93 +117,104 @@ namespace biest {
       LaplaceFxdU.Eval(grad_phi, sigma__);
 
       DotProd(*Ax, grad_phi, normal);
-      (*Ax) -= x*0.5;
+      if (exterior) (*Ax) -= x*0.5; // potential in exterior of torus
+      else (*Ax) += x*0.5; // potential in interior of torus
     };
 
-    sctl::Vector<Real> Bplasma, Bplasma_dot_N;
-    Bplasma_dot_N.ReInit(Nt_ * Np_); Bplasma_dot_N = 0;
-    Bplasma.ReInit(COORD_DIM * Nt_ * Np_); Bplasma = 0;
-    if (Jplasma != 0) { // Set Bplasma, Bplasma_dot_N
-      if (J0_.Dim() == 0) { // Compute J0
-        sctl::Vector<Real> Vn, Vd, Vc;
-        SurfaceOp<Real> surf_op(sctl::Comm::Self(), NFP_*Nt_, Np_);
-        surf_op.HodgeDecomp(Vn, Vd, Vc, J0_, Xt_, dX_, normal_, sctl::pow<Real>(0.1,digits_), max_iter);
+    sctl::Vector<Real> B0, B0_dot_N; // field from current I0
+    B0_dot_N.ReInit(Nt_ * Np_); B0_dot_N = 0;
+    B0.ReInit(COORD_DIM * Nt_ * Np_); B0 = 0;
+    if (I0 != 0) { // Set B0, B0_dot_N
+      if (exterior) {
+        if (J0_.Dim() == 0) { // Compute J0 (toroidal surface current of unit magnitude)
+          sctl::Vector<Real> Vn, Vd, Vc;
+          SurfaceOp<Real> surf_op(sctl::Comm::Self(), NFP_*Nt_, Np_);
+          surf_op.HodgeDecomp(Vn, Vd, Vc, J0_, Xt_, dX_, normal_, sctl::pow<Real>(0.1,digits_), max_iter);
 
-        { // normalize J0_ (the current is oriented in the direction of Xt_)
-          const sctl::Long N = NFP_*Nt_*Np_;
+          { // normalize J0_ (the current is oriented in the direction of Xt_)
+            const sctl::Long N = NFP_*Nt_*Np_;
 
-          Real orientation = 0;
-          { // Set orientation
-            Real n[3];
-            n[0] = Xt_[1*N] * Xp_[2*N] - Xt_[2*N] * Xp_[1*N];
-            n[1] = Xt_[2*N] * Xp_[0*N] - Xt_[0*N] * Xp_[2*N];
-            n[2] = Xt_[0*N] * Xp_[1*N] - Xt_[1*N] * Xp_[0*N];
-            orientation = (n[0]*normal_[0*N] + n[1]*normal_[1*N] + n[2]*normal_[2*N] > 0 ? 1.0 : -1.0);
-          }
-
-          Real Jtor_flux = 0;
-          for (sctl::Long i = 0; i < N; i++) {
-            for (sctl::Integer k0 = 0; k0 < COORD_DIM; k0++) {
-              sctl::Integer k1 = (k0+1)%COORD_DIM;
-              sctl::Integer k2 = (k0+2)%COORD_DIM;
-              Jtor_flux += J0_[k0*N+i] * Xp_[k1*N+i] * normal_[k2*N+i];
-              Jtor_flux -= J0_[k0*N+i] * Xp_[k2*N+i] * normal_[k1*N+i];
+            Real orientation = 0;
+            { // Set orientation
+              Real n[3];
+              n[0] = Xt_[1*N] * Xp_[2*N] - Xt_[2*N] * Xp_[1*N];
+              n[1] = Xt_[2*N] * Xp_[0*N] - Xt_[0*N] * Xp_[2*N];
+              n[2] = Xt_[0*N] * Xp_[1*N] - Xt_[1*N] * Xp_[0*N];
+              orientation = (n[0]*normal_[0*N] + n[1]*normal_[1*N] + n[2]*normal_[2*N] > 0 ? 1.0 : -1.0);
             }
+
+            Real Jtor_flux = 0;
+            for (sctl::Long i = 0; i < N; i++) {
+              for (sctl::Integer k0 = 0; k0 < COORD_DIM; k0++) {
+                sctl::Integer k1 = (k0+1)%COORD_DIM;
+                sctl::Integer k2 = (k0+2)%COORD_DIM;
+                Jtor_flux += J0_[k0*N+i] * Xp_[k1*N+i] * normal_[k2*N+i];
+                Jtor_flux -= J0_[k0*N+i] * Xp_[k2*N+i] * normal_[k1*N+i];
+              }
+            }
+            J0_ *= (NFP_*Nt_*Np_)/Jtor_flux*orientation;
           }
-          J0_ *= (NFP_*Nt_*Np_)/Jtor_flux*orientation;
         }
-      }
 
-      sctl::Vector<Real> J, gradG_Jk(COORD_DIM * Nt_ * Np_);
-      SurfaceOp<Real>::Resample(J, quad_Nt_, quad_Np_, J0_*Jplasma, NFP_*Nt_, Np_);
-      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
-        gradG_Jk = 0;
-        LaplaceFxdU.Eval(gradG_Jk, sctl::Vector<Real>(quad_Nt_*quad_Np_, J.begin() + k*quad_Nt_*quad_Np_, false));
+        sctl::Vector<Real> J, gradG_Jk(COORD_DIM * Nt_ * Np_);
+        SurfaceOp<Real>::Resample(J, quad_Nt_, quad_Np_, J0_*I0, NFP_*Nt_, Np_);
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+          gradG_Jk = 0;
+          LaplaceFxdU.Eval(gradG_Jk, sctl::Vector<Real>(quad_Nt_*quad_Np_, J.begin() + k*quad_Nt_*quad_Np_, false));
 
-        sctl::Integer k1 = (k+1)%COORD_DIM;
-        sctl::Integer k2 = (k+2)%COORD_DIM;
+          sctl::Integer k1 = (k+1)%COORD_DIM;
+          sctl::Integer k2 = (k+2)%COORD_DIM;
+          for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
+            B0[k2 * Nt_*Np_ + i] -= gradG_Jk[k1 * Nt_*Np_ + i] - 0.5*I0 * J0_[k * NFP_*Nt_*Np_ + i] * normal[k1 * Nt_*Np_ + i];
+            B0[k1 * Nt_*Np_ + i] += gradG_Jk[k2 * Nt_*Np_ + i] - 0.5*I0 * J0_[k * NFP_*Nt_*Np_ + i] * normal[k2 * Nt_*Np_ + i];
+          }
+        }
+      } else {
+        const Real scal = I0/(2*sctl::const_pi<Real>());
         for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
-          Bplasma[k2 * Nt_*Np_ + i] -= gradG_Jk[k1 * Nt_*Np_ + i] - 0.5*Jplasma * J0_[k * NFP_*Nt_*Np_ + i] * normal[k1 * Nt_*Np_ + i];
-          Bplasma[k1 * Nt_*Np_ + i] += gradG_Jk[k2 * Nt_*Np_ + i] - 0.5*Jplasma * J0_[k * NFP_*Nt_*Np_ + i] * normal[k2 * Nt_*Np_ + i];
+          const Real R2inv = 1/(XX[0 * Nt_*Np_ + i]*XX[0 * Nt_*Np_ + i] + XX[1 * Nt_*Np_ + i]*XX[1 * Nt_*Np_ + i]);
+          B0[0 * Nt_*Np_ + i] = -XX[1 * Nt_*Np_ + i] * scal * R2inv; // Assuming axis is through the origin along Z
+          B0[1 * Nt_*Np_ + i] =  XX[0 * Nt_*Np_ + i] * scal * R2inv;
+          B0[2 * Nt_*Np_ + i] = 0;
         }
       }
-
-      DotProd(Bplasma_dot_N, Bplasma, normal);
+      DotProd(B0_dot_N, B0, normal);
     }
 
     sctl::Vector<Real> sigma, grad_phi;
     { // Solve for sigma
       sctl::GMRES<Real> solver(sctl::Comm::Self(), verbose_);
-      solver(&sigma, LinOp, sctl::Vector<Real>(Bcoil_dot_N) + Bplasma_dot_N, sctl::pow<Real>(0.1,digits_), max_iter);
+      solver(&sigma, LinOp, sctl::Vector<Real>(B1_dot_N) + B0_dot_N, sctl::pow<Real>(0.1,digits_), max_iter);
     }
-    { // Compute Bplasma <-- Bplasma - (LaplaceFxdU[sigma] - 0.5*sigma*normal)
+    { // Compute B0 <-- B0 - (LaplaceFxdU[sigma] - 0.5*sigma*normal)
       sctl::Vector<Real> sigma_, sigma__;
       SurfaceOp<Real>::CompleteVecField(sigma_, false, half_period, NFP_, Nt_, Np_, sigma);
       SurfaceOp<Real>::Resample(sigma__, quad_Nt_, quad_Np_, sigma_, NFP_*Nt_, Np_);
       LaplaceFxdU.Eval(grad_phi, sigma__);
 
-      for (sctl::Long i = 0; i < Nt_*Np_; i++) { // Bplasma <-- Bplasma - (grad_phi - 0.5*sigma*normal)
+      for (sctl::Long i = 0; i < Nt_*Np_; i++) { // B0 <-- B0 - (grad_phi - 0.5*sigma*normal)
         for (sctl::Integer k = 0; k < COORD_DIM; k++) {
-          Bplasma[k*Nt_*Np_+i] -= grad_phi[k*Nt_*Np_+i] - 0.5*sigma[i] * normal[k*Nt_*Np_+i];
+          if (exterior) B0[k*Nt_*Np_+i] -= grad_phi[k*Nt_*Np_+i] - 0.5*sigma[i] * normal[k*Nt_*Np_+i];
+          else          B0[k*Nt_*Np_+i] -= grad_phi[k*Nt_*Np_+i] + 0.5*sigma[i] * normal[k*Nt_*Np_+i];
         }
       }
     }
 
-    std::vector<Real> Bplasma_(COORD_DIM * Nt_*Np_), sigma_(Nt_*Np_), Jplasma_;
-    Bplasma_.assign(Bplasma.begin(), Bplasma.end());
+    std::vector<Real> B0_(COORD_DIM * Nt_*Np_), sigma_(Nt_*Np_), J0;
+    B0_.assign(B0.begin(), B0.end());
     sigma_.assign(sigma.begin(), sigma.end());
-    if (Jplasma != 0) {
-      Jplasma_.resize(COORD_DIM*Nt_*Np_);
+    if (exterior && I0 != 0) {
+      J0.resize(COORD_DIM*Nt_*Np_);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) {
         for (sctl::Long i = 0; i < Nt_*Np_; i++) {
-          Jplasma_[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * Jplasma;
+          J0[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * I0;
         }
       }
     }
-    return std::make_tuple(std::move(Bplasma_), std::move(sigma_), std::move(Jplasma_));
+    return std::make_tuple(std::move(B0_), std::move(sigma_), std::move(J0));
   }
 
-  template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J) const {
+  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const {
     constexpr bool half_period = false;
     const sctl::Long Ntrg = Xtrg.size() / COORD_DIM;
     SCTL_ASSERT((sctl::Long)Xtrg.size() == COORD_DIM * Ntrg);
@@ -213,12 +260,22 @@ namespace biest {
     if (sigma_.Dim()) LaplaceFxdU_.EvalOffSurface(Bplasma, Xtrg_, sigma_*(Real)-1);
     if (J_.Dim()) BiotSavartFxU_.EvalOffSurface(Bplasma, Xtrg_, J_);
 
+    if (I0 != 0) {
+      const Real scal = I0/(2*sctl::const_pi<Real>());
+      for (sctl::Long i = 0; i < Ntrg; i++) {
+        const Real R2inv = 1/(Xtrg[0 * Ntrg + i]*Xtrg[0 * Ntrg + i] + Xtrg[1 * Ntrg + i]*Xtrg[1 * Ntrg + i]);
+        Bplasma[0 * Ntrg + i] += -Xtrg[1 * Ntrg + i] * scal * R2inv; // Assuming axis is through the origin along Z
+        Bplasma[1 * Ntrg + i] +=  Xtrg[0 * Ntrg + i] * scal * R2inv;
+        //Bplasma[2 * Ntrg + i] += 0;
+      }
+    }
+
     std::vector<Real> B;
     B.assign(Bplasma.begin(), Bplasma.end());
     return B;
   }
 
-  template <class Real> void ExtVacuumField<Real>::DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B) {
+  template <class Real, bool exterior> void VacuumFieldBase<Real,exterior>::DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B) {
     sctl::Long N = A.Dim() / COORD_DIM;
     SCTL_ASSERT(A.Dim() == COORD_DIM * N);
     SCTL_ASSERT(B.Dim() == COORD_DIM * N);
@@ -231,6 +288,46 @@ namespace biest {
       AdotB[i] = AdotB_;
     }
   }
+
+
+
+  template <class Real> void ExtVacuumField<Real>::Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
+    VacuumFieldBase<Real,true>::Setup_(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
+  }
+
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {
+    return VacuumFieldBase<Real,true>::ComputeBdotN(B);
+  }
+
+  template <class Real> std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ExtVacuumField<Real>::ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma) const {
+    return VacuumFieldBase<Real,true>::ComputeB_(Bcoil_dot_N, Jplasma);
+  }
+
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const {
+    return VacuumFieldBase<Real,true>::EvalOffSurface(Xt, sigma, J, 0);
+  }
+
+
+
+  template <class Real> void IntVacuumField<Real>::Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
+    VacuumFieldBase<Real,false>::Setup_(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
+  }
+
+  template <class Real> std::vector<Real> IntVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {
+    return VacuumFieldBase<Real,false>::ComputeBdotN(B);
+  }
+
+  template <class Real> std::tuple<std::vector<Real>,std::vector<Real>> IntVacuumField<Real>::ComputeB(const std::vector<Real>& B1_dot_N, const Real I0) const {
+    std::vector<Real> B, sigma;
+    std::tie(B, sigma, std::ignore) = VacuumFieldBase<Real,false>::ComputeB_(B1_dot_N, I0);
+    return std::make_tuple(std::move(B), std::move(sigma));
+  }
+
+  template <class Real> std::vector<Real> IntVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const {
+    return VacuumFieldBase<Real,false>::EvalOffSurface(Xt, sigma, std::vector<Real>(), I0);
+  }
+
+
 
   template <class Real> std::vector<Real> ExtVacuumFieldTest<Real>::SurfaceCoordinates(const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const SurfType surf_type) {
     const bool half_period = false;

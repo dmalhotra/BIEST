@@ -73,6 +73,15 @@ namespace biest {
      */
     std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma = 0) const;
 
+    /**
+     * Compute U = S[sigma] on the toroidal surface.
+     *
+     * @param[in] sigma the single-layer density on the surface discretization nodes.
+     *
+     * @return the potential U on the surface discretization nodes.
+     */
+    std::vector<Real> ComputeU(const std::vector<Real>& sigma) const;
+
     std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const;
   };
 
@@ -138,6 +147,15 @@ namespace biest {
      * @return B, sigma on the Nt x Np grid (in row-major order).
      */
     std::tuple<std::vector<Real>,std::vector<Real>> ComputeB(const std::vector<Real>& B1_dot_N, const Real I0 = 0) const;
+
+    /**
+     * Compute U = S[sigma] on the toroidal surface.
+     *
+     * @param[in] sigma the single-layer density on the surface discretization nodes.
+     *
+     * @return the potential U on the surface discretization nodes.
+     */
+    std::vector<Real> ComputeU(const std::vector<Real>& sigma) const;
 
     std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const;
   };

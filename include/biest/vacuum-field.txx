@@ -20,6 +20,8 @@ namespace biest {
      */
     std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeB_(const std::vector<Real>& B1_dot_N, const Real I0) const;
 
+    std::vector<Real> ComputeU_(const std::vector<Real>& sigma) const;
+
     std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const;
 
     private:
@@ -27,6 +29,7 @@ namespace biest {
     static void DotProd(sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B);
 
     mutable FieldPeriodBIOp<Real,COORD_DIM,1,3> LaplaceFxdU;
+    mutable FieldPeriodBIOp<Real,COORD_DIM,1,1> LaplaceFxU;
     sctl::Vector<Surface<Real>> Svec;
     sctl::Integer NFP_, digits_;
     sctl::Long Nt_, Np_;
@@ -34,11 +37,11 @@ namespace biest {
     mutable sctl::Long quad_Nt_, quad_Np_;
     mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
     mutable sctl::Vector<Real> normal; // Nt_ * Np_
-    mutable bool dosetup;
+    mutable bool dosetup, dosetup_LaplaceFxU;
   };
 
 
-  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true) {
+  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), LaplaceFxU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true), dosetup_LaplaceFxU(true) {
   }
 
   template <class Real, bool exterior> void VacuumFieldBase<Real,exterior>::Setup_(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
@@ -49,6 +52,7 @@ namespace biest {
     Np_ = Np;
 
     dosetup = true;
+    dosetup_LaplaceFxU = true;
     SCTL_ASSERT(surf_Nt*surf_Np*COORD_DIM == (sctl::Long)X.size());
     if (half_period) { // upsample surf_Nt by 1
       sctl::Vector<Real> X0, X1;
@@ -214,6 +218,29 @@ namespace biest {
     return std::make_tuple(std::move(B0_), std::move(sigma_), std::move(J0));
   }
 
+  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::ComputeU_(const std::vector<Real>& sigma) const {
+    constexpr bool half_period = false;
+
+    if (dosetup_LaplaceFxU) { // Quadrature setup
+      LaplaceFxU.SetupSingular(Svec, Laplace3D<Real>::FxU(), digits_, NFP_*(half_period?2:1), NFP_*(half_period?2:1)*Nt_, Np_, Nt_, Np_);
+      quad_Nt_ = LaplaceFxU.QuadNt();
+      quad_Np_ = LaplaceFxU.QuadNp();
+      dosetup_LaplaceFxU = false;
+    }
+
+    sctl::Vector<Real> U0;
+    { // Compute U0 <-- LaplaceFxU[sigma]
+      sctl::Vector<Real> sigma_, sigma__;
+      SurfaceOp<Real>::CompleteVecField(sigma_, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(sigma));
+      SurfaceOp<Real>::Resample(sigma__, quad_Nt_, quad_Np_, sigma_, NFP_*Nt_, Np_);
+      LaplaceFxU.Eval(U0, sigma__);
+    }
+
+    std::vector<Real> U0_(Nt_*Np_);
+    U0_.assign(U0.begin(), U0.end());
+    return U0_;
+  }
+
   template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const {
     constexpr bool half_period = false;
     const sctl::Long Ntrg = Xtrg.size() / COORD_DIM;
@@ -303,6 +330,10 @@ namespace biest {
     return VacuumFieldBase<Real,true>::ComputeB_(Bcoil_dot_N, Jplasma);
   }
 
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::ComputeU(const std::vector<Real>& sigma) const {
+    return VacuumFieldBase<Real,true>::ComputeU_(sigma);
+  }
+
   template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const {
     return VacuumFieldBase<Real,true>::EvalOffSurface(Xt, sigma, J, 0);
   }
@@ -321,6 +352,10 @@ namespace biest {
     std::vector<Real> B, sigma;
     std::tie(B, sigma, std::ignore) = VacuumFieldBase<Real,false>::ComputeB_(B1_dot_N, I0);
     return std::make_tuple(std::move(B), std::move(sigma));
+  }
+
+  template <class Real> std::vector<Real> IntVacuumField<Real>::ComputeU(const std::vector<Real>& sigma) const {
+    return VacuumFieldBase<Real,false>::ComputeU_(sigma);
   }
 
   template <class Real> std::vector<Real> IntVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const {

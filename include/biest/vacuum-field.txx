@@ -22,7 +22,22 @@ namespace biest {
 
     std::vector<Real> ComputeU_(const std::vector<Real>& sigma) const;
 
-    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const;
+    /**
+     * Evaluate the magnetic field at off-surface target points.
+     *
+     * \param[in] Xt target coordinates.
+     *
+     * \param[in] sigma charge density on the surface.
+     *
+     * \param[in] J current density on the surface.
+     *
+     * \param[in] I0 current through the axis.
+     *
+     * \param[in] max_Nt restrict max order in toroidal direction to NFP * max_Nt.
+     *
+     * \param[in] max_Np restrict max order in poloidal direction to max_Np.
+     */
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0, const sctl::Long max_Nt, const sctl::Long max_Np) const;
 
     private:
 
@@ -241,7 +256,7 @@ namespace biest {
     return U0_;
   }
 
-  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const {
+  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0, const sctl::Long max_Nt, const sctl::Long max_Np) const {
     constexpr bool half_period = false;
     const sctl::Long Ntrg = Xtrg.size() / COORD_DIM;
     SCTL_ASSERT((sctl::Long)Xtrg.size() == COORD_DIM * Ntrg);
@@ -266,6 +281,15 @@ namespace biest {
         Nt *= 2; // TODO: Upsample Nt and Np independently
         Np *= 2;
       } else break;
+
+      if ((max_Nt > 0 && Nt > max_Nt) || (max_Np > 0 && Np > max_Np)) {
+        if (max_Nt > 0) Nt = std::min(Nt, max_Nt);
+        if (max_Np > 0) Np = std::min(Np, max_Np);
+
+        Svec[0] = Surface<Real>(NFP_*Nt, Np);
+        SurfaceOp<Real>::Resample(Svec[0].Coord(), NFP_*Nt, Np, XX, NFP_*Nt_, Np_);
+        break;
+      }
     }
 
     BoundaryIntegralOp<Real,1,3,1> LaplaceFxdU_(sctl::Comm::Self());
@@ -334,8 +358,8 @@ namespace biest {
     return VacuumFieldBase<Real,true>::ComputeU_(sigma);
   }
 
-  template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const {
-    return VacuumFieldBase<Real,true>::EvalOffSurface(Xt, sigma, J, 0);
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const sctl::Long max_Nt, const sctl::Long max_Np) const {
+    return VacuumFieldBase<Real,true>::EvalOffSurface(Xt, sigma, J, 0, max_Nt, max_Np);
   }
 
 
@@ -358,8 +382,8 @@ namespace biest {
     return VacuumFieldBase<Real,false>::ComputeU_(sigma);
   }
 
-  template <class Real> std::vector<Real> IntVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const {
-    return VacuumFieldBase<Real,false>::EvalOffSurface(Xt, sigma, std::vector<Real>(), I0);
+  template <class Real> std::vector<Real> IntVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0, const sctl::Long max_Nt, const sctl::Long max_Np) const {
+    return VacuumFieldBase<Real,false>::EvalOffSurface(Xt, sigma, std::vector<Real>(), I0, max_Nt, max_Np);
   }
 
 

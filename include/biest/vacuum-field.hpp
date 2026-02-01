@@ -82,7 +82,7 @@ namespace biest {
      */
     std::vector<Real> ComputeU(const std::vector<Real>& sigma) const;
 
-    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const;
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const sctl::Long max_Nt=-1, const sctl::Long max_Np=-1) const;
   };
 
   /**
@@ -157,7 +157,7 @@ namespace biest {
      */
     std::vector<Real> ComputeU(const std::vector<Real>& sigma) const;
 
-    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const;
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0, const sctl::Long max_Nt=-1, const sctl::Long max_Np=-1) const;
   };
 
   /**

@@ -299,6 +299,8 @@ template <sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, cla
   sctl::Long NNt = ((Nt + Nv - 1) / Nv) * Nv;
   if (NNt == Nv) {
     sctl::StaticArray<Real,Nv> tmp_xt;
+    for (sctl::Integer i = 0; i < Nt; i++) tmp_xt[i] = 0;
+
     RealVec xt[COORD_DIM], vt[KDIM1], xs[COORD_DIM], ns[COORD_DIM], vs[KDIM0];
     for (sctl::Integer k = 0; k < KDIM1; k++) vt[k] = RealVec::Zero();
     for (sctl::Integer k = 0; k < COORD_DIM; k++) {

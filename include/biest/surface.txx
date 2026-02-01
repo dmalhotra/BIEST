@@ -449,10 +449,10 @@ struct VTKData {
     if(value.size()){ // value
       block_size=value.size()*sizeof(VTKReal); vtufile.write((char*)&block_size, sizeof(int32_t)); vtufile.write((char*)&value  [0], value.size()*sizeof(VTKReal));
     }
-    block_size=line_connect.size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); vtufile.write((char*)&line_connect[0], line_connect.size()*sizeof(int32_t));
-    block_size=line_offset .size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); vtufile.write((char*)&line_offset [0], line_offset .size()*sizeof(int32_t));
-    block_size=poly_connect.size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); vtufile.write((char*)&poly_connect[0], poly_connect.size()*sizeof(int32_t));
-    block_size=poly_offset .size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); vtufile.write((char*)&poly_offset [0], poly_offset .size()*sizeof(int32_t));
+    block_size=line_connect.size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); if (line_connect.size()) vtufile.write((char*)&line_connect[0], line_connect.size()*sizeof(int32_t));
+    block_size=line_offset .size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); if (line_offset .size()) vtufile.write((char*)&line_offset [0], line_offset .size()*sizeof(int32_t));
+    block_size=poly_connect.size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); if (poly_connect.size()) vtufile.write((char*)&poly_connect[0], poly_connect.size()*sizeof(int32_t));
+    block_size=poly_offset .size()*sizeof(int32_t); vtufile.write((char*)&block_size, sizeof(int32_t)); if (poly_offset .size()) vtufile.write((char*)&poly_offset [0], poly_offset .size()*sizeof(int32_t));
 
     vtufile<<"\n";
     vtufile<<"  </AppendedData>\n";

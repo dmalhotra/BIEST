@@ -1,3 +1,4 @@
+#include <complex>
 #include <biest/surface_op.hpp>
 #include <biest/kernel.hpp>
 
@@ -862,7 +863,7 @@ namespace biest {
         sctl::Vector<Real> B_res;
         sctl::Profile::Tic("CompResid", &comm);
         { // Set B_res <-- B - B_taylor * x
-          auto complex_vec_scal_prod = [&SurfDim,&SurfDsp] (sctl::Vector<Real>& v, sctl::Complex<Real> c) {
+          auto complex_vec_scal_prod = [&SurfDim,&SurfDsp] (sctl::Vector<Real>& v, std::complex<Real> c) {
             sctl::Long Nsurf = SurfDim.Dim();
             SCTL_ASSERT(SurfDsp.Dim() == Nsurf);
             sctl::Long N = SurfDsp[Nsurf-1]+SurfDim[Nsurf-1];
@@ -874,8 +875,8 @@ namespace biest {
                 for (sctl::Long j = 0; j < SurfDim[i]; j++) {
                   Real v0 = v[offset + 0*SurfDim[i] + j];
                   Real v1 = v[offset + 1*SurfDim[i] + j];
-                  Real cv0 = v0 * c.real - v1 * c.imag;
-                  Real cv1 = v0 * c.imag + v1 * c.real;
+                  Real cv0 = v0 * c.real() - v1 * c.imag();
+                  Real cv1 = v0 * c.imag() + v1 * c.real();
                   v[offset + 0*SurfDim[i] + j] = cv0;
                   v[offset + 1*SurfDim[i] + j] = cv1;
                 }
@@ -889,13 +890,13 @@ namespace biest {
             sctl::Long dof = v0.Dim() / (N * 2);
             SCTL_ASSERT(v0.Dim() == N * dof * 2);
             SCTL_ASSERT(v1.Dim() == N * dof * 2);
-            sctl::Complex<Real> v1dotv2(0,0);
+            std::complex<Real> v1dotv2(0,0);
             for (sctl::Long i = 0; i < Nsurf; i++) {
               for (sctl::Long k = 0; k < dof; k++) {
                 sctl::Long offset = SurfDsp[i]*dof*2 + k*2*SurfDim[i];
                 for (sctl::Long j = 0; j < SurfDim[i]; j++) {
-                  sctl::Complex<Real> c0(v0[offset + 0*SurfDim[i] + j], v0[offset + 1*SurfDim[i] + j]);
-                  sctl::Complex<Real> c1(v1[offset + 0*SurfDim[i] + j], v1[offset + 1*SurfDim[i] + j]);
+                  std::complex<Real> c0(v0[offset + 0*SurfDim[i] + j], v0[offset + 1*SurfDim[i] + j]);
+                  std::complex<Real> c1(v1[offset + 0*SurfDim[i] + j], v1[offset + 1*SurfDim[i] + j]);
                   v1dotv2 += c0 * c1;
                 }
               }
@@ -903,8 +904,8 @@ namespace biest {
             return v1dotv2;
           };
 
-          sctl::Matrix<sctl::Complex<Real>> b(B_taylor.Dim(), 1);
-          sctl::Matrix<sctl::Complex<Real>> M(B_taylor.Dim(), B_taylor.Dim());
+          sctl::Matrix<std::complex<Real>> b(B_taylor.Dim(), 1);
+          sctl::Matrix<std::complex<Real>> M(B_taylor.Dim(), B_taylor.Dim());
           for (sctl::Long i = 0; i < B_taylor.Dim(); i++) { // Set b, M
             b[i][0] = complex_vec_dot_prod(B,B_taylor[i]);
             for (sctl::Long j = 0; j < B_taylor.Dim(); j++) {
@@ -912,11 +913,11 @@ namespace biest {
             }
           }
 
-          sctl::Matrix<sctl::Complex<Real>> Minv(B_taylor.Dim(), B_taylor.Dim());
+          sctl::Matrix<std::complex<Real>> Minv(B_taylor.Dim(), B_taylor.Dim());
           if (M.Dim(0) == 1 && M.Dim(1) == 1) { // Set Minv <-- inv(M)
-            Minv[0][0] = 1 / M[0][0];
+            Minv[0][0] = Real(1) / M[0][0];
           } else if (M.Dim(0) == 2 && M.Dim(1) == 2) {
-            sctl::Complex<Real> oodet = 1 / (M[0][0] * M[1][1] - M[0][1] * M[1][0]);
+            std::complex<Real> oodet = Real(1) / (M[0][0] * M[1][1] - M[0][1] * M[1][0]);
             Minv[0][0] = M[1][1] * oodet;
             Minv[0][1] = -M[0][1] * oodet;
             Minv[1][0] = -M[1][0] * oodet;
@@ -1465,7 +1466,7 @@ namespace biest {
           SCTL_ASSERT(A.Dim() == N * COORD_DIM * dof);
           sctl::Long offset = SurfDsp[surf_id] * COORD_DIM * dof;
 
-          sctl::Complex<Real> circ_ = 0;
+          std::complex<Real> circ_ = 0;
           sctl::Vector<Real> circ_vec(dof*Np);
           for (sctl::Long d = 0; d < dof; d++) {
             for (sctl::Long p = 0; p < Np; p++) {
@@ -1478,15 +1479,15 @@ namespace biest {
                 }
               }
               circ_vec[d * Np + p] = integ0 / Nt;
-              if (!d) circ_.real += integ0 / (Nt*Np);
-              else    circ_.imag += integ0 / (Nt*Np);
+              if (!d) circ_.real(circ_.real() + integ0 / (Nt*Np));
+              else    circ_.imag(circ_.imag() + integ0 / (Nt*Np));
             }
           }
           if (circ) (*circ) = circ_vec;
           for (sctl::Long d = 0; d < dof; d++) {
             for (sctl::Long p = 0; p < Np; p++) {
-              if (!d) circ_vec[d * Np + p] -= circ_.real;
-              else    circ_vec[d * Np + p] -= circ_.imag;
+              if (!d) circ_vec[d * Np + p] -= circ_.real();
+              else    circ_vec[d * Np + p] -= circ_.imag();
             }
           }
           return circ_;
@@ -1503,7 +1504,7 @@ namespace biest {
           SCTL_ASSERT(A.Dim() == N * COORD_DIM * dof);
           sctl::Long offset = SurfDsp[surf_id] * COORD_DIM * dof;
 
-          sctl::Complex<Real> circ_ = 0;
+          std::complex<Real> circ_ = 0;
           sctl::Vector<Real> circ_vec(dof*Nt);
           for (sctl::Long d = 0; d < dof; d++) {
             for (sctl::Long t = 0; t < Nt; t++) {
@@ -1516,15 +1517,15 @@ namespace biest {
                 }
               }
               circ_vec[d * Nt + t] = integ0 / Np;
-              if (!d) circ_.real += integ0 / (Nt*Np);
-              else    circ_.imag += integ0 / (Nt*Np);
+              if (!d) circ_.real(circ_.real() + integ0 / (Nt*Np));
+              else    circ_.imag(circ_.imag() + integ0 / (Nt*Np));
             }
           }
           if (circ) (*circ) = circ_vec;
           for (sctl::Long d = 0; d < dof; d++) {
             for (sctl::Long t = 0; t < Nt; t++) {
-              if (!d) circ_vec[d * Nt + t] -= circ_.real;
-              else    circ_vec[d * Nt + t] -= circ_.imag;
+              if (!d) circ_vec[d * Nt + t] -= circ_.real();
+              else    circ_vec[d * Nt + t] -= circ_.imag();
             }
           }
           return circ_;
@@ -1581,11 +1582,11 @@ namespace biest {
           if (sigma_out.Dim() < 1) sigma_out.ReInit(1);
 
           // TODO: change flux evaluation only on curve
-          sctl::Complex<Real> tor_flux = compute_pol_circ(nullptr, B_flux[0], 0) / lambda;
-          sctl::Complex<Real> scal = sctl::Complex<Real>(1,0) / tor_flux;
-          complex_vec_prod(B[0], scal.real, scal.imag);
-          complex_vec_prod(m[0], scal.real, scal.imag);
-          complex_vec_prod(sigma[0], scal.real, scal.imag);
+          std::complex<Real> tor_flux = compute_pol_circ(nullptr, B_flux[0], 0) / lambda;
+          std::complex<Real> scal = std::complex<Real>(1,0) / tor_flux;
+          complex_vec_prod(B[0], scal.real(), scal.imag());
+          complex_vec_prod(m[0], scal.real(), scal.imag());
+          complex_vec_prod(sigma[0], scal.real(), scal.imag());
           real_imag_part(B_out[0], B[0], true);
           sigma_out[0] = sigma[0];
           m_out[0] = m[0];
@@ -1596,33 +1597,33 @@ namespace biest {
           if (m_out.Dim() < 2) m_out.ReInit(2);
           if (sigma_out.Dim() < 2) sigma_out.ReInit(2);
 
-          sctl::Complex<Real> tor_flux0 = (compute_pol_circ(nullptr, B_flux[0], OuterSurfIdx) - compute_pol_circ(nullptr, B_flux[0], InnerSurfIdx)) / lambda;
-          sctl::Complex<Real> tor_flux1 = (compute_pol_circ(nullptr, B_flux[1], OuterSurfIdx) - compute_pol_circ(nullptr, B_flux[1], InnerSurfIdx)) / lambda;
-          sctl::Complex<Real> pol_flux0 = (compute_tor_circ(nullptr, B_flux[0], OuterSurfIdx) - compute_tor_circ(nullptr, B_flux[0], InnerSurfIdx)) / lambda;
-          sctl::Complex<Real> pol_flux1 = (compute_tor_circ(nullptr, B_flux[1], OuterSurfIdx) - compute_tor_circ(nullptr, B_flux[1], InnerSurfIdx)) / lambda;
+          std::complex<Real> tor_flux0 = (compute_pol_circ(nullptr, B_flux[0], OuterSurfIdx) - compute_pol_circ(nullptr, B_flux[0], InnerSurfIdx)) / lambda;
+          std::complex<Real> tor_flux1 = (compute_pol_circ(nullptr, B_flux[1], OuterSurfIdx) - compute_pol_circ(nullptr, B_flux[1], InnerSurfIdx)) / lambda;
+          std::complex<Real> pol_flux0 = (compute_tor_circ(nullptr, B_flux[0], OuterSurfIdx) - compute_tor_circ(nullptr, B_flux[0], InnerSurfIdx)) / lambda;
+          std::complex<Real> pol_flux1 = (compute_tor_circ(nullptr, B_flux[1], OuterSurfIdx) - compute_tor_circ(nullptr, B_flux[1], InnerSurfIdx)) / lambda;
 
-          sctl::Matrix<sctl::Complex<Real>> M(2,2);
+          sctl::Matrix<std::complex<Real>> M(2,2);
           M[0][0] = tor_flux0; M[0][1] = tor_flux1;
           M[1][0] = pol_flux0; M[1][1] = pol_flux1;
 
-          sctl::Matrix<sctl::Complex<Real>> M_inv(2,2);
-          sctl::Complex<Real> det = M[0][0]*M[1][1] - M[0][1]*M[1][0];
+          sctl::Matrix<std::complex<Real>> M_inv(2,2);
+          std::complex<Real> det = M[0][0]*M[1][1] - M[0][1]*M[1][0];
           M_inv[0][0] = M[1][1]/det; M_inv[0][1] =-M[0][1]/det;
           M_inv[1][0] =-M[1][0]/det; M_inv[1][1] = M[0][0]/det;
 
-          auto ComplexMatVec2x2 = [&complex_vec_prod](sctl::Vector<sctl::Vector<Real>>& Vout, const sctl::Vector<sctl::Vector<Real>>& Vin, const sctl::Matrix<sctl::Complex<Real>>& M) {
+          auto ComplexMatVec2x2 = [&complex_vec_prod](sctl::Vector<sctl::Vector<Real>>& Vout, const sctl::Vector<sctl::Vector<Real>>& Vin, const sctl::Matrix<std::complex<Real>>& M) {
             SCTL_ASSERT(Vin.Dim() == 2 && Vout.Dim() == 2);
             SCTL_ASSERT(M.Dim(0) == 2 && M.Dim(1) == 2);
             sctl::Vector<Real> V0, V1;
 
             V0 = Vin[0]; V1 = Vin[1];
-            complex_vec_prod(V0, M[0][0].real, M[0][0].imag);
-            complex_vec_prod(V1, M[1][0].real, M[1][0].imag);
+            complex_vec_prod(V0, M[0][0].real(), M[0][0].imag());
+            complex_vec_prod(V1, M[1][0].real(), M[1][0].imag());
             Vout[0] = V0 + V1;
 
             V0 = Vin[0]; V1 = Vin[1];
-            complex_vec_prod(V0, M[0][1].real, M[0][1].imag);
-            complex_vec_prod(V1, M[1][1].real, M[1][1].imag);
+            complex_vec_prod(V0, M[0][1].real(), M[0][1].imag());
+            complex_vec_prod(V1, M[1][1].real(), M[1][1].imag());
             Vout[1] = V0 + V1;
           };
 

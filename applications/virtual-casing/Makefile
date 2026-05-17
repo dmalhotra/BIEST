@@ -1,7 +1,7 @@
 BIEST_INCDIR = ./../../include
 
 CXX = g++
-CXXFLAGS = -std=c++11 -fopenmp -march=native -Wall # need C++11 and OpenMP
+CXXFLAGS = -std=c++17 -fopenmp -march=native -Wall # need C++17 and OpenMP
 
 #Optional flags
 #CXXFLAGS += -O0 # debug build

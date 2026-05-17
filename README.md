@@ -1,5 +1,5 @@
 ### Minimum requirements to compile:
-C++ compiler that supports C++11 standard
+C++ compiler that supports C++17 standard
 
 
 ### Optional libraries for better performance:

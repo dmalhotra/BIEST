@@ -26,6 +26,8 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] Np number of surface discretization points in the poloidal
      * direction.
+     *
+     * @note Nt*Np*sizeof(Real) must be a multiple of 16 (FFT alignment; Nt*Np even for double).
      */
     SurfaceOp(const sctl::Comm& comm = sctl::Comm::Self(), sctl::Long Nt = 0, sctl::Long Np = 0);
 

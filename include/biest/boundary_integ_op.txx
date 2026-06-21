@@ -226,13 +226,13 @@ namespace biest {
     }
 
     template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0) {
-      auto FFT_Helper = [](const sctl::FFT<Real>& fft, const sctl::Vector<Real>& in, sctl::Vector<Real>& out) {
+      auto FFT_Helper = [](const sctl::FFT<Real>& fft, sctl::Vector<Real>& in, sctl::Vector<Real>& out) {
         sctl::Long dof = in.Dim() / fft.Dim(0);
         if (out.Dim() != dof * fft.Dim(1)) {
           out.ReInit(dof * fft.Dim(1));
         }
         for (sctl::Long i = 0; i < dof; i++) {
-          const sctl::Vector<Real> in_(fft.Dim(0), (sctl::Iterator<Real>)in.begin() + i * fft.Dim(0), false);
+          sctl::Vector<Real> in_(fft.Dim(0), in.begin() + i * fft.Dim(0), false);
           sctl::Vector<Real> out_(fft.Dim(1), out.begin() + i * fft.Dim(1), false);
           fft.Execute(in_, out_);
         }
@@ -256,7 +256,9 @@ namespace biest {
       }
 
       sctl::Vector<Real> tmp0, tmp_;
-      auto X0__ = X0_; // TODO: make unaligned plans and remove this workaround
+      sctl::ScratchBuf<Real> X0__buf(X0_.Dim());
+      sctl::Vector<Real> X0__(X0__buf);
+      sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // copy aligns input for FFTW and preserves const X0_
       FFT_Helper(fft_r2c0, X0__, tmp0);
 
       sctl::Long dof = tmp0.Dim() / (Nt0_*Np0_*2);
@@ -264,7 +266,7 @@ namespace biest {
       if (tmp_.Dim() != dof * Nt1_ * Np1_ * 2) tmp_.ReInit(dof * Nt1_ * Np1_ * 2);
       tmp_.SetZero();
 
-      Real scale = sctl::sqrt<Real>(Nt1 * Np1) / sctl::sqrt<Real>(Nt0 * Np0);
+      Real scale = 1 / (Real)(Nt0 * Np0); // FFT is unnormalized
       sctl::Long Ntt = std::min(Nt0_, Nt1_);
       sctl::Long Npp = std::min(Np0_, Np1_);
       for (sctl::Long k = 0; k < dof; k++) {

@@ -17,13 +17,13 @@ template <class Real> SurfaceOp<Real>& SurfaceOp<Real>::operator=(const SurfaceO
 }
 
 template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X0_, sctl::Long Nt0, sctl::Long Np0, sctl::Vector<Real>& X1_, sctl::Long Nt1, sctl::Long Np1) {
-  auto FFT_Helper = [](const sctl::FFT<Real>& fft, const sctl::Vector<Real>& in, sctl::Vector<Real>& out) {
+  auto FFT_Helper = [](const sctl::FFT<Real>& fft, sctl::Vector<Real>& in, sctl::Vector<Real>& out) {
     sctl::Long dof = in.Dim() / fft.Dim(0);
     if (out.Dim() != dof * fft.Dim(1)) {
       out.ReInit(dof * fft.Dim(1));
     }
     for (sctl::Long i = 0; i < dof; i++) {
-      const sctl::Vector<Real> in_(fft.Dim(0), (sctl::Iterator<Real>)in.begin() + i * fft.Dim(0), false);
+      sctl::Vector<Real> in_(fft.Dim(0), in.begin() + i * fft.Dim(0), false);
       sctl::Vector<Real> out_(fft.Dim(1), out.begin() + i * fft.Dim(1), false);
       fft.Execute(in_, out_);
     }
@@ -45,7 +45,9 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
   }
 
   sctl::Vector<Real> tmp0, tmp_;
-  auto X0__ = X0_; // TODO: make unaligned plans and remove this workaround
+  sctl::ScratchBuf<Real> X0__buf(X0_.Dim());
+  sctl::Vector<Real> X0__(X0__buf);
+  sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // copy aligns input for FFTW and preserves const X0_
   FFT_Helper(fft_r2c0, X0__, tmp0);
 
   sctl::Long dof = tmp0.Dim() / (Nt0_*Np0_*2);
@@ -53,7 +55,7 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
   if (tmp_.Dim() != dof * Nt1_ * Np1_ * 2) tmp_.ReInit(dof * Nt1_ * Np1_ * 2);
   tmp_.SetZero();
 
-  Real scale = sctl::sqrt<Real>(Nt1 * Np1) / sctl::sqrt<Real>(Nt0 * Np0);
+  Real scale = 1 / (Real)(Nt0 * Np0); // FFT is unnormalized
   sctl::Long Ntt = std::min(Nt0_, Nt1_);
   sctl::Long Npp = std::min(Np0_, Np1_);
   for (sctl::Long k = 0; k < dof; k++) {
@@ -116,7 +118,7 @@ template <class Real> void SurfaceOp<Real>::Grad2D(sctl::Vector<Real>& dX, const
   for (sctl::Long k = 0; k < dof; k++) {
     fft_r2c.Execute(sctl::Vector<Real>(Nt_*Np_, (sctl::Iterator<Real>)X.begin() + k*Nt_*Np_, false), coeff);
 
-    Real scal = (2 * sctl::const_pi<Real>());
+    Real scal = (2 * sctl::const_pi<Real>()) / (Real)(Nt_ * Np_); // FFT is unnormalized
     #pragma omp parallel for schedule(static)
     for (sctl::Long t = 0; t < Nt; t++) { // grad_coeff(t,p) <-- imag * t * coeff(t,p)
       for (sctl::Long p = 0; p < Np; p++) {
@@ -131,7 +133,6 @@ template <class Real> void SurfaceOp<Real>::Grad2D(sctl::Vector<Real>& dX, const
       fft_c2r.Execute(grad_coeff, fft_out);
     }
 
-    scal = (2 * sctl::const_pi<Real>());
     #pragma omp parallel for schedule(static)
     for (sctl::Long t = 0; t < Nt; t++) { // grad_coeff(t,p) <-- imag * p * coeff(t,p)
       for (sctl::Long p = 0; p < Np; p++) {
@@ -357,6 +358,7 @@ template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLa
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = [Nt_, Np_, &fft_r2c, &fft_c2r, &dX](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) {
       sctl::Vector<Real> coeff;
       fft_r2c.Execute(x, coeff);
+      coeff *= 1 / (Real)(Nt_ * Np_); // FFT is unnormalized
 
       Real Lt = 0, Lp = 0;
       sctl::Long N = Nt_ * Np_;
@@ -411,6 +413,7 @@ template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& G
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = [Nt_, Np_, &fft_r2c, &fft_c2r, &dX](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) {
       sctl::Vector<Real> coeff;
       fft_r2c.Execute(x, coeff);
+      coeff *= 1 / (Real)(Nt_ * Np_); // FFT is unnormalized
 
       Real Lt = 0, Lp = 0;
       sctl::Long N = Nt_ * Np_;
@@ -755,9 +758,10 @@ template <class Real> void SurfaceOp<Real>::Init(const sctl::Comm& comm, sctl::L
   solver = sctl::GMRES<Real>(comm_,false);
 
   if (!Nt_ || !Np_) return;
+  SCTL_ASSERT_MSG((Nt_*Np_*sizeof(Real)) % 16 == 0, "SurfaceOp: Nt*Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
-  fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
-  fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
+  fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
+  fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
 }
 
 template <class Real> Real SurfaceOp<Real>::max_norm(const sctl::Vector<Real>& x) {
@@ -863,22 +867,25 @@ template <class Real> void SurfaceOp<Real>::LaplaceBeltramiReference(sctl::Vecto
 
 
 template <class Real> void SurfaceOp<Real>::RotateToroidal(sctl::Vector<Real>& X_, const sctl::Vector<Real>& X, const sctl::Long Nt_, const sctl::Long Np_, const Real dtheta) {
+  SCTL_ASSERT_MSG((Nt_*Np_*sizeof(Real)) % 16 == 0, "SurfaceOp::RotateToroidal: Nt*Np*sizeof(Real) must be a multiple of 16 (FFT alignment).");
   const sctl::Long dof = X.Dim() / (Nt_*Np_);
   SCTL_ASSERT(X.Dim() == dof*Nt_*Np_);
   if (X_.Dim() != dof*Nt_*Np_) X_.ReInit(dof*Nt_*Np_);
 
   sctl::FFT<Real> fft_r2c, fft_c2r;
   sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
-  fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
-  fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false));
+  fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
+  fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
 
   sctl::Long Nt = Nt_;
   sctl::Long Np = fft_r2c.Dim(1) / (Nt * 2);
   SCTL_ASSERT(fft_r2c.Dim(1) == Nt * Np * 2);
   sctl::Vector<Real> coeff(fft_r2c.Dim(1));
   sctl::Vector<Real> coeff_(fft_r2c.Dim(1));
+  const Real inv_N = 1 / (Real)(Nt_ * Np_); // FFT is unnormalized
   for (sctl::Long k = 0; k < dof; k++) {
     fft_r2c.Execute(sctl::Vector<Real>(Nt_*Np_, (sctl::Iterator<Real>)X.begin() + k*Nt_*Np_, false), coeff);
+    coeff *= inv_N;
 
     #pragma omp parallel for schedule(static)
     for (sctl::Long t = 0; t < Nt; t++) { // coeff_(t,p) <-- imag * t * coeff(t,p)

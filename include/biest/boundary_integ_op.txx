@@ -226,18 +226,8 @@ namespace biest {
     }
 
     template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0) {
-      auto FFT_Helper = [](const sctl::FFT<Real>& fft, sctl::Vector<Real>& in, sctl::Vector<Real>& out) {
-        sctl::Long dof = in.Dim() / fft.Dim(0);
-        if (out.Dim() != dof * fft.Dim(1)) {
-          out.ReInit(dof * fft.Dim(1));
-        }
-        for (sctl::Long i = 0; i < dof; i++) {
-          sctl::Vector<Real> in_(fft.Dim(0), in.begin() + i * fft.Dim(0), false);
-          sctl::Vector<Real> out_(fft.Dim(1), out.begin() + i * fft.Dim(1), false);
-          fft.Execute(in_, out_);
-        }
-      };
       assert(X0_.Dim() % (Nt0 * Np0) == 0);
+      const sctl::Long dof = X0_.Dim() / (Nt0 * Np0);
       sctl::Long Nt1 = UPSAMPLE * Nt0;
       sctl::Long Np1 = UPSAMPLE * Np0;
 
@@ -248,20 +238,18 @@ namespace biest {
       sctl::Long Np1_ = Np1 / 2 + 1;
 
       sctl::FFT<Real> fft_r2c0, fft_c2r_;
-      { // Initialize fft_r2c0, fft_c2r_
+      { // howmany=dof: batched transform on aligned base (no per-component sub-views)
         sctl::StaticArray<sctl::Long, 2> fft_dim0{Nt0, Np0};
         sctl::StaticArray<sctl::Long, 2> fft_dim_{Nt1, Np1};
-        fft_r2c0.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim0, false), omp_get_max_threads());
-        fft_c2r_.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
+        fft_r2c0.Setup(sctl::FFT_Type::R2C, dof, sctl::Vector<sctl::Long>(2, fft_dim0, false), omp_get_max_threads());
+        fft_c2r_.Setup(sctl::FFT_Type::C2R, dof, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
       }
 
       sctl::Vector<Real> tmp0, tmp_;
       sctl::ScratchBuf<Real> X0__buf(X0_.Dim());
       sctl::Vector<Real> X0__(X0__buf);
-      sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // copy aligns input for FFTW and preserves const X0_
-      FFT_Helper(fft_r2c0, X0__, tmp0);
-
-      sctl::Long dof = tmp0.Dim() / (Nt0_*Np0_*2);
+      sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // aligned copy (preserves const X0_)
+      fft_r2c0.Execute(X0__, tmp0);
       SCTL_ASSERT(tmp0.Dim() == dof * Nt0_ * Np0_ * 2);
       if (tmp_.Dim() != dof * Nt1_ * Np1_ * 2) tmp_.ReInit(dof * Nt1_ * Np1_ * 2);
       tmp_.SetZero();
@@ -285,7 +273,7 @@ namespace biest {
       }
 
       if (X_.Dim() != dof  * Nt1 * Np1) X_.ReInit(dof * Nt1 * Np1);
-      FFT_Helper(fft_c2r_, tmp_, X_);
+      fft_c2r_.Execute(tmp_, X_);
 
       { // Floating-point correction
         sctl::Long Ut = Nt1 / Nt0;

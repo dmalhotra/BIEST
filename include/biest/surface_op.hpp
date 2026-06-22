@@ -1,6 +1,9 @@
 #ifndef _SURFACE_OP_HPP_
 #define _SURFACE_OP_HPP_
 
+#include <map>
+#include <utility>
+
 #include <biest/surface.hpp>
 #include <biest/singular_correction.hpp>
 #include <sctl.hpp>
@@ -26,8 +29,6 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] Np number of surface discretization points in the poloidal
      * direction.
-     *
-     * @note Nt*Np*sizeof(Real) must be a multiple of 16 (FFT alignment; Nt*Np even for double).
      */
     SurfaceOp(const sctl::Comm& comm = sctl::Comm::Self(), sctl::Long Nt = 0, sctl::Long Np = 0);
 
@@ -346,8 +347,8 @@ template <class Real> class SurfaceOp {
 
     sctl::Comm comm_;
     sctl::Long Nt_, Np_;
-    mutable sctl::FFT<Real> fft_r2c, fft_c2r;
     mutable sctl::GMRES<Real> solver;
+    mutable std::map<sctl::Long, std::pair<sctl::FFT<Real>, sctl::FFT<Real>>> Grad2D_fft_; // per-dof R2C/C2R plans (cleared in Init)
 };
 
 }

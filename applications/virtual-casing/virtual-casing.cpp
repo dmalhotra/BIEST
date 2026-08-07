@@ -280,7 +280,7 @@ template <class Real> class VirtualCasing {
           }
         };
         DotProd(BdotN, B, normal);
-        CrossProd(J, normal, B);
+        CrossProd(J, B, normal);
 
         BdotN_dA.ReInit(area_elem.Dim());
         J_dA.ReInit(COORD_DIM*area_elem.Dim());

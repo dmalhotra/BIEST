@@ -63,7 +63,7 @@ template <class Real> class CoilsField {
         for (sctl::Long i = 0; i < current.Dim(); i++) {
           sctl::Vector<Real>& X = Xcoil[i];
           const sctl::Long N0 = X.Dim() / COORD_DIM;
-          const sctl::Long N = N0 * CoilUpsampleFactor;
+          const sctl::Long N = (sctl::Long)(N0 * CoilUpsampleFactor);
           { // Upsample X
             sctl::Vector<Real> X_;
             biest::SurfaceOp<Real>::Upsample(X,N0,1, X_,N,1);
@@ -105,7 +105,7 @@ template <class Real> class CoilsField {
         for (sctl::Long i = 0; i < CoilLength; i++) {
           vtu_data.connect.PushBack(vtu_data.coord.Dim()/COORD_DIM);
           for (sctl::Long k = 0; k < COORD_DIM; k++) {
-            vtu_data.coord.PushBack(Xcoil[j][k*CoilLength+i]);
+            vtu_data.coord.PushBack((biest::VTUData::VTKReal)Xcoil[j][k*CoilLength+i]);
           }
         }
         vtu_data.offset.PushBack(vtu_data.connect.Dim());
@@ -204,7 +204,7 @@ template <class Real> class VirtualCasing {
 
       { // Upsample S, B
         sctl::Vector<Real> B_;
-        biest::Surface<Real> S_(S.NTor()*NtUpsampleFactor, S.NPol()*NpUpsampleFactor);
+        biest::Surface<Real> S_((sctl::Long)(S.NTor()*NtUpsampleFactor), (sctl::Long)(S.NPol()*NpUpsampleFactor));
         biest::SurfaceOp<Real>::Upsample(S.Coord(),S.NTor(),S.NPol(), S_.Coord(),S_.NTor(),S_.NPol());
         biest::SurfaceOp<Real>::Upsample(B,S.NTor(),S.NPol(), B_,S_.NTor(),S_.NPol());
         S = S_;
@@ -402,7 +402,7 @@ int main(int argc, char** argv) {
   // Trace field lines and print paths
   Real t = 0.0, dt = 1.0e-1, tol = 1e-8;
   constexpr sctl::Integer TimeStepOrder = 6;
-  sctl::SDC<Real, TimeStepOrder> ode_solver;
+  sctl::SDC<Real> ode_solver(TimeStepOrder);
   std::cout<<"  x1          x2        y1         y2         z1          z2\n";
   while (t < 100.0) { // Adaptive time-stepping loop
     sctl::Vector<Real> X_;
@@ -431,7 +431,7 @@ int main(int argc, char** argv) {
     for (sctl::Long j = 0; j < Npt; j++) {
       for (sctl::Long i = 0; i < Nsteps; i++) {
         for (sctl::Long k = 0; k < COORD_DIM; k++) {
-          vtu_data.coord.PushBack(Xpath[(i*COORD_DIM+k)*Npt+j]);
+          vtu_data.coord.PushBack((biest::VTUData::VTKReal)Xpath[(i*COORD_DIM+k)*Npt+j]);
         }
       }
     }

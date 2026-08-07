@@ -2,6 +2,9 @@
 /obj/*
 *.vtp
 *.pvtp
+*.vtu
+*.pvtu
 *.log
 /vis*
 *.swo
+*.data

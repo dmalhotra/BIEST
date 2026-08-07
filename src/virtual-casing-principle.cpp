@@ -2,7 +2,50 @@
 #include <sctl.hpp>
 typedef double Real;
 
-// Generalized virtual-casing principle (without solving a Laplace Neumann problem)
+/**
+ * @file
+ * Convergence tests for the virtual-casing principle: given only the total field
+ * B = Bint + Bext on a toroidal surface S, recover the part Bext produced by
+ * external coils, separating it from the part Bint produced by the currents
+ * inside S.
+ *
+ * A plasma fills the interior of S and n is the outward normal. The plasma
+ * currents may be replaced by the sheet current K = n x B on S (mu0 = 1), which
+ * reproduces Bint everywhere outside S. The routines here return
+ * Bext = B - Bint, and that subtraction flips the sign of the Biot-Savart term,
+ * so each of them passes J = B x n = -K to BiotSavart3D::FxU. This is the same
+ * orientation compute_J() uses in bie_solvers.txx.
+ *
+ * Three implementations of the same split are given, plus two tests that drive
+ * them over a sequence of refined grids. They share these template parameters:
+ *
+ * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures.
+ *
+ * @tparam PDIM the partition of unity function is defined on a grid of
+ * dimensions PDIM x PDIM.
+ *
+ * @tparam RDIM the order of the polar quadrature rule. Radial dimension is RDIM
+ * and angular dimension is 2*RDIM.
+ */
+
+/**
+ * Virtual-casing principle for the general case B.n != 0, in a single pass.
+ *
+ * Splits the surface field into its current-like and source-like parts,
+ *
+ *     Bext = BiotSavart[B x n] + grad S[n.B] + B/2,
+ *
+ * with S the Laplace single-layer operator. The first term carries the
+ * tangential circulation of B, the second the normal flux, and B/2 is the
+ * on-surface jump. Needs no Laplace Neumann solve, unlike VirtualCasing(), but
+ * pays for it by evaluating a hypersingular gradient.
+ *
+ * @param[out] Bext the external field at the surface grid points in SoA order.
+ *
+ * @param[in] S the toroidal surface; its normal points outward.
+ *
+ * @param[in] B the total field at the surface grid points in SoA order.
+ */
 template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void GeneralVirtualCasing(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B) {
   constexpr sctl::Integer COORD_DIM = 3;
   sctl::Comm comm = sctl::Comm::Self();
@@ -65,7 +108,7 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Profile::Tic("B-ext", &comm);
   sctl::Vector<Real> BdotN, J, Bext_;
   DotProd(BdotN, B, normal);
-  CrossProd(J, normal, B);
+  CrossProd(J, B, normal); // surface current B x n, as in bie_solvers.txx
   LaplaceFxdU(Bext_, BdotN);
   BiotSavartFxU(Bext, J);
   Bext += Bext_ + 0.5 * B;
@@ -76,7 +119,31 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Profile::Enable(prof_state);
 }
 
-// Virtual-casing principle for the case when B.n=0 (and constructing (B+Bvac).n = 0 when B.n!=0)
+/**
+ * Virtual-casing principle returning the full Bext vector, for B.n = 0.
+ *
+ * With B tangential the sheet current alone reproduces Bint, and
+ *
+ *     Bext = BiotSavart[B x n] + Bt/2,
+ *
+ * where Bt = n x (B x n) is the tangential part of B and Bt/2 is the on-surface
+ * jump.
+ *
+ * When B.n != 0 an auxiliary field is removed first. Solving the second-kind
+ * equation (I/2 + D) phi = S[-n.B] for a surface potential phi and setting
+ * Baux = grad_S phi + (n.B) n gives a field whose normal component is n.B by
+ * construction, since grad_S phi is tangential. B - Baux is then tangential and
+ * the formula above applies to it.
+ *
+ * @param[out] Bext the external field at the surface grid points in SoA order.
+ *
+ * @param[in] S the toroidal surface; its normal points outward.
+ *
+ * @param[in] B the total field at the surface grid points in SoA order.
+ *
+ * @param[in] gmres_tol tolerance for the Baux solve. A value >= 1 skips the
+ * solve entirely and takes Baux = 0, which is only valid when B.n = 0.
+ */
 template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void VirtualCasing(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B, Real gmres_tol = 1e-12) {
   constexpr sctl::Integer COORD_DIM = 3;
   sctl::Comm comm = sctl::Comm::Self();
@@ -173,11 +240,11 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Profile::Toc();
 
   sctl::Profile::Tic("B-ext", &comm);
-  sctl::Vector<Real> J, JxN;
-  CrossProd(J, normal, B-Baux);
-  CrossProd(JxN, J, normal);
+  sctl::Vector<Real> J, NxJ;
+  CrossProd(J, B-Baux, normal); // surface current B x n, as in bie_solvers.txx
+  CrossProd(NxJ, normal, J);
   BiotSavartFxU(Bext, J);
-  Bext += 0.5 * JxN;
+  Bext += 0.5 * NxJ;
   sctl::Profile::Toc();
 
   sctl::Profile::Toc();
@@ -185,7 +252,30 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Profile::Enable(prof_state);
 }
 
-// Virtual-casing principle (using vector potential)
+/**
+ * Virtual-casing principle returning only n.Bext, via the vector potential.
+ *
+ * Same split as VirtualCasing(), including the optional Baux solve, but reaches
+ * the normal component by a cheaper route: build the vector potential
+ * A = S[B x n] componentwise, then take
+ *
+ *     n.Bext = n.(curl A),
+ *
+ * which the surface curl evaluates from surface derivatives alone. This avoids
+ * the hypersingular Biot-Savart evaluation. The jump term drops out because
+ * n.(J x n) = 0 identically -- which also means this routine cannot detect a
+ * sign error in that term.
+ *
+ * @param[out] Bext the scalar n.Bext at the surface grid points; callers compare
+ * it against the normal component of a reference field, not against a vector.
+ *
+ * @param[in] S the toroidal surface; its normal points outward.
+ *
+ * @param[in] B the total field at the surface grid points in SoA order.
+ *
+ * @param[in] gmres_tol tolerance for the Baux solve. A value >= 1 skips the
+ * solve entirely and takes Baux = 0, which is only valid when B.n = 0.
+ */
 template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void VirtualCasingNormalComponent(sctl::Vector<Real>& Bext, const biest::Surface<Real>& S, const sctl::Vector<Real>& B, Real gmres_tol = 1e-12) {
   constexpr sctl::Integer COORD_DIM = 3;
   sctl::Comm comm = sctl::Comm::Self();
@@ -290,6 +380,28 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Profile::Enable(prof_state);
 }
 
+/**
+ * Convergence test against a cached Taylor state on a W7-X surface.
+ *
+ * Resamples the reference pair (B0, B0ext) down to the Nt x Np working grid, runs
+ * the virtual-casing split on the total field alone, and prints the recovery
+ * error relative to max|B|.
+ *
+ * The reference is a Taylor state, curl B = lambda B, so S is a flux surface and
+ * B.n = 0. That is what lets this test pass gmres_tol >= 1 and skip the Baux
+ * solve legitimately.
+ *
+ * @param[in] Nt, Np the working grid; the error is measured here.
+ *
+ * @param[in] Nt0, Np0 the resolution the reference pair is stored at. Must be at
+ * least the working grid, and B0 must hold exactly COORD_DIM*Nt0*Np0 values --
+ * a mismatched cache whose length happens to be a multiple of Nt0*Np0 is
+ * silently reinterpreted with the wrong number of components.
+ *
+ * @param[in] B0 the reference total field in SoA order.
+ *
+ * @param[in] B0ext the reference external field in SoA order.
+ */
 template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void test_TaylorState(sctl::Long Nt, sctl::Long Np, sctl::Long Nt0, sctl::Long Np0, const sctl::Vector<Real>& B0, const sctl::Vector<Real>& B0ext) {
   constexpr sctl::Integer COORD_DIM = 3;
   auto DotProd = [](sctl::Vector<Real>& AdotB, const sctl::Vector<Real>& A, const sctl::Vector<Real>& B) {
@@ -345,6 +457,26 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   std::cout<<"Maximum relative error: "<<max_err/max_val<<'\n';
 }
 
+/**
+ * Convergence test against hand-placed current loops. Self-contained: it builds
+ * its own reference and needs no cached data.
+ *
+ * Two sets of circular current loops carry a tangential current density. The
+ * interior set is obtained by shrinking the W7-X surface inward along -n and
+ * averaging over the poloidal angle, collapsing it to a closed curve near the
+ * magnetic axis, so it threads the torus and carries toroidal current. The
+ * exterior set is a single loop outside. Then Bint, Bext and B = Bint + Bext all
+ * follow from Biot-Savart.
+ *
+ * Because the loops are placed by hand, the correct split is known exactly and
+ * the test needs no separately computed reference. B.n != 0 here, so callers
+ * should pass a real tolerance and let the Baux solve run.
+ *
+ * @param[in] Nt, Np the surface grid the error is measured on.
+ *
+ * @param[in] gmres_tol tolerance for the Baux solve; keep it below 1 so the solve
+ * is not skipped.
+ */
 template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void test_CurrentLoops(sctl::Long Nt, sctl::Long Np, Real gmres_tol = 1e-12) {
   constexpr sctl::Integer COORD_DIM = 3;
   auto WriteVTK_ = [](std::string fname, const sctl::Vector<sctl::Vector<Real>>& coords, const sctl::Vector<sctl::Vector<Real>>& values) {
@@ -541,7 +673,9 @@ int main(int argc, char** argv) {
   if (1) {
     long Nt0 = 70*32, Np0 = 14*32; // reference solution resolution
     sctl::Vector<Real> B, Bext;
-    if (0) {
+    B.Read("tmp-B.data");
+    Bext.Read("tmp-Bext.data");
+    if (!B.Dim() || !Bext.Dim()) {
       sctl::Comm comm = sctl::Comm::Self();
 
       Real gmres_tol = 1e-12;
@@ -563,9 +697,6 @@ int main(int argc, char** argv) {
 
       B.Write("tmp-B.data");
       Bext.Write("tmp-Bext.data");
-    } else {
-      B.Read("tmp-B.data");
-      Bext.Read("tmp-Bext.data");
     }
 
     test_TaylorState<Real,1, 6,12>(70* 1, 14* 1, Nt0, Np0, B, Bext); // 0.0249058    0.0155974

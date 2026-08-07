@@ -172,18 +172,10 @@ namespace kernel_impl {
  * would spend multiply-adds on entries it cannot see are redundant. uKerApply
  * must accumulate the same unscaled values as uKerMatrix.
  *
- * @tparam SCALE integer factor applied on top of uKerScaleFactor, to reach
- * BIEST's sign convention. It is -1 for exactly the double-layer kernels (the
- * ones taking a source normal) and +1 for every other kernel: BIEST orients the
- * source normal opposite to SCTL, and since those kernels are linear in the
- * normal, the flip is a sign. Verified kernel by kernel -- BIEST(r,n) equals
- * SCTL(r,-n) for every kernel with a normal, and SCTL(r,n) exactly for every
- * kernel without one. This is the only sign difference between the libraries.
- *
  * @tparam DIGITS digits of accuracy for the reciprocal square root; -1 selects
  * machine precision.
  */
-template <class Real, class SKer, sctl::Integer DIGITS, sctl::Long SCALE = 1, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> struct KerWrapper {
+template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> struct KerWrapper {
     using RealVec = sctl::Vec<Real,Nv>;
 
     static constexpr sctl::Integer COORD_DIM = SKer::CoordDim();
@@ -221,7 +213,7 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Long SCALE = 1, sc
     static void BuildMatrix(const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& r_trg, sctl::Matrix<Real>& M, const void* ctx) {
       const sctl::Long Ns = r_src.Dim() / COORD_DIM;
       const sctl::Long Nt = r_trg.Dim() / COORD_DIM;
-      const Real scal = SCALE * SKer::template uKerScaleFactor<Real>();
+      const Real scal = SKer::template uKerScaleFactor<Real>();
       const sctl::Long NNs = ((Ns + Nv - 1) / Nv) * Nv;
       SCTL_ASSERT(M.Dim(0) == Ns * KDIM0 && M.Dim(1) == Nt * KDIM1);
       if (!Ns || !Nt) return;
@@ -262,7 +254,7 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Long SCALE = 1, sc
   private:
 
     template <sctl::Integer DOF> static void eval(sctl::Vector<Real>& v_trg, const sctl::Matrix<Real>& Xt, const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& v_src, sctl::Long Ns, sctl::Long Nt, sctl::Integer Nthread, const void* ctx) {
-      const Real scal = SCALE * SKer::template uKerScaleFactor<Real>();
+      const Real scal = SKer::template uKerScaleFactor<Real>();
       const sctl::Long NNt = Xt.Dim(1);
 
       auto trg_blk = [&](sctl::Long t) {
@@ -309,7 +301,7 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
 
   public:
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& DxU() {
-      using Ker = KerWrapper<Real, sctl::Stokes3D_DxU, ORDER, -1, Nv>;
+      using Ker = KerWrapper<Real, sctl::Stokes3D_DxU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 31, nullptr);
       return ker;
     }
@@ -322,31 +314,31 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
 
   public:
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& FxU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_FxU, ORDER, 1, Nv>;
+      using Ker = KerWrapper<Real, sctl::Laplace3D_FxU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 12, nullptr);
       return ker;
     }
 
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_FxdU, ORDER, 1, Nv>;
+      using Ker = KerWrapper<Real, sctl::Laplace3D_FxdU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 19, nullptr);
       return ker;
     }
 
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM*COORD_DIM>& Fxd2U() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_Fxd2U, ORDER, 1, Nv>;
+      using Ker = KerWrapper<Real, sctl::Laplace3D_Fxd2U, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 61, nullptr);
       return ker;
     }
 
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& DxU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_DxU, ORDER, -1, Nv>;
+      using Ker = KerWrapper<Real, sctl::Laplace3D_DxU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 20, nullptr);
       return ker;
     }
 
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& DxdU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_DxdU, ORDER, -1, Nv>;
+      using Ker = KerWrapper<Real, sctl::Laplace3D_DxdU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 39, nullptr);
       return ker;
     }
@@ -359,13 +351,13 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
 
   public:
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& FxU() {
-      using Ker = KerWrapper<Real, sctl::BiotSavart3D_FxU, ORDER, 1, Nv>;
+      using Ker = KerWrapper<Real, sctl::BiotSavart3D_FxU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 27, nullptr);
       return ker;
     }
 
     static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() {
-      using Ker = KerWrapper<Real, sctl::BiotSavart3D_FxdU, ORDER, 1, Nv>;
+      using Ker = KerWrapper<Real, sctl::BiotSavart3D_FxdU, ORDER, Nv>;
       static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 127, nullptr);
       return ker;
     }
@@ -376,9 +368,9 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
   static constexpr sctl::Integer KDIM0 = 2;
   static constexpr sctl::Integer KDIM1 = 2;
 
-  using KerFxU = KerWrapper<Real, sctl::Helmholtz3D_FxU, ORDER, 1, Nv>;
-  using KerDxU = KerWrapper<Real, sctl::Helmholtz3D_DxU, ORDER, -1, Nv>;
-  using KerFxdU = KerWrapper<Real, sctl::Helmholtz3D_FxdU, ORDER, 1, Nv>;
+  using KerFxU = KerWrapper<Real, sctl::Helmholtz3D_FxU, ORDER, Nv>;
+  using KerDxU = KerWrapper<Real, sctl::Helmholtz3D_DxU, ORDER, Nv>;
+  using KerFxdU = KerWrapper<Real, sctl::Helmholtz3D_FxdU, ORDER, Nv>;
 
   public:
 

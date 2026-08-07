@@ -28,10 +28,10 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   BIOp(U, F);
 
   Real err = 0;
-  for (auto x:U) err = std::max(err, fabs(x-0.5));
+  for (auto x:U) err = std::max(err, fabs(x+0.5));
   std::cout<<err<<'\n';
 
-  WriteVTK("S", Svec, U-0.5);
+  WriteVTK("S", Svec, U+0.5);
 }
 
 template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM> void test_W7X(sctl::Long Nt, sctl::Long Np) {
@@ -47,10 +47,10 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   BIOp(U, F);
 
   Real err = 0;
-  for (auto x:U) err = std::max(err, fabs(x-0.5));
+  for (auto x:U) err = std::max(err, fabs(x+0.5));
   std::cout<<err<<'\n';
 
-  WriteVTK("S", Svec, U-0.5);
+  WriteVTK("S", Svec, U+0.5);
 }
 
 int main(int argc, char** argv) {

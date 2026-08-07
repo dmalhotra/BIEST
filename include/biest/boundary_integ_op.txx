@@ -208,7 +208,7 @@ namespace biest {
       DL(Ud, Fd);
       sctl::Profile::Toc();
 
-      std::cout<<"Error: "<<max_norm(Us+Ud-0.5*Fd)/max_norm(Fd)<<'\n';
+      std::cout<<"Error: "<<max_norm(Us-Ud-0.5*Fd)/max_norm(Fd)<<'\n';
     }
 
     template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::test_Precond(sctl::Long Nt, sctl::Long Np, SurfType surf_type, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm) {
@@ -383,7 +383,7 @@ namespace biest {
           dbl_op.Eval(U, F);
 
           Real err = 0;
-          for (const auto& a : U) err = std::max<Real>(err, sctl::fabs<Real>(a-(Real)0.5));
+          for (const auto& a : U) err = std::max<Real>(err, sctl::fabs<Real>(a+(Real)0.5));
           Real scal = std::max<Real>(1, (digits+1)/(sctl::log(err)/sctl::log((Real)0.1))); // assuming exponential/geometric convergence
           quad_Nt_ = (sctl::Long)(scal * quad_Nt);
           quad_Np_ = (sctl::Long)(scal * quad_Np);

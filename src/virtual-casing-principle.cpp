@@ -150,7 +150,7 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
     sctl::Vector<Real> phi(Nt*Np);
     auto BIEOp = [&LaplaceDxU](sctl::Vector<Real>* u, const sctl::Vector<Real>& phi) { // u = (1 + D) \phi
       (*u) = 0; //phi * 0.5;
-      LaplaceDxU(*u, phi*(1));
+      LaplaceDxU(*u, phi*(-1));
       (*u) += phi * 0.5;
     };
     sctl::GMRES<Real> solve(comm,1);
@@ -256,7 +256,7 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
     sctl::Vector<Real> phi(Nt*Np);
     auto BIEOp = [&LaplaceDxU](sctl::Vector<Real>* u, const sctl::Vector<Real>& phi) { // u = (1 + D) \phi
       (*u) = 0; //phi * 0.5;
-      LaplaceDxU(*u, phi*(1));
+      LaplaceDxU(*u, phi*(-1));
       (*u) += phi * 0.5;
     };
     sctl::GMRES<Real> solve(comm,1);

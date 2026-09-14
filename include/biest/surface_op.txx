@@ -515,7 +515,7 @@ template <class Real> template <sctl::Integer KDIM0, sctl::Integer KDIM1> void S
         Uloc[k * Ntrg + i] = TrgU[k * (b - a) + i - a];
       }
     }
-    comm_.template Allreduce<Real>(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::CommOp::SUM);
+    comm_.Allreduce(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::CommOp::SUM);
     if (Utrg.Dim() != dof * KDIM1 * Ntrg) {
       Utrg.ReInit(dof * KDIM1 * Ntrg);
       Utrg = 0;

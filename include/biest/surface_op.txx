@@ -34,18 +34,20 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
     fft_c2r_.Setup(sctl::FFT_Type::C2R, dof, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
   }
 
-  sctl::Vector<Real> tmp0, tmp_;
-  sctl::ScratchBuf<Real> X0__buf(X0_.Dim());
-  sctl::Vector<Real> X0__(X0__buf);
+  sctl::ScratchBuf<Real> X0__buf(X0_.Dim()), tmp0_buf(dof * Nt0_ * Np0_ * 2), tmp__buf(dof * Nt1_ * Np1_ * 2);
+  sctl::Vector<Real> X0__(X0__buf), tmp0(tmp0_buf), tmp_(tmp__buf);
   sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // aligned copy (preserves const X0_)
-  fft_r2c0.Execute(X0__, tmp0);
-  SCTL_ASSERT(tmp0.Dim() == dof * Nt0_ * Np0_ * 2);
-  if (tmp_.Dim() != dof * Nt1_ * Np1_ * 2) tmp_.ReInit(dof * Nt1_ * Np1_ * 2);
-  tmp_.SetZero();
+  fft_r2c0.Execute(X0__, tmp0, false);
+  {
+    const sctl::Long N = tmp_.Dim();
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long i = 0; i < N; i++) tmp_[i] = 0;
+  }
 
   Real scale = 1 / (Real)(Nt0 * Np0); // FFT is unnormalized
   sctl::Long Ntt = std::min(Nt0_, Nt1_);
   sctl::Long Npp = std::min(Np0_, Np1_);
+  #pragma omp parallel for collapse(2) schedule(static)
   for (sctl::Long k = 0; k < dof; k++) {
     for (sctl::Long t = 0; t <= Ntt / 2; t++) {
       Real scale_ = 1;
@@ -59,6 +61,9 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
         tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 1] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 1];
       }
     }
+  }
+  #pragma omp parallel for collapse(2) schedule(static)
+  for (sctl::Long k = 0; k < dof; k++) {
     for (sctl::Long t = 0; t < Ntt / 2; t++) {
       Real scale_ = 1;
       if (Nt0%2==0 && Nt0_ < Nt1_ && t == Ntt/2-1) scale_ = 0.5;
@@ -74,12 +79,13 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
   }
 
   if (X1_.Dim() != dof  * Nt1 * Np1) X1_.ReInit(dof * Nt1 * Np1);
-  fft_c2r_.Execute(tmp_, X1_);
+  fft_c2r_.Execute(tmp_, X1_, false);
 
   { // Floating-point correction
     sctl::Long Ut = Nt1 / Nt0;
     sctl::Long Up = Np1 / Np0;
     if (Nt1 == Nt0 * Ut && Np1 == Np0 * Up) {
+      #pragma omp parallel for collapse(2) schedule(static)
       for (sctl::Long k = 0; k < dof; k++) {
         for (sctl::Long t = 0; t < Nt0; t++) {
           for (sctl::Long p = 0; p < Np0; p++) {
@@ -968,10 +974,16 @@ template <class Real> void SurfaceOp<Real>::Resample(sctl::Vector<Real>& X1, con
   const sctl::Long dof = X0.Dim() / (Nt0 * Np0);
   SCTL_ASSERT(X0.Dim() == dof*Nt0*Np0);
 
-  sctl::Vector<Real> XX;
+  if (skip_tor == 1 && skip_pol == 1) { // no downsampling
+    biest::SurfaceOp<Real>::Upsample(X0, Nt0, Np0, X1, Nt1, Np1);
+    return;
+  }
+  sctl::ScratchBuf<Real> XX_buf(dof * Nt1*skip_tor * Np1*skip_pol);
+  sctl::Vector<Real> XX(XX_buf);
   biest::SurfaceOp<Real>::Upsample(X0, Nt0, Np0, XX, Nt1*skip_tor, Np1*skip_pol);
 
   if (X1.Dim() != dof * Nt1*Np1) X1.ReInit(dof * Nt1*Np1);
+  #pragma omp parallel for collapse(2) schedule(static)
   for (sctl::Long k = 0; k < dof; k++) {
     for (sctl::Long i = 0; i < Nt1; i++) {
       for (sctl::Long j = 0; j < Np1; j++) {

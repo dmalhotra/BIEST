@@ -85,8 +85,8 @@ template <class Real, class SKer> class OffSurfaceOp {
     void Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& F = sctl::Vector<Real>());
 
     /**
-     * Add the potential of the densities F at the target points to U. If the panels do not resolve F, more panels are
-     * fit and the operator is set up again.
+     * Add the potential of the densities F at the target points to U. If the panels do not resolve F, they are fit
+     * again.
      *
      * @param[in,out] U the potential at the target points in SoA order.
      *
@@ -140,8 +140,10 @@ template <class Real, class SKer> class OffSurfaceOp {
     sctl::Long Mt, Mp; // number of panels in the toroidal and the poloidal direction
     sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation, in each direction
     bool flip; // whether the poloidal parameter of the panels is reversed, so that the panel normals point outward
-    sctl::Vector<sctl::Long> it0, ip0; // index on the upsampled grid of the first stencil point of each panel node
-    sctl::Matrix<Real> Wt, Wp; // weights of the stencil points of each panel node, along each direction
+    sctl::Long Kt, Kp; // number of upsampled grid points spanned by the stencils of the nodes of a panel
+    sctl::Vector<sctl::Long> wt0, wp0; // index on the upsampled grid of the first of these points, for each panel
+    sctl::Matrix<Real> Wt; // stencil weights of each toroidal node on the points of its panel: Mt*ORDER x Kt
+    sctl::Matrix<Real> WpT; // stencil weights of the poloidal nodes of each panel, transposed: Mp*Kp x ORDER
     std::unique_ptr<sctl::BoundaryIntegralOp<Real,SKer>> op;
 };
 

@@ -75,8 +75,10 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * number of discretizations in toroidal and poloidal directions.
      *
      * @param[in] comm the communicator when running in parallel.
+     *
+     * @param[in] tol the accuracy tolerance.
      */
-    static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm);
+    static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm, const Real tol = (Real)1e-10);
 
     /**
      * A simple subroutine to test this class.
@@ -86,8 +88,6 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
   private:
 
     static Real max_norm(const sctl::Vector<Real>& x);
-
-    static void ComputeFarField(sctl::Vector<Real>& B, const sctl::Vector<Real>& Xt, const sctl::Vector<sctl::Vector<Real>>& Xsrc, const sctl::Vector<sctl::Vector<Real>>& Xn_src, const sctl::Vector<sctl::Vector<Real>>& J);
 
     static void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter);
 };
@@ -180,8 +180,10 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * the number of discretizations in toroidal and poloidal directions.
      *
      * @param[in] comm the communicator when running in parallel.
+     *
+     * @param[in] tol the accuracy tolerance.
      */
-    static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m, const sctl::Vector<sctl::Vector<Real>>& sigma, const sctl::Comm& comm);
+    static void EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m, const sctl::Vector<sctl::Vector<Real>>& sigma, const sctl::Comm& comm, const Real tol = (Real)1e-10);
 
     /**
      * Test this class.
@@ -192,7 +194,11 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
 
     static Real max_norm(const sctl::Vector<Real>& x);
 
-    static void ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<sctl::Vector<Real>>& Xsrc, const sctl::Vector<sctl::Vector<Real>>& Xn_src, const sctl::Vector<sctl::Vector<Real>>& sigma, const sctl::Vector<sctl::Vector<Real>>& m, Real lambda);
+    /**
+     * Compute the real part of the magnetic field at the off-surface points Xt from the Debye source densities sigma and
+     * m on the surfaces.
+     */
+    static void ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m, Real lambda, const sctl::Comm& comm, const Real tol);
 
     static void Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter);
     static void Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // grad_v <-- Grad(g[sigma])

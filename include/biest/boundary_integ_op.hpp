@@ -1,6 +1,7 @@
 #ifndef _BOUNDARY_INTEG_OP_HPP_
 #define _BOUNDARY_INTEG_OP_HPP_
 
+#include <biest/offsurface_op.hpp>
 #include <biest/surface.hpp>
 #include <sctl.hpp>
 
@@ -67,7 +68,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     void operator()(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) const;
 
     /**
-     * Evaluate the potential at off-surface points
+     * Evaluate the potential at off-surface points, at any distance from the surfaces.
      *
      * @param[out] U the computed potential in SoA order.
      *
@@ -75,12 +76,16 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
      *
      * @param[in] F the density function at grid points in SoA order for each
      * surface concatenated together.
+     *
+     * @param[in] ker the kernel function given to SetupSingular().
+     *
+     * @param[in] tol the accuracy tolerance.
      */
-    void EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F) const;
+    template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol = (Real)1e-10) const;
 
     template <class Kernel> static sctl::Vector<Real> test(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& ker, const sctl::Comm& comm);
 
-    template <class Kernel, class GradKernel> static void test_GreensIdentity(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& sl_ker, const Kernel& dl_ker, const GradKernel& sl_grad_ker, const sctl::Comm& comm);
+    template <class Kernel, class DLKernel, class GradKernel> static void test_GreensIdentity(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& sl_ker, const DLKernel& dl_ker, const GradKernel& sl_grad_ker, const sctl::Comm& comm);
 
     static void test_Precond(sctl::Long Nt, sctl::Long Np, SurfType surf_type, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm);
 

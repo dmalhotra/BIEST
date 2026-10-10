@@ -294,15 +294,47 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
     }
 };
 
+/**
+ * A kernel function built from an SCTL kernel. It also keeps the SCTL kernel, for use with sctl::BoundaryIntegralOp.
+ *
+ * @tparam SKer the SCTL kernel, one of the GenericKernel aliases in sctl/kernel_functions.hpp.
+ *
+ * @tparam DIGITS digits of accuracy for the reciprocal square root; -1 selects machine precision.
+ */
+template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class SctlKernelFunction : public KernelFunction<Real, SKer::CoordDim(), SKer::SrcDim(), SKer::TrgDim()> {
+    using Ker = KerWrapper<Real, SKer, DIGITS, Nv>;
+
+  public:
+
+    /**
+     * Constructor.
+     *
+     * @param[in] cost_ the cost in FLOPs per kernel evaluation (used for profiling).
+     *
+     * @param[in] ctx_ a context pointer passed to the kernel evaluation function.
+     */
+    SctlKernelFunction(sctl::Long cost_, const void* ctx_) : KernelFunction<Real, SKer::CoordDim(), SKer::SrcDim(), SKer::TrgDim()>(Ker::Eval, Ker::BuildMatrix, cost_, ctx_) {
+      sctl_ker.SetCtxPtr(const_cast<void*>(ctx_));
+    }
+
+    /**
+     * Returns the SCTL kernel, with the context pointer of this kernel function.
+     */
+    const SKer& GetSctlKernel() const { return sctl_ker; }
+
+  private:
+
+    SKer sctl_ker;
+};
+
 template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Stokes3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
 
   public:
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& DxU() {
-      using Ker = KerWrapper<Real, sctl::Stokes3D_DxU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 31, nullptr);
+    static SctlKernelFunction<Real,sctl::Stokes3D_DxU,ORDER,Nv>& DxU() {
+      static SctlKernelFunction<Real,sctl::Stokes3D_DxU,ORDER,Nv> ker(31, nullptr);
       return ker;
     }
 };
@@ -313,33 +345,28 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
   static constexpr sctl::Integer KDIM1 = 1;
 
   public:
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& FxU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_FxU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 12, nullptr);
+    static SctlKernelFunction<Real,sctl::Laplace3D_FxU,ORDER,Nv>& FxU() {
+      static SctlKernelFunction<Real,sctl::Laplace3D_FxU,ORDER,Nv> ker(12, nullptr);
       return ker;
     }
 
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_FxdU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 19, nullptr);
+    static SctlKernelFunction<Real,sctl::Laplace3D_FxdU,ORDER,Nv>& FxdU() {
+      static SctlKernelFunction<Real,sctl::Laplace3D_FxdU,ORDER,Nv> ker(19, nullptr);
       return ker;
     }
 
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM*COORD_DIM>& Fxd2U() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_Fxd2U, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 61, nullptr);
+    static SctlKernelFunction<Real,sctl::Laplace3D_Fxd2U,ORDER,Nv>& Fxd2U() {
+      static SctlKernelFunction<Real,sctl::Laplace3D_Fxd2U,ORDER,Nv> ker(61, nullptr);
       return ker;
     }
 
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& DxU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_DxU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 20, nullptr);
+    static SctlKernelFunction<Real,sctl::Laplace3D_DxU,ORDER,Nv>& DxU() {
+      static SctlKernelFunction<Real,sctl::Laplace3D_DxU,ORDER,Nv> ker(20, nullptr);
       return ker;
     }
 
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& DxdU() {
-      using Ker = KerWrapper<Real, sctl::Laplace3D_DxdU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 39, nullptr);
+    static SctlKernelFunction<Real,sctl::Laplace3D_DxdU,ORDER,Nv>& DxdU() {
+      static SctlKernelFunction<Real,sctl::Laplace3D_DxdU,ORDER,Nv> ker(39, nullptr);
       return ker;
     }
 };
@@ -350,15 +377,13 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
   static constexpr sctl::Integer KDIM1 = 3;
 
   public:
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& FxU() {
-      using Ker = KerWrapper<Real, sctl::BiotSavart3D_FxU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker(Ker::Eval, Ker::BuildMatrix, 27, nullptr);
+    static SctlKernelFunction<Real,sctl::BiotSavart3D_FxU,ORDER,Nv>& FxU() {
+      static SctlKernelFunction<Real,sctl::BiotSavart3D_FxU,ORDER,Nv> ker(27, nullptr);
       return ker;
     }
 
-    static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() {
-      using Ker = KerWrapper<Real, sctl::BiotSavart3D_FxdU, ORDER, Nv>;
-      static KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker(Ker::Eval, Ker::BuildMatrix, 127, nullptr);
+    static SctlKernelFunction<Real,sctl::BiotSavart3D_FxdU,ORDER,Nv>& FxdU() {
+      static SctlKernelFunction<Real,sctl::BiotSavart3D_FxdU,ORDER,Nv> ker(127, nullptr);
       return ker;
     }
 };
@@ -368,30 +393,31 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
   static constexpr sctl::Integer KDIM0 = 2;
   static constexpr sctl::Integer KDIM1 = 2;
 
-  using KerFxU = KerWrapper<Real, sctl::Helmholtz3D_FxU, ORDER, Nv>;
-  using KerDxU = KerWrapper<Real, sctl::Helmholtz3D_DxU, ORDER, Nv>;
-  using KerFxdU = KerWrapper<Real, sctl::Helmholtz3D_FxdU, ORDER, Nv>;
+  using KerFxU = SctlKernelFunction<Real, sctl::Helmholtz3D_FxU, ORDER, Nv>;
+  using KerDxU = SctlKernelFunction<Real, sctl::Helmholtz3D_DxU, ORDER, Nv>;
+  using KerFxdU = SctlKernelFunction<Real, sctl::Helmholtz3D_FxdU, ORDER, Nv>;
 
   public:
 
     Helmholtz3D(Real k) :
       k_(k),
-      ker_FxU(KerFxU::Eval, KerFxU::BuildMatrix, 24, &k_),
-      ker_DxU(KerDxU::Eval, KerDxU::BuildMatrix, 38, &k_),
-      ker_FxdU(KerFxdU::Eval, KerFxdU::BuildMatrix, 41, &k_)
+      ker_FxU(24, &k_),
+      ker_DxU(38, &k_),
+      ker_FxdU(41, &k_)
       {}
 
-    const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& FxU() const { return ker_FxU; }
+    const KerFxU& FxU() const { return ker_FxU; }
 
-    const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() const { return ker_FxdU; }
+    const KerFxdU& FxdU() const { return ker_FxdU; }
 
-    const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& DxU() const { return ker_DxU; }
+    const KerDxU& DxU() const { return ker_DxU; }
 
   private:
 
     Real k_;
-    KernelFunction<Real,COORD_DIM,KDIM0,KDIM1> ker_FxU, ker_DxU;
-    KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker_FxdU;
+    KerFxU ker_FxU;
+    KerDxU ker_DxU;
+    KerFxdU ker_FxdU;
 };
 
 template <class Real> class HelmholtzDiff3D {
@@ -399,20 +425,20 @@ template <class Real> class HelmholtzDiff3D {
   static constexpr sctl::Integer KDIM0 = 2;
   static constexpr sctl::Integer KDIM1 = 2;
 
-  using KerFxdU = KerWrapper<Real, sctl::HelmholtzDiff3D_FxdU, -1>;
+  using KerFxdU = SctlKernelFunction<Real, sctl::HelmholtzDiff3D_FxdU, -1>;
 
   public:
 
     HelmholtzDiff3D(Real k) :
       k_(k),
-      ker_FxdU(KerFxdU::Eval, KerFxdU::BuildMatrix, 47, &k_) {}
+      ker_FxdU(47, &k_) {}
 
-    const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM>& FxdU() const { return ker_FxdU; }
+    const KerFxdU& FxdU() const { return ker_FxdU; }
 
   private:
 
     Real k_;
-    KernelFunction<Real,COORD_DIM,KDIM0,KDIM1*COORD_DIM> ker_FxdU;
+    KerFxdU ker_FxdU;
 };
 
 }

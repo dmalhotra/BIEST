@@ -32,12 +32,8 @@ namespace biest {
      * \param[in] J current density on the surface.
      *
      * \param[in] I0 current through the axis.
-     *
-     * \param[in] max_Nt restrict max order in toroidal direction to NFP * max_Nt.
-     *
-     * \param[in] max_Np restrict max order in poloidal direction to max_Np.
      */
-    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0, const sctl::Long max_Nt, const sctl::Long max_Np) const;
+    std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const;
 
     private:
 
@@ -256,7 +252,7 @@ namespace biest {
     return U0_;
   }
 
-  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0, const sctl::Long max_Nt, const sctl::Long max_Np) const {
+  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const {
     constexpr bool half_period = false;
     const sctl::Long Ntrg = Xtrg.size() / COORD_DIM;
     SCTL_ASSERT((sctl::Long)Xtrg.size() == COORD_DIM * Ntrg);
@@ -264,52 +260,23 @@ namespace biest {
     SCTL_ASSERT(J.size() == 0 || (sctl::Long)J.size() == COORD_DIM * Nt_ * Np_);
 
     sctl::Vector<Real> Xtrg_(Xtrg);
-    sctl::Long Nt = Nt_, Np = Np_;
-    sctl::Vector<Surface<Real>> Svec(1);
-    while (1) {
-      Svec[0] = Surface<Real>(NFP_*Nt, Np);
-      SurfaceOp<Real>::Resample(Svec[0].Coord(), NFP_*Nt, Np, XX, NFP_*Nt_, Np_);
+    sctl::Vector<Real> sigma_, J_; // on the full surface
+    if (sigma.size()) SurfaceOp<Real>::CompleteVecField(sigma_, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(sigma));
+    if (J.size()) SurfaceOp<Real>::CompleteVecField(J_, true, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(J));
 
-      sctl::Vector<Real> F(NFP_*Nt*Np), U; F = 1;
-      BoundaryIntegralOp<Real,1,1,1> LaplaceDxU_(sctl::Comm::Self());
-      LaplaceDxU_.SetupSingular(Svec, Laplace3D<Real>::DxU(), sctl::Vector<sctl::Vector<sctl::Long>>(Svec.Dim()));
-      LaplaceDxU_.EvalOffSurface(U, Xtrg_, F);
-
-      Real err = 0;
-      for (const auto& x : U) err = std::max<Real>(err, std::min(fabs(1.0+x), fabs(x)));
-      if (err > sctl::pow((Real)0.1, digits_)) {
-        Nt *= 2; // TODO: Upsample Nt and Np independently
-        Np *= 2;
-      } else break;
-
-      if ((max_Nt > 0 && Nt > max_Nt) || (max_Np > 0 && Np > max_Np)) {
-        if (max_Nt > 0) Nt = std::min(Nt, max_Nt);
-        if (max_Np > 0) Np = std::min(Np, max_Np);
-
-        Svec[0] = Surface<Real>(NFP_*Nt, Np);
-        SurfaceOp<Real>::Resample(Svec[0].Coord(), NFP_*Nt, Np, XX, NFP_*Nt_, Np_);
-        break;
-      }
-    }
-
-    BoundaryIntegralOp<Real,1,3,1> LaplaceFxdU_(sctl::Comm::Self());
-    BoundaryIntegralOp<Real,3,3,1> BiotSavartFxU_(sctl::Comm::Self());
-    LaplaceFxdU_.SetupSingular(Svec, Laplace3D<Real>::FxdU(), sctl::Vector<sctl::Vector<sctl::Long>>(Svec.Dim()));
-    BiotSavartFxU_.SetupSingular(Svec, BiotSavart3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(Svec.Dim()));
-
-    sctl::Vector<Real> sigma_, J_;
-    { // Set sigma_, J_;
-      sctl::Vector<Real> tmp;
-      SurfaceOp<Real>::CompleteVecField(tmp, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(sigma));
-      SurfaceOp<Real>::Resample(sigma_, NFP_*Nt, Np, tmp, NFP_*Nt_, Np_);
-
-      SurfaceOp<Real>::CompleteVecField(tmp, true, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(J));
-      SurfaceOp<Real>::Resample(J_, NFP_*Nt, Np, tmp, NFP_*Nt_, Np_);
-    }
-
+    const Real tol = sctl::pow<Real>((Real)0.1, digits_);
     sctl::Vector<Real> Bplasma(COORD_DIM * Ntrg); Bplasma.SetZero();
-    if (sigma_.Dim()) LaplaceFxdU_.EvalOffSurface(Bplasma, Xtrg_, sigma_*(Real)-1);
-    if (J_.Dim()) BiotSavartFxU_.EvalOffSurface(Bplasma, Xtrg_, J_);
+    if (sigma_.Dim()) {
+      const sctl::Vector<Real> F = sigma_ * (Real)-1;
+      OffSurfaceOp op(Laplace3D<Real>::FxdU());
+      op.Setup(XX, NFP_*Nt_, Np_, Xtrg_, tol, F);
+      op.Eval(Bplasma, F);
+    }
+    if (J_.Dim()) {
+      OffSurfaceOp op(BiotSavart3D<Real>::FxU());
+      op.Setup(XX, NFP_*Nt_, Np_, Xtrg_, tol, J_);
+      op.Eval(Bplasma, J_);
+    }
 
     if (I0 != 0) {
       const Real scal = I0/(2*sctl::const_pi<Real>());
@@ -358,8 +325,8 @@ namespace biest {
     return VacuumFieldBase<Real,true>::ComputeU_(sigma);
   }
 
-  template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J, const sctl::Long max_Nt, const sctl::Long max_Np) const {
-    return VacuumFieldBase<Real,true>::EvalOffSurface(Xt, sigma, J, 0, max_Nt, max_Np);
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const {
+    return VacuumFieldBase<Real,true>::EvalOffSurface(Xt, sigma, J, 0);
   }
 
 
@@ -382,8 +349,8 @@ namespace biest {
     return VacuumFieldBase<Real,false>::ComputeU_(sigma);
   }
 
-  template <class Real> std::vector<Real> IntVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0, const sctl::Long max_Nt, const sctl::Long max_Np) const {
-    return VacuumFieldBase<Real,false>::EvalOffSurface(Xt, sigma, std::vector<Real>(), I0, max_Nt, max_Np);
+  template <class Real> std::vector<Real> IntVacuumField<Real>::EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const {
+    return VacuumFieldBase<Real,false>::EvalOffSurface(Xt, sigma, std::vector<Real>(), I0);
   }
 
 

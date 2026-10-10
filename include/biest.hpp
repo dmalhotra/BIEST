@@ -3,6 +3,7 @@
 #ifndef _BIEST_HPP_
 #define _BIEST_HPP_
 
+#include <biest/offsurface_op.hpp>
 #include <biest/vacuum-field.hpp>
 #include <biest/bie_solvers.hpp>
 #include <biest/surface.hpp>

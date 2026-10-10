@@ -106,8 +106,9 @@ namespace biest {
       }
     };
 
-    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F) const {
+    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol) const {
       SCTL_ASSERT(ker_ptr);
+      SCTL_ASSERT_MSG(&ker == ker_ptr, "EvalOffSurface: the kernel function must be the one given to SetupSingular.");
       SCTL_ASSERT(F.Dim() == Dim(0));
       sctl::Long Nt = Xt.Dim() / COORD_DIM;
       SCTL_ASSERT(Xt.Dim() == COORD_DIM * Nt);
@@ -121,7 +122,9 @@ namespace biest {
       for (sctl::Long s = 0; s < Xsrc.Dim(); s++) {
         const sctl::Vector<Real> F_(ker_ptr->Dim(0) * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + ker_ptr->Dim(0) * SrcOffset, false);
         Upsample(F_, Fsrc, Nt0[s], Np0[s]);
-        Op[s].EvalSurfInteg(U, Xt, Xsrc[s], Xn_src[s], Xa_src[s], Fsrc, *ker_ptr);
+        OffSurfaceOp<Real,SKer> op(ker, comm_);
+        op.Setup(Xsrc[s], Nt0[s] * UPSAMPLE, Np0[s] * UPSAMPLE, Xt, tol, Fsrc);
+        op.Eval(U, Fsrc);
         SrcOffset += Nt0[s] * Np0[s];
       }
     };
@@ -157,7 +160,7 @@ namespace biest {
       return U;
     }
 
-    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> template <class Kernel, class GradKernel> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::test_GreensIdentity(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& sl_ker, const Kernel& dl_ker, const GradKernel& sl_grad_ker, const sctl::Comm& comm) {
+    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> template <class Kernel, class DLKernel, class GradKernel> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::test_GreensIdentity(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& sl_ker, const DLKernel& dl_ker, const GradKernel& sl_grad_ker, const sctl::Comm& comm) {
       sctl::Vector<Surface<Real>> Svec;
       Svec.PushBack(Surface<Real>(Nt, Np, surf_type));
       BoundaryIntegralOp<Real, Kernel::Dim(0), Kernel::Dim(1), UPSAMPLE, PATCH_DIM0, RAD_DIM, HedgehogOrder> SL(comm);

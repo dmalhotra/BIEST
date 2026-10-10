@@ -19,46 +19,23 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm) {
-      sctl::Vector<sctl::Vector<Real>> Xsrc, dXsrc, Xn_src, Xa_src, J;
-      { // Upsample
-        sctl::Long Nsurf = Svec.Dim();
-        Xsrc .ReInit(Nsurf);
-        dXsrc .ReInit(Nsurf);
-        Xn_src.ReInit(Nsurf);
-        Xa_src.ReInit(Nsurf);
-        J.ReInit(Nsurf);
-        sctl::Long dsp = 0;
-        for (sctl::Long i = 0; i < Nsurf; i++) {
-          const auto& S = Svec[i];
-          sctl::Long Nt0 = S.NTor();
-          sctl::Long Np0 = S.NPol();
-          sctl::Long Nup = Nt0*Np0*UPSAMPLE*UPSAMPLE;
-          SurfaceOp<Real> Sop(comm, Nt0*UPSAMPLE, Np0*UPSAMPLE);
-
-          Sop.Upsample(S.Coord(), Nt0, Np0, Xsrc[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
-          Sop.Grad2D(dXsrc[i], Xsrc[i]);
-          Sop.SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
-
-          sctl::Vector<Real> J0_(COORD_DIM*Nt0*Np0, J0.begin()+COORD_DIM*dsp, false);
-          Sop.Upsample(J0_, Nt0, Np0, J[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
-
-          for (sctl::Long j = 0; j < Nup; j++) { // J <-- J * Xa
-            for (sctl::Long k = 0; k < COORD_DIM; k++) {
-              J[i][k * Nup + j] *= Xa_src[i][j];
-            }
-          }
-
-          dsp += Nt0 * Np0;
-        }
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm, const Real tol) {
+      const sctl::Long Ntrg = Xtrg.Dim() / COORD_DIM;
+      sctl::Vector<Real> X = Xtrg, B(COORD_DIM * Ntrg);
+      sctl::Matrix<Real>(COORD_DIM, Ntrg, X.begin(), false) = sctl::Matrix<Real>(Ntrg, COORD_DIM, X.begin(), false).Transpose();
+      B = 0;
+      sctl::Long dsp = 0;
+      for (sctl::Long i = 0; i < Svec.Dim(); i++) { // B += BiotSavart[J0] from each surface
+        const auto& S = Svec[i];
+        const sctl::Long N = S.NTor() * S.NPol();
+        const sctl::Vector<Real> J0_(COORD_DIM * N, J0.begin() + COORD_DIM * dsp, false);
+        OffSurfaceOp op(BiotSavart3D<Real>::FxU(), comm);
+        op.Setup(S.Coord(), S.NTor(), S.NPol(), X, tol, J0_);
+        op.Eval(B, J0_);
+        dsp += N;
       }
-      { // Compute Btrg at Xtrg
-        sctl::Vector<Real> X = Xtrg, B;
-        sctl::Matrix<Real>(COORD_DIM, X.Dim()/COORD_DIM, X.begin(), false) = sctl::Matrix<Real>(X.Dim()/COORD_DIM, COORD_DIM, X.begin(), false).Transpose();
-        ComputeFarField(B, X, Xsrc, Xn_src, J);
-        sctl::Matrix<Real>(B.Dim()/COORD_DIM, COORD_DIM, B.begin(), false) = sctl::Matrix<Real>(COORD_DIM, B.Dim()/COORD_DIM, B.begin(), false).Transpose();
-        Btrg = B;
-      }
+      sctl::Matrix<Real>(Ntrg, COORD_DIM, B.begin(), false) = sctl::Matrix<Real>(COORD_DIM, Ntrg, B.begin(), false).Transpose();
+      Btrg = B;
     }
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::test(sctl::Long upsample, const sctl::Comm& comm) {
@@ -74,26 +51,6 @@ namespace biest {
       Real err = 0;
       for (const auto& a : x) err = std::max(err, sctl::fabs<Real>(a));
       return err;
-    }
-
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeFarField(sctl::Vector<Real>& B, const sctl::Vector<Real>& Xt, const sctl::Vector<sctl::Vector<Real>>& Xsrc, const sctl::Vector<sctl::Vector<Real>>& Xn_src, const sctl::Vector<sctl::Vector<Real>>& J) {
-      sctl::Long Nsurf = Xsrc.Dim();
-      sctl::Vector<sctl::Long> SurfDim(Nsurf), SurfDsp(Nsurf);
-      for (sctl::Long i = 0; i < Nsurf; i++) { // Set SurfDim, SurfDsp
-        SurfDim[i] = Xsrc[i].Dim() / COORD_DIM;
-        if (i) SurfDsp[i] = SurfDsp[i-1] + SurfDim[i-1];
-        else SurfDsp[i] = 0;
-      }
-
-      sctl::Long Nt = Xt.Dim() / COORD_DIM;
-      SCTL_ASSERT(Xt.Dim() == Nt * COORD_DIM);
-      if (B.Dim() != COORD_DIM * Nt) B.ReInit(COORD_DIM * Nt);
-      B = 0;
-
-      const auto& ker_biot_savart = BiotSavart3D<Real>::FxU();
-      for (sctl::Long i = 0; i < Nsurf; i++) {
-        ker_biot_savart(Xsrc[i], Xn_src[i], J[i], Xt, B);
-      }
     }
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
@@ -403,60 +360,18 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m_, const sctl::Vector<sctl::Vector<Real>>& sigma_, const sctl::Comm& comm) {
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m_, const sctl::Vector<sctl::Vector<Real>>& sigma_, const sctl::Comm& comm, const Real tol) {
       sctl::Vector<Real> m0, sigma0;
       if (Svec.Dim() > 0) m0  = m_[0] * tor_flux;
       if (Svec.Dim() > 1) m0 += m_[1] * pol_flux;
       if (Svec.Dim() > 0) sigma0  = sigma_[0] * tor_flux;
       if (Svec.Dim() > 1) sigma0 += sigma_[1] * pol_flux;
 
-      sctl::Vector<sctl::Vector<Real>> Xsrc, dXsrc, Xn_src, Xa_src, m, sigma;
-      { // Upsample
-        sctl::Long Nsurf = Svec.Dim();
-        Xsrc .ReInit(Nsurf);
-        dXsrc .ReInit(Nsurf);
-        Xn_src.ReInit(Nsurf);
-        Xa_src.ReInit(Nsurf);
-        sigma.ReInit(Nsurf);
-        m.ReInit(Nsurf);
-        sctl::Long dsp = 0;
-        for (sctl::Long i = 0; i < Nsurf; i++) {
-          const auto& S = Svec[i];
-          sctl::Long Nt0 = S.NTor();
-          sctl::Long Np0 = S.NPol();
-          sctl::Long Nup = Nt0*Np0*UPSAMPLE*UPSAMPLE;
-          SurfaceOp<Real> Sop(comm, Nt0*UPSAMPLE, Np0*UPSAMPLE);
-
-          Sop.Upsample(S.Coord(), Nt0, Np0, Xsrc[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
-          Sop.Grad2D(dXsrc[i], Xsrc[i]);
-          Sop.SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
-
-          sctl::Vector<Real> m0_(COORD_DIM*2*Nt0*Np0, m0.begin()+COORD_DIM*2*dsp, false);
-          Sop.Upsample(m0_, Nt0, Np0, m[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
-          for (sctl::Long j = 0; j < Nup; j++) { // m <-- m * Xa
-            for (sctl::Long k = 0; k < COORD_DIM*2; k++) {
-              m[i][k * Nup + j] *= Xa_src[i][j];
-            }
-          }
-
-          sctl::Vector<Real> sigma0_(2*Nt0*Np0, sigma0.begin()+2*dsp, false);
-          Sop.Upsample(sigma0_, Nt0, Np0, sigma[i], Nt0*UPSAMPLE, Np0*UPSAMPLE);
-          for (sctl::Long j = 0; j < Nup; j++) { // sigma <-- sigma * Xa
-            for (sctl::Long k = 0; k < 2; k++) {
-              sigma[i][k * Nup + j] *= Xa_src[i][j];
-            }
-          }
-
-          dsp += Nt0 * Np0;
-        }
-      }
-      { // Compute Btrg at Xtrg
-        sctl::Vector<Real> X = Xtrg, B;
-        sctl::Matrix<Real>(COORD_DIM, X.Dim()/COORD_DIM, X.begin(), false) = sctl::Matrix<Real>(X.Dim()/COORD_DIM, COORD_DIM, X.begin(), false).Transpose();
-        ComputeFarField(B, X, Xsrc, Xn_src, sigma, m, lambda);
-        sctl::Matrix<Real>(B.Dim()/COORD_DIM, COORD_DIM, B.begin(), false) = sctl::Matrix<Real>(COORD_DIM, B.Dim()/COORD_DIM, B.begin(), false).Transpose();
-        Btrg = B;
-      }
+      sctl::Vector<Real> X = Xtrg, B;
+      sctl::Matrix<Real>(COORD_DIM, X.Dim()/COORD_DIM, X.begin(), false) = sctl::Matrix<Real>(X.Dim()/COORD_DIM, COORD_DIM, X.begin(), false).Transpose();
+      ComputeFarField(B, X, Svec, sigma0, m0, lambda, comm, tol);
+      sctl::Matrix<Real>(B.Dim()/COORD_DIM, COORD_DIM, B.begin(), false) = sctl::Matrix<Real>(COORD_DIM, B.Dim()/COORD_DIM, B.begin(), false).Transpose();
+      Btrg = B;
     }
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::test_conv(Real lambda, const sctl::Vector<Surface<Real>>& Svec_, sctl::Long upsample, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, Real LB_tol) {
@@ -949,104 +864,54 @@ namespace biest {
       return err;
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<sctl::Vector<Real>>& Xsrc, const sctl::Vector<sctl::Vector<Real>>& Xn_src, const sctl::Vector<sctl::Vector<Real>>& sigma, const sctl::Vector<sctl::Vector<Real>>& m, Real lambda) {
-      sctl::Long Nsurf = Xsrc.Dim();
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m, Real lambda, const sctl::Comm& comm, const Real tol) {
       Helmholtz3D<Real> helm(lambda);
-      const auto& ker_potn = helm.FxU();
-      const auto& ker_grad = helm.FxdU();
+      const sctl::Long Nt = Xt.Dim() / COORD_DIM;
+      SCTL_ASSERT(Xt.Dim() == Nt * COORD_DIM);
 
-      auto Compute_Grad_v = [&Xt,&Xsrc,&Xn_src,&sigma,&ker_grad,Nsurf](sctl::Vector<Real>& Grad_v) { // grad_v <-- Grad(g[sigma])
-        sctl::Long Nt = Xt.Dim() / COORD_DIM;
-        SCTL_ASSERT(Xt.Dim() == Nt * COORD_DIM);
-        if (Grad_v.Dim() != COORD_DIM * 2 * Nt) Grad_v.ReInit(COORD_DIM * 2 * Nt);
-        Grad_v = 0;
-
-        for (sctl::Long i = 0; i < Nsurf; i++) {
-          ker_grad(Xsrc[i], Xn_src[i], sigma[i], Xt, Grad_v);
-        }
-      };
-      auto Compute_iQ = [&Xt,&Xsrc,&Xn_src,&m,&ker_potn,Nsurf](sctl::Vector<Real>& iQ) { // iQ <-- g[im]
-        sctl::Long Nt = Xt.Dim() / COORD_DIM;
-        SCTL_ASSERT(Xt.Dim() == Nt * COORD_DIM);
-        if (iQ.Dim() != COORD_DIM * 2 * Nt) iQ.ReInit(COORD_DIM * 2 * Nt);
-        iQ = 0;
-
-        for (sctl::Long i = 0; i < Nsurf; i++) {
-          sctl::Long N = Xsrc[i].Dim() / COORD_DIM;
-          sctl::Vector<Real> iQ_(2 * Nt), im_(2 * N);
-          for (sctl::Long k = 0; k < COORD_DIM; k++) {
-            for (sctl::Long j = 0; j < N; j++) {
-              im_[0 * N + j] = -m[i][(k*2+1) * N + j];
-              im_[1 * N + j] =  m[i][(k*2+0) * N + j];
-            }
-
-            iQ_ = 0;
-            ker_potn(Xsrc[i], Xn_src[i], im_, Xt, iQ_);
-
-            for (sctl::Long j = 0; j < Nt; j++) {
-              iQ[(k*2+0) * Nt + j] += iQ_[0 * Nt + j];
-              iQ[(k*2+1) * Nt + j] += iQ_[1 * Nt + j];
-            }
+      sctl::Vector<Real> Ugrad(4 * COORD_DIM * 2 * Nt), Upotn(COORD_DIM * 2 * Nt); // Grad(g[sigma]), Grad(g[i m_k]) for each k; and g[i m_k] for each k
+      Ugrad.SetZero();
+      Upotn.SetZero();
+      sctl::Long dsp = 0;
+      for (sctl::Long i = 0; i < Svec.Dim(); i++) {
+        const auto& S = Svec[i];
+        const sctl::Long N = S.NTor() * S.NPol();
+        sctl::Vector<Real> Fgrad(4 * 2 * N); // sigma, then i m_k for each k (complex)
+        for (sctl::Long j = 0; j < 2 * N; j++) Fgrad[j] = sigma[2 * dsp + j];
+        for (sctl::Long k = 0; k < COORD_DIM; k++) {
+          for (sctl::Long j = 0; j < N; j++) {
+            Fgrad[((k + 1) * 2 + 0) * N + j] = -m[COORD_DIM * 2 * dsp + (k * 2 + 1) * N + j];
+            Fgrad[((k + 1) * 2 + 1) * N + j] =  m[COORD_DIM * 2 * dsp + (k * 2 + 0) * N + j];
           }
         }
-      };
-      auto Compute_iCurlQ = [&Xt,&Xsrc,&Xn_src,&m,&ker_grad,Nsurf](sctl::Vector<Real>& iCurlQ) { // iCurlQ <-- Curl(g[im])
-        sctl::Long Nt = Xt.Dim() / COORD_DIM;
-        SCTL_ASSERT(Xt.Dim() == Nt * COORD_DIM);
-        if (iCurlQ.Dim() != COORD_DIM * 2 * Nt) iCurlQ.ReInit(COORD_DIM * 2 * Nt);
-        iCurlQ = 0;
+        const sctl::Vector<Real> Fpotn(COORD_DIM * 2 * N, Fgrad.begin() + 2 * N, false);
 
-        for (sctl::Long i = 0; i < Nsurf; i++) {
-          sctl::Long N = Xsrc[i].Dim() / COORD_DIM;
-          sctl::Vector<Real> iGradQ_(2 * COORD_DIM * Nt), im_(2 * N);
-          for (sctl::Long k = 0; k < COORD_DIM; k++) {
-            for (sctl::Long j = 0; j < N; j++) {
-              im_[0 * N + j] = -m[i][(k*2+1) * N + j];
-              im_[1 * N + j] =  m[i][(k*2+0) * N + j];
-            }
+        OffSurfaceOp op_grad(helm.FxdU(), comm), op_potn(helm.FxU(), comm);
+        op_grad.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol, Fgrad);
+        op_grad.Eval(Ugrad, Fgrad);
+        op_potn.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol, Fpotn);
+        op_potn.Eval(Upotn, Fpotn);
+        dsp += N;
+      }
 
-            iGradQ_ = 0;
-            ker_grad(Xsrc[i], Xn_src[i], im_, Xt, iGradQ_);
-
-            sctl::Long k0 = (k + 2) % COORD_DIM;
-            sctl::Long k1 = (k + 1) % COORD_DIM;
-            for (sctl::Long j = 0; j < Nt; j++) {
-              iCurlQ[(k1*2+0) * Nt + j] += iGradQ_[(k0*2+0) * Nt + j];
-              iCurlQ[(k1*2+1) * Nt + j] += iGradQ_[(k0*2+1) * Nt + j];
-              iCurlQ[(k0*2+0) * Nt + j] -= iGradQ_[(k1*2+0) * Nt + j];
-              iCurlQ[(k0*2+1) * Nt + j] -= iGradQ_[(k1*2+1) * Nt + j];
-            }
-          }
+      sctl::Vector<Real> B(COORD_DIM * 2 * Nt); // - Grad(g[sigma]) + lambda g[i m] + Curl(g[i m])
+      for (sctl::Long j = 0; j < COORD_DIM * 2 * Nt; j++) B[j] = Upotn[j] * lambda - Ugrad[j];
+      for (sctl::Long k = 0; k < COORD_DIM; k++) { // Curl(g[i m_k e_k]) = Grad(g[i m_k]) x e_k
+        const sctl::Vector<Real> iGradQ_(COORD_DIM * 2 * Nt, Ugrad.begin() + (k + 1) * COORD_DIM * 2 * Nt, false);
+        const sctl::Long k0 = (k + 2) % COORD_DIM;
+        const sctl::Long k1 = (k + 1) % COORD_DIM;
+        for (sctl::Long j = 0; j < Nt; j++) {
+          B[(k1*2+0) * Nt + j] += iGradQ_[(k0*2+0) * Nt + j];
+          B[(k1*2+1) * Nt + j] += iGradQ_[(k0*2+1) * Nt + j];
+          B[(k0*2+0) * Nt + j] -= iGradQ_[(k1*2+0) * Nt + j];
+          B[(k0*2+1) * Nt + j] -= iGradQ_[(k1*2+1) * Nt + j];
         }
-      };
-
-      sctl::Long N = Xt.Dim() / COORD_DIM;
-      SCTL_ASSERT(Xt.Dim() == COORD_DIM * N);
-      sctl::Vector<Real> Grad_v, iQ, iCurlQ;
-      if (sigma.Dim()) { // Compute Grad_v
-        Compute_Grad_v(Grad_v);
-      }
-      if (m.Dim()) { // Compute iQ
-        Compute_iQ(iQ);
-      }
-      if (m.Dim()) { // Compute iCurlQ
-        Compute_iCurlQ(iCurlQ);
       }
 
-      sctl::Vector<Real> B(COORD_DIM * 2 * N);
-      { // B <-- - Grad_v + iQ*lambda + iCurlQ
-        B = 0;
-        if (m.Dim()) B += iQ*lambda + iCurlQ;
-        if (sigma.Dim()) B -= Grad_v;
-      }
-
-      { // Breal <-- real(B)
-        sctl::Long N = B.Dim() / (2 * COORD_DIM);
-        if (Breal.Dim() != COORD_DIM * N) Breal.ReInit(COORD_DIM * N);
-        for (sctl::Long i = 0; i < N; i++) {
-          for (sctl::Long k = 0; k < COORD_DIM; k++) {
-            Breal[k * N + i] = B[k * 2 * N + i];
-          }
+      if (Breal.Dim() != COORD_DIM * Nt) Breal.ReInit(COORD_DIM * Nt);
+      for (sctl::Long j = 0; j < Nt; j++) { // Breal <-- real(B)
+        for (sctl::Long k = 0; k < COORD_DIM; k++) {
+          Breal[k * Nt + j] = B[k * 2 * Nt + j];
         }
       }
     }

@@ -1,3 +1,7 @@
+// Copyright (C) 2018-2026 The Simons Foundation, Inc. and the BIEST authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef _SURFACE_OP_HPP_
 #define _SURFACE_OP_HPP_
 

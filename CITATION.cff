@@ -1,0 +1,85 @@
+cff-version: 1.2.0
+message: "If you use BIEST, please cite it as below."
+type: software
+title: "BIEST: Boundary Integral Equation Solver for Taylor states"
+authors:
+  - given-names: Dhairya
+    family-names: Malhotra
+abstract: "A header-only C++ library of high-order boundary integral equation solvers on toroidal surfaces, for Taylor states (force-free fields) and vacuum magnetic fields in stellarators."
+repository-code: "https://github.com/dmalhotra/BIEST"
+license: Apache-2.0
+preferred-citation:
+  type: article
+  title: "Taylor states in stellarators: A fast high-order boundary integral solver"
+  authors:
+    - given-names: Dhairya
+      family-names: Malhotra
+    - given-names: Antoine
+      family-names: Cerfon
+    - given-names: Lise-Marie
+      family-names: Imbert-Gérard
+    - given-names: Michael
+      family-names: "O'Neil"
+  journal: "Journal of Computational Physics"
+  publisher:
+    name: Elsevier BV
+  volume: 397
+  start: 108791
+  year: 2019
+  month: 11
+  doi: "10.1016/j.jcp.2019.06.067"
+references:
+  - type: article
+    title: "Taylor states in stellarators: A fast high-order boundary integral solver"
+    authors:
+      - given-names: Dhairya
+        family-names: Malhotra
+      - given-names: Antoine
+        family-names: Cerfon
+      - given-names: Lise-Marie
+        family-names: Imbert-Gérard
+      - given-names: Michael
+        family-names: "O'Neil"
+    journal: "Journal of Computational Physics"
+    publisher:
+      name: Elsevier BV
+    volume: 397
+    start: 108791
+    year: 2019
+    month: 11
+    doi: "10.1016/j.jcp.2019.06.067"
+  - type: article
+    title: "Efficient high-order singular quadrature schemes in magnetic fusion"
+    authors:
+      - given-names: Dhairya
+        family-names: Malhotra
+      - given-names: Antoine J.
+        family-names: Cerfon
+      - given-names: Michael
+        family-names: "O'Neil"
+      - given-names: Evan
+        family-names: Toler
+    journal: "Plasma Physics and Controlled Fusion"
+    volume: 62
+    issue: 2
+    start: "024004"
+    year: 2020
+    month: 2
+    doi: "10.1088/1361-6587/ab57f4"
+  - type: software
+    title: "SCTL: Scientific Computing Template Library"
+    authors:
+      - given-names: Dhairya
+        family-names: Malhotra
+      - given-names: Tianyue
+        family-names: Li
+      - given-names: Robert
+        family-names: Blackwell
+      - given-names: Wen
+        family-names: Yan
+      - given-names: Xuanzhao
+        family-names: Gao
+    repository-code: "https://github.com/dmalhotra/SCTL"
+    url: "https://sctl.readthedocs.io"
+    license: Apache-2.0
+    notes: "BIEST is built on SCTL, included as the git submodule extern/SCTL."

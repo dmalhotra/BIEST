@@ -1,3 +1,7 @@
+// Copyright (C) 2018-2026 The Simons Foundation, Inc. and the BIEST authors (see NOTICE)
+// Author: Dhairya Malhotra
+// SPDX-License-Identifier: Apache-2.0
+
 // This example shows how to build a surface from RBC and ZBS coefficients. It
 // then computes the force-free field on the boundary and also evaluates at
 // points in the interior (away from the surface).

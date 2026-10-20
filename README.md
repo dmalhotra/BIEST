@@ -3,7 +3,7 @@ C++ compiler that supports C++17 standard
 
 
 ### Optional libraries for better performance:
-BLAS, LAPACK, FFTW
+BLAS, LAPACK, FFTW, LIBXSMM (see the Makefile)
 
 
 ### License

@@ -10,6 +10,7 @@ repository-code: "https://github.com/dmalhotra/BIEST"
 license: Apache-2.0
 version: "1.0.0"
 date-released: "2026-10-20"
+doi: "10.5281/zenodo.23511944"
 preferred-citation:
   type: article
   title: "Taylor states in stellarators: A fast high-order boundary integral solver"

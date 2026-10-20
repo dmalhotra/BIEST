@@ -1,3 +1,7 @@
+# BIEST: Boundary Integral Equation Solver for Taylor states
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23511944.svg)](https://doi.org/10.5281/zenodo.23511944)
+
 ### Minimum requirements to compile:
 C++ compiler that supports C++17 standard
 

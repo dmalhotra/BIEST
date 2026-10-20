@@ -1,5 +1,7 @@
 # BIEST: Boundary Integral Equation Solver for Taylor states
 
+[![Stable Version](https://badgen.net/github/tag/dmalhotra/BIEST)](https://github.com/dmalhotra/BIEST/tags)
+[![Latest Release](https://img.shields.io/github/v/release/dmalhotra/BIEST?color=%233D9970)](https://github.com/dmalhotra/BIEST/releases)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23511944.svg)](https://doi.org/10.5281/zenodo.23511944)
 
 ### Minimum requirements to compile:

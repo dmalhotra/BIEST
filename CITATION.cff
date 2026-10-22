@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use BIEST, please cite both the software and the paper below."
+message: "If you use BIEST, please cite the software and the papers below."
 type: software
 title: "BIEST: Boundary Integral Equation Solver for Taylor states"
 authors:

@@ -191,9 +191,9 @@ namespace biest {
       } else {
         const Real scal = I0/(2*sctl::const_pi<Real>());
         for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
-          const Real R2inv = 1/(XX[0 * Nt_*Np_ + i]*XX[0 * Nt_*Np_ + i] + XX[1 * Nt_*Np_ + i]*XX[1 * Nt_*Np_ + i]);
-          B0[0 * Nt_*Np_ + i] = -XX[1 * Nt_*Np_ + i] * scal * R2inv; // Assuming axis is through the origin along Z
-          B0[1 * Nt_*Np_ + i] =  XX[0 * Nt_*Np_ + i] * scal * R2inv;
+          const Real R2inv = 1/(XX[0 * NFP_*Nt_*Np_ + i]*XX[0 * NFP_*Nt_*Np_ + i] + XX[1 * NFP_*Nt_*Np_ + i]*XX[1 * NFP_*Nt_*Np_ + i]);
+          B0[0 * Nt_*Np_ + i] = -XX[1 * NFP_*Nt_*Np_ + i] * scal * R2inv; // Assuming axis is through the origin along Z
+          B0[1 * Nt_*Np_ + i] =  XX[0 * NFP_*Nt_*Np_ + i] * scal * R2inv;
           B0[2 * Nt_*Np_ + i] = 0;
         }
       }

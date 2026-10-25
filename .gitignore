@@ -8,3 +8,7 @@
 /vis*
 *.swo
 *.data
+doc/_build
+doc/_doxygen
+doc/examples/bin
+*~

@@ -1,0 +1,20 @@
+# Doxygen configuration for the C++ API reference; only the options that differ from the defaults are set.
+# conf.py runs doxygen from this directory, and Breathe reads the XML output.
+
+PROJECT_NAME           = "BIEST"
+PROJECT_BRIEF          = "Boundary Integral Equation Solver for Taylor states"
+OUTPUT_DIRECTORY       = _doxygen
+INPUT                  = ../include
+RECURSIVE              = YES
+FILE_PATTERNS          = *.hpp *.txx
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+BUILTIN_STL_SUPPORT    = YES
+MACRO_EXPANSION        = YES
+PREDEFINED             = SCTL_MEMDEBUG SCTL_QUAD_T=__float128
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO

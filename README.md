@@ -4,8 +4,10 @@
 [![Latest Release](https://img.shields.io/github/v/release/dmalhotra/BIEST?color=%233D9970)](https://github.com/dmalhotra/BIEST/releases)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23511944.svg)](https://doi.org/10.5281/zenodo.23511944)
 
+Documentation: https://biest.readthedocs.io
+
 ### Minimum requirements to compile:
-C++ compiler that supports C++17 standard
+C++17 compiler with OpenMP 4.0 support (GCC 9 or newer, Intel with GCC 9 compatibility, or Clang/LLVM 10 or newer)
 
 ### Running the tests:
 `make -j test` builds and runs the unit tests in `test/`.

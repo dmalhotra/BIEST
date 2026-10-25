@@ -65,7 +65,7 @@ namespace biest {
         Op[i] = SurfaceOp<Real>(comm_, Nt0[i]*UPSAMPLE, Np0[i]*UPSAMPLE);
         Upsample(S.Coord(), Xsrc[i], Nt0[i], Np0[i]);
         Op[i].Grad2D(dXsrc[i], Xsrc[i]);
-        normal_orient = Op[i].SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
+        normal_orient[i] = Op[i].SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
         dim[0] += ker.Dim(0) * (Xsrc0.Dim() / COORD_DIM);
         dim[1] += ker.Dim(1) * (Xtrg[i].Dim() / COORD_DIM);
       }

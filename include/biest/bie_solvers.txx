@@ -3,10 +3,45 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <complex>
+#include <tuple>
+#include <utility>
 #include <biest/surface_op.hpp>
 #include <biest/kernel.hpp>
 
 namespace biest {
+
+namespace detail_bie_solvers {
+
+  /**
+   * Returns the indices of the outer and the inner surface of nested toroidal
+   * surfaces: the surfaces enclosing the largest and the smallest volume,
+   * V = (1/3) sum(X.n w), with normals Xn and quadrature weights Xa from
+   * SurfaceOp::SurfNormalAreaElem().
+   */
+  template <class Real> std::pair<sctl::Long, sctl::Long> OuterInnerSurfIdx(const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<sctl::Vector<Real>>& Xn, const sctl::Vector<sctl::Vector<Real>>& Xa) {
+    constexpr sctl::Integer COORD_DIM = 3;
+    const sctl::Long Nsurf = Svec.Dim();
+    sctl::Vector<Real> Volume(Nsurf);
+    for (sctl::Long i = 0; i < Nsurf; i++) {
+      const sctl::Long N = Xa[i].Dim();
+      Real V = 0;
+      for (sctl::Long j = 0; j < N; j++) {
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+          V += Svec[i].Coord()[k * N + j] * Xn[i][k * N + j] * Xa[i][j];
+        }
+      }
+      Volume[i] = sctl::fabs<Real>(V) / 3;
+    }
+
+    sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
+    for (sctl::Long i = 0; i < Nsurf; i++) {
+      if (Volume[i] < Volume[InnerSurfIdx]) InnerSurfIdx = i;
+      if (Volume[i] > Volume[OuterSurfIdx]) OuterSurfIdx = i;
+    }
+    return {OuterSurfIdx, InnerSurfIdx};
+  }
+
+}
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
       sctl::Vector<sctl::Vector<Real>> B_, J_;
@@ -66,7 +101,6 @@ namespace biest {
         else SurfDsp[i] = 0;
       }
 
-      sctl::Vector<Real> SurfArea(Svec.Dim());
       sctl::Vector<sctl::Vector<Real>> dX(Svec.Dim()), Xn(Svec.Dim()), Xa(Svec.Dim());
       for (sctl::Long i = 0; i < Svec.Dim(); i++) { // Set dX, Xn, Xa
         const auto& S = Svec[i];
@@ -76,22 +110,14 @@ namespace biest {
         SurfaceOp<Real> surf_op(comm, Nt, Np);
         surf_op.Grad2D(dX[i], S.Coord());
         surf_op.SurfNormalAreaElem(&Xn[i], &Xa[i], dX[i], &S.Coord());
-
-        SurfArea[i] = 0;
-        for (const auto& da : Xa[i]) SurfArea[i] += da;
       }
-      sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
-      { // Set normal to outer-normal
-        for (sctl::Long i = 0; i < Svec.Dim(); i++) { // TODO: this is not reliable, use the normal direction to do this
-          if (SurfArea[i] < SurfArea[InnerSurfIdx]) InnerSurfIdx = i;
-          if (SurfArea[i] > SurfArea[OuterSurfIdx]) OuterSurfIdx = i;
-        }
-        for (sctl::Long i = 0; i < Svec.Dim(); i++) { // Set normal to outer-normal
-          Real scal = 0;
-          if (i == InnerSurfIdx) scal = -1;
-          if (i == OuterSurfIdx) scal = 1;
-          Xn[i] *= scal;
-        }
+      sctl::Long OuterSurfIdx, InnerSurfIdx;
+      std::tie(OuterSurfIdx, InnerSurfIdx) = detail_bie_solvers::OuterInnerSurfIdx(Svec, Xn, Xa);
+      for (sctl::Long i = 0; i < Svec.Dim(); i++) { // Set normal to outer-normal
+        Real scal = 0;
+        if (i == InnerSurfIdx) scal = -1;
+        if (i == OuterSurfIdx) scal = 1;
+        Xn[i] *= scal;
       }
 
       sctl::Profile::Tic("Setup", &comm);
@@ -499,8 +525,6 @@ namespace biest {
           for (sctl::Long i = 0; i < B.Dim(); i++) append_imag_part(B_taylor[i], B[i]);
         }
 
-        sctl::Vector<Real> SurfArea(Nsurf); // TODO: remove
-        sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
         sctl::Vector<sctl::Vector<Real>> dX(Nsurf), Xn(Nsurf), Xa(Nsurf);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Set dX, Xn, Xa
           const auto& S = Svec[i];
@@ -510,14 +534,9 @@ namespace biest {
           SurfaceOp<Real> surf_op(comm, Nt, Np);
           surf_op.Grad2D(dX[i], S.Coord());
           surf_op.SurfNormalAreaElem(&Xn[i], &Xa[i], dX[i], &S.Coord());
-
-          SurfArea[i] = 0;
-          for (const auto& da : Xa[i]) SurfArea[i] += da;
         }
-        for (sctl::Long i = 0; i < Nsurf; i++) { // TODO: this is not reliable, use the normal direction to do this
-          if (SurfArea[i] < SurfArea[InnerSurfIdx]) InnerSurfIdx = i;
-          if (SurfArea[i] > SurfArea[OuterSurfIdx]) OuterSurfIdx = i;
-        }
+        sctl::Long OuterSurfIdx, InnerSurfIdx;
+        std::tie(OuterSurfIdx, InnerSurfIdx) = detail_bie_solvers::OuterInnerSurfIdx(Svec, Xn, Xa);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Set normal to outer-normal
           Real scal = 0;
           if (i == InnerSurfIdx) scal = -1;
@@ -1029,8 +1048,6 @@ namespace biest {
         else SurfDsp[i] = 0;
       }
 
-      sctl::Vector<Real> SurfArea(Nsurf); // TODO: remove
-      sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
       sctl::Vector<sctl::Vector<Real>> dX(Nsurf), Xn(Nsurf), Xa(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Set dX, Xn, Xa
         const auto& S = Svec[i];
@@ -1040,14 +1057,9 @@ namespace biest {
         SurfaceOp<Real> surf_op(comm, Nt, Np);
         surf_op.Grad2D(dX[i], S.Coord());
         surf_op.SurfNormalAreaElem(&Xn[i], &Xa[i], dX[i], &S.Coord());
-
-        SurfArea[i] = 0;
-        for (const auto& da : Xa[i]) SurfArea[i] += da;
       }
-      for (sctl::Long i = 0; i < Nsurf; i++) { // TODO: this is not reliable, use the normal direction to do this
-        if (SurfArea[i] < SurfArea[InnerSurfIdx]) InnerSurfIdx = i;
-        if (SurfArea[i] > SurfArea[OuterSurfIdx]) OuterSurfIdx = i;
-      }
+      sctl::Long OuterSurfIdx, InnerSurfIdx;
+      std::tie(OuterSurfIdx, InnerSurfIdx) = detail_bie_solvers::OuterInnerSurfIdx(Svec, Xn, Xa);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Set normal to outer-normal
         Real scal = 0;
         if (i == InnerSurfIdx) scal = -1;

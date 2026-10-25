@@ -223,7 +223,7 @@ template <class Real> void SurfaceOp<Real>::SurfCurl(sctl::Vector<Real>& CurlF, 
     for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
       for (sctl::Long k = 0; k < dof; k++) {
         Real curl = 0;
-        sctl::Long idx = k*COORD_DIM*COORD_DIM + i;
+        sctl::Long idx = k*COORD_DIM*COORD_DIM * N + i;
         curl += normal[0*N+i] * (GradF[(1*COORD_DIM+2) * N + idx] - GradF[(2*COORD_DIM+1) * N + idx]);
         curl += normal[1*N+i] * (GradF[(2*COORD_DIM+0) * N + idx] - GradF[(0*COORD_DIM+2) * N + idx]);
         curl += normal[2*N+i] * (GradF[(0*COORD_DIM+1) * N + idx] - GradF[(1*COORD_DIM+0) * N + idx]);

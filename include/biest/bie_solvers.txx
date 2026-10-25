@@ -80,8 +80,8 @@ namespace biest {
         SurfArea[i] = 0;
         for (const auto& da : Xa[i]) SurfArea[i] += da;
       }
+      sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
       { // Set normal to outer-normal
-        sctl::Long OuterSurfIdx = 0, InnerSurfIdx = 0;
         for (sctl::Long i = 0; i < Svec.Dim(); i++) { // TODO: this is not reliable, use the normal direction to do this
           if (SurfArea[i] < SurfArea[InnerSurfIdx]) InnerSurfIdx = i;
           if (SurfArea[i] > SurfArea[OuterSurfIdx]) OuterSurfIdx = i;
@@ -343,9 +343,17 @@ namespace biest {
         tor_flux.ReInit(Nsurf);
         pol_flux.ReInit(Nsurf);
         for (sctl::Long i = 0; i < Nsurf; i++) {
+          A.SetZero();
           BI_laplace(A, J[i]);
-          tor_flux[i] = -compute_pol_circ(nullptr, A, i);
-          pol_flux[i] = -compute_tor_circ(nullptr, A, i);
+          if (Nsurf == 1) {
+            tor_flux[i] = -compute_pol_circ(nullptr, A, 0);
+            pol_flux[i] = -compute_tor_circ(nullptr, A, 0);
+          } else if (Nsurf == 2) {
+            tor_flux[i] = -(compute_pol_circ(nullptr, A, OuterSurfIdx) - compute_pol_circ(nullptr, A, InnerSurfIdx));
+            pol_flux[i] = -(compute_tor_circ(nullptr, A, OuterSurfIdx) - compute_tor_circ(nullptr, A, InnerSurfIdx));
+          } else {
+            SCTL_ASSERT(false);
+          }
         }
       }
       sctl::Profile::Toc();

@@ -144,6 +144,7 @@ template <class Real, class SKer> class OffSurfaceOp {
 
     sctl::Long Mt, Mp; // number of panels in the toroidal and the poloidal direction
     sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation, in each direction
+    bool warned_panels, warned_interp; // whether FitPanels has printed each of its warnings since Setup
     bool flip; // whether the poloidal parameter of the panels is reversed, so that the panel normals point outward
     sctl::Long Kt, Kp; // number of upsampled grid points spanned by the stencils of the nodes of a panel
     sctl::Vector<sctl::Long> wt0, wp0; // index on the upsampled grid of the first of these points, for each panel

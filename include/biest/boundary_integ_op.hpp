@@ -163,8 +163,8 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
      * the surface coordinates on one field period.
      *
      * @param[in] X the surface coordinates (in one field period) in the order
-     * {x11, x12, ..., x1Np, x21, x22, ... , xNtNp, y11, ... , z11, ...}, with
-     * the toroidal index increasing counterclockwise about the z-axis.
+     * {x11, x12, ..., x1Np, x21, x22, ... , xNtNp, y11, ... , z11, ...}. The
+     * toroidal index may increase in either direction about the z-axis.
      *
      * @param[in] NFP number of toroidal field periods. The surface as well as
      * the magnetic field must have this toroidal periodic symmetry.
@@ -286,7 +286,7 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
     void* (*biop_build)(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
     void (*biop_delete)(void** self);
     void (*biop_eval)(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self);
-    sctl::Integer NFP_;
+    sctl::Integer NFP_, tor_orient_;
     sctl::Long trg_Nt_, trg_Np_;
     sctl::Long quad_Nt_, quad_Np_;
     sctl::Vector<biest::Surface<Real>> Svec_;

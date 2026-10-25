@@ -266,7 +266,7 @@ namespace biest {
     sctl::Vector<Real> Xtrg_(Xtrg);
     sctl::Vector<Real> sigma_, J_; // on the full surface
     if (sigma.size()) SurfaceOp<Real>::CompleteVecField(sigma_, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(sigma));
-    if (J.size()) SurfaceOp<Real>::CompleteVecField(J_, true, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(J));
+    if (J.size()) SurfaceOp<Real>::CompleteVecField(J_, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>(J), 0, SurfaceOp<Real>::ToroidalOrientation(Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol()));
 
     const Real tol = sctl::pow<Real>((Real)0.1, digits_);
     sctl::Vector<Real> Bplasma(COORD_DIM * Ntrg); Bplasma.SetZero();

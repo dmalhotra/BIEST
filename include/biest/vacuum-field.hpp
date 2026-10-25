@@ -44,8 +44,9 @@ namespace biest {
      * @param[in] surf_Np surface discretization order in poloidal direction.
      *
      * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
-     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}, with the
-     * toroidal index increasing counterclockwise about the z-axis.
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}. The toroidal
+     * index may increase in either direction about the z-axis; the magnetic
+     * field grid follows the same direction.
      *
      * @param[in] Nt B-field discretization order in toroidal direction (in one
      * field period).
@@ -147,8 +148,9 @@ namespace biest {
      * @param[in] surf_Np surface discretization order in poloidal direction.
      *
      * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
-     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}, with the
-     * toroidal index increasing counterclockwise about the z-axis.
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}. The toroidal
+     * index may increase in either direction about the z-axis; the magnetic
+     * field grid follows the same direction.
      *
      * @param[in] Nt B-field discretization order in toroidal direction (in one
      * field period).

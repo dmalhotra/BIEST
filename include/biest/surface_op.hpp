@@ -342,21 +342,30 @@ template <class Real> class SurfaceOp {
     static void RotateToroidal(sctl::Vector<Real>& X_, const sctl::Vector<Real>& X, const sctl::Long Nt_, const sctl::Long Np_, const Real dtheta);
 
     /**
+     * Returns +1 if the toroidal index of the surface coordinates X (Nt x Np
+     * grid, SoA order) increases counterclockwise about the z-axis, and -1 if
+     * it increases clockwise.
+     */
+    static sctl::Integer ToroidalOrientation(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
+
+    /**
      * Build data X on the full torus (NFP*Nt x Np grid, SoA order) from data Y
-     * on one field period (Nt x Np grid), with the toroidal index increasing
-     * counterclockwise about the z-axis. Data with 3 components is rotated
-     * about the z-axis as a Cartesian vector; other data is copied.
+     * on one field period (Nt x Np grid). The other field periods are placed
+     * in the direction in which the toroidal index of Y increases. Data with 3
+     * components is rotated about the z-axis as a Cartesian vector; other data
+     * is copied.
      *
      * @param[out] X the data on the full torus.
      *
      * @param[in] is_surf true for surface coordinates, false for a vector
-     * field; used only with half_period.
+     * field.
      *
      * @param[in] half_period Y is given on half a field period, at toroidal
-     * angles (t+1/2)*pi/(NFP*Nt), and the other half is its stellarator
-     * symmetric image: (x,-y,-z) for coordinates and (-Bx,By,Bz) for a vector
-     * field, with the poloidal index reversed. X then has NFP*2*Nt x Np points,
-     * at toroidal angles (t+1/2)*pi/(NFP*Nt).
+     * angles (t+1/2)*pi/(NFP*Nt) in the direction of the toroidal index, and
+     * the other half is its stellarator symmetric image: (x,-y,-z) for
+     * coordinates and (-Bx,By,Bz) for a vector field, with the poloidal index
+     * reversed. X then has NFP*2*Nt x Np points, at toroidal angles
+     * (t+1/2)*pi/(NFP*Nt).
      *
      * @param[in] NFP number of toroidal field periods.
      *
@@ -365,8 +374,13 @@ template <class Real> class SurfaceOp {
      * @param[in] Y the data on one field period, in SoA order.
      *
      * @param[in] dtheta the result is shifted toroidally with RotateToroidal().
+     *
+     * @param[in] tor_orient +1 or -1 if the toroidal index of Y increases
+     * counterclockwise or clockwise about the z-axis. With 0, it is detected
+     * from Y with ToroidalOrientation() if is_surf is true, and is +1
+     * otherwise; a vector field must be given the orientation of its surface.
      */
-    static void CompleteVecField(sctl::Vector<Real>& X, const bool is_surf, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Real dtheta = 0);
+    static void CompleteVecField(sctl::Vector<Real>& X, const bool is_surf, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Real dtheta = 0, const sctl::Integer tor_orient = 0);
 
     /**
      * Resample X0 from an Nt0 x Np0 periodic grid to an Nt1 x Np1 grid by

@@ -455,7 +455,7 @@ namespace biest {
       } else {
         sctl::Vector<Real> F_, F__;
         biest::SurfaceOp<Real>::CompleteVecField(F_, false, false, NFP, src_Nt_, src_Np_, F);
-        biest::SurfaceOp<Real>::Resample(F__, quad_Nt_, quad_Np_, F_, NFP_*src_Nt_, src_Np_);
+        biest::SurfaceOp<Real>::Resample(F__, quad_Nt_, quad_Np_, F_, NFP*src_Nt_, src_Np_);
         biop_eval(U, F__, biop);
       }
     }

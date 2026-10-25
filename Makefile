@@ -80,9 +80,19 @@ TARGET_BIN = \
        $(BINDIR)/double-layer-convergence \
        $(BINDIR)/virtual-casing-principle
 
-.PHONY: all clean
+TEST_BIN = \
+       $(BINDIR)/test/surface-op \
+       $(BINDIR)/test/boundary-integ-op \
+       $(BINDIR)/test/bie-solvers \
+       $(BINDIR)/test/vacuum-field
+
+.PHONY: all clean test
 
 all : $(TARGET_BIN)
+
+# Build the unit tests (in parallel with make -j) and run them one after another
+test : $(TEST_BIN)
+	@failed=0; for t in $(TEST_BIN); do echo "== $$t"; $$t || failed=1; done; exit $$failed
 
 $(BINDIR)/%: $(OBJDIR)/%.o
 	-@$(MKDIRS) $(dir $@)
@@ -94,6 +104,10 @@ endif
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	-@$(MKDIRS) $(dir $@)
 	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $^ -o $@
+
+$(OBJDIR)/test/%.o: ./test/%.cpp ./test/test-utils.hpp
+	-@$(MKDIRS) $(dir $@)
+	$(CXX) $(CXXFLAGS) -I$(INCDIR) -c $< -o $@
 
 clean:
 	$(RM) -r $(BINDIR)/* $(OBJDIR)/*

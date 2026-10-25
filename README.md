@@ -7,6 +7,9 @@
 ### Minimum requirements to compile:
 C++ compiler that supports C++17 standard
 
+### Running the tests:
+`make -j test` builds and runs the unit tests in `test/`.
+
 
 ### Optional libraries for better performance:
 BLAS, LAPACK, FFTW, LIBXSMM (see the Makefile)

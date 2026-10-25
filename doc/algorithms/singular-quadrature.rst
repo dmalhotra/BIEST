@@ -226,7 +226,7 @@ which handles targets at any distance from the surface:
    coefficients of the surface coordinates and the densities, as the smallest that keep the interpolation error on each
    panel below the requested tolerance.
 2. The surface coordinates and the densities are interpolated from the periodic grid to the panel nodes: first FFT
-   upsampling (by a factor up to 8, chosen to meet the tolerance), then local 12-point Lagrange interpolation.
+   upsampling (by a factor up to 16, chosen to meet the tolerance), then local 12-point Lagrange interpolation.
 3. The layer potential at the targets is computed with the boundary integral operator of SCTL on these panels,
    which uses adaptive quadrature for targets close to a panel
    (see `QuadElemList <https://sctl.readthedocs.io/en/latest/algorithms/quad-element.html>`_ in SCTL).

@@ -275,8 +275,8 @@ namespace detail_offsurf {
   }
 
   /**
-   * Returns the smallest upsampling factor U, at least U0, from 1, 2, 3, 4, 6 and 8, at which the local interpolation
-   * along the rows of R is within tol.
+   * Returns the smallest upsampling factor U, at least U0, from 1, 2, 3, 4, 6, 8, 12 and 16, at which the local
+   * interpolation along the rows of R is within tol.
    *
    * @param[in] R rows of values uniform on a period.
    *
@@ -310,7 +310,7 @@ namespace detail_offsurf {
 
     // the error, less the rounding error, is measured at the midpoints of the upsampled grid, where it is largest, on
     // the rows with the largest error estimated from their Fourier coefficients
-    for (const sctl::Long U : {1, 2, 3, 4, 6, 8}) {
+    for (const sctl::Long U : {1, 2, 3, 4, 6, 8, 12, 16}) {
       if (U < U0) continue;
       sctl::Vector<sctl::Long> rows; // the rows with the largest estimated error, from their mode sizes
       {
@@ -493,9 +493,9 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const 
       return detail_offsurf::PanelBound<Real>(rule, M, Sx.p, sX, false) <= tol_ && detail_offsurf::PanelBound<Real>(rule, M, Sf.p, sF, false) <= tol_ &&
              detail_offsurf::PanelBound<Real>(rule, M, Sx.p_dt, st, false) <= tol_ && detail_offsurf::PanelBound<Real>(rule, M, Sx.p, sp, true) <= tol_;
     };
-    // at most 8 panel nodes per grid point
-    const sctl::Long Mt_max = std::max<sctl::Long>(Mt, (8 * Nt_ + ORDER - 1) / ORDER);
-    const sctl::Long Mp_max = std::max<sctl::Long>(Mp, (8 * Np_ + ORDER - 1) / ORDER);
+    // at most 16 panel nodes per grid point
+    const sctl::Long Mt_max = std::max<sctl::Long>(Mt, (16 * Nt_ + ORDER - 1) / ORDER);
+    const sctl::Long Mp_max = std::max<sctl::Long>(Mp, (16 * Np_ + ORDER - 1) / ORDER);
     Mt = detail_offsurf::SmallestCount(Mt, Mt_max, resolved_t);
     Mp = detail_offsurf::SmallestCount(Mp, Mp_max, resolved_p);
     if (!resolved_t(Mt) || !resolved_p(Mp)) SCTL_WARN("The surface or the density is not resolved on its grid; the panels may not reach the requested accuracy.");
@@ -508,7 +508,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const 
       const sctl::Long U = (UX < 0 ? UX : detail_offsurf::LocalUpsample<Real>(detail_offsurf::GridLines<Real>(F, Nt_, Np_, dir), cF, tol_ / 2, STENCIL, UX));
       if (U < 0) {
         SCTL_WARN("The local interpolation of the surface or the density may not reach the requested accuracy.");
-        return std::max<sctl::Long>(U0, 8);
+        return std::max<sctl::Long>(U0, 16);
       }
       return U;
     };

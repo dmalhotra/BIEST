@@ -150,6 +150,8 @@ The programs of the :ref:`tutorials <tutorial_index>` are in ``doc/examples``, w
 
    make -C doc/examples && make -C doc/examples run
 
+GitHub Actions (``.github/workflows/test.yml``) runs the unit tests and the tutorial programs, and builds this documentation, on every push.
+
 
 Visualization
 -------------

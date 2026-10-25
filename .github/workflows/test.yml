@@ -1,0 +1,88 @@
+name: Test
+
+on: [push, pull_request, workflow_dispatch]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Unit tests in test/ (about a minute to build and half a minute to run on a 4-core runner)
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+          submodules: recursive
+
+    - name: apt-get stuff needed for compiling
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libfftw3-dev libblas-dev liblapack-dev
+
+    - name: Build the unit tests
+      run: make -j$(nproc) bin/test/surface-op bin/test/boundary-integ-op bin/test/bie-solvers bin/test/vacuum-field
+
+    - name: Run the unit tests
+      run: OMP_NUM_THREADS=$(nproc) make test
+
+  # The tutorial programs in doc/examples and the programs in src/ that the tutorials include with literalinclude
+  examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+          submodules: recursive
+
+    - name: apt-get stuff needed for compiling
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libfftw3-dev libblas-dev liblapack-dev
+
+    - name: Build the tutorial programs
+      run: make -C doc/examples -j$(nproc)
+
+    - name: Run the tutorial programs
+      run: OMP_NUM_THREADS=$(nproc) make -C doc/examples run
+
+    - name: Build and run the example programs included in the tutorials
+      run: |
+        make -j$(nproc) bin/force-free-fields-example bin/example1 bin/quadrature-example
+        OMP_NUM_THREADS=$(nproc) ./bin/quadrature-example
+        OMP_NUM_THREADS=$(nproc) ./bin/example1 geom/NCSX
+
+  # The documentation, with Sphinx and Doxygen warnings treated as errors
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+          submodules: recursive
+
+    - name: apt-get doxygen
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y doxygen
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+
+    - name: Install Sphinx
+      run: python -m pip install -r doc/requirements.txt
+
+    - name: Run Doxygen
+      run: |
+        cd doc
+        ( cat Doxyfile; echo "WARN_AS_ERROR = FAIL_ON_WARNINGS" ) | doxygen -
+
+    - name: Build the documentation
+      run: |
+        cd doc
+        python -m sphinx -W --keep-going -b html . _build/html

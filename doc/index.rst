@@ -10,6 +10,10 @@ BIEST: Boundary Integral Equation Solver for Taylor states
 
 .. only:: html
 
+   .. image:: https://github.com/dmalhotra/BIEST/actions/workflows/test.yml/badge.svg
+      :target: https://github.com/dmalhotra/BIEST/actions/workflows/test.yml
+      :alt: Test status
+
    .. image:: https://badgen.net/github/tag/dmalhotra/BIEST
       :target: https://github.com/dmalhotra/BIEST/tags
       :alt: Stable version

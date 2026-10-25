@@ -221,12 +221,16 @@ but near the surface the integrand is sharply peaked and the required upsampling
 Sec. 3.1.5). BIEST evaluates off-surface fields with ``OffSurfaceOp`` (used by all ``EvalOffSurface`` methods),
 which handles targets at any distance from the surface:
 
-1. The surface is divided into :math:`M_\theta\times M_\phi` quadrilateral panels, each with a
-   :math:`12\times 12` tensor grid of Gauss--Legendre nodes. The numbers of panels are chosen, from the Fourier
-   coefficients of the surface coordinates and the densities, as the smallest that keep the interpolation error on each
-   panel below the requested tolerance.
+1. The surface is divided into quadrilateral panels, each with a :math:`12\times 12` tensor grid of Gauss--Legendre
+   nodes. Starting from a coarse :math:`4\times 4` mesh in the grid parameters, each panel is split in half along
+   the toroidal direction, the poloidal direction or both, until on every panel the last two Legendre coefficients
+   along each direction of the surface coordinates, of their derivatives (which give the normal and the area element)
+   and of the densities are below the requested tolerance, relative to the largest value of each field. The panels
+   are therefore small only where the surface or the densities vary rapidly. A panel is not split beyond 16 nodes per
+   grid point.
 2. The surface coordinates and the densities are interpolated from the periodic grid to the panel nodes: first FFT
-   upsampling (by a factor up to 16, chosen to meet the tolerance), then local 12-point Lagrange interpolation.
+   upsampling (by a factor up to 16, chosen to meet the tolerance on the finest panels), then local 12-point Lagrange
+   interpolation.
 3. The layer potential at the targets is computed with the boundary integral operator of SCTL on these panels,
    which uses adaptive quadrature for targets close to a panel
    (see `QuadElemList <https://sctl.readthedocs.io/en/latest/algorithms/quad-element.html>`_ in SCTL).

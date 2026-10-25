@@ -558,7 +558,7 @@ namespace detail_bie_solvers {
         BI_potn.SetupSingular(Svec, ker_potn);
         sctl::Profile::Toc();
 
-        auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - Grad(invLap(sigma)) x n )
+        auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) )
           sctl::Long Nsurf = SurfDim.Dim();
           sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
           if (m.Dim() != COORD_DIM * 2 * N) m.ReInit(COORD_DIM * 2 * N);
@@ -1081,7 +1081,7 @@ namespace detail_bie_solvers {
       BI_potn.SetupSingular(Svec, ker_potn);
       sctl::Profile::Toc();
 
-      auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - Grad(invLap(sigma)) x n )
+      auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) )
         sctl::Long Nsurf = SurfDim.Dim();
         sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
         if (m.Dim() != COORD_DIM * 2 * N) m.ReInit(COORD_DIM * 2 * N);

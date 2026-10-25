@@ -13,9 +13,9 @@ namespace biest {
 
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder = 1> class SingularCorrection {
     static constexpr sctl::Integer COORD_DIM = 3;
-    static constexpr sctl::Integer PATCH_DIM = 2 * PATCH_DIM0 + 1; // <= 55 (odd)
+    static constexpr sctl::Integer PATCH_DIM = 2 * PATCH_DIM0 + 1;
     static constexpr sctl::Integer RAD_DIM = (HedgehogOrder > 1 ? RAD_DIM_ * 3 : RAD_DIM_);
-    static constexpr sctl::Integer ANG_DIM = 2 * RAD_DIM_; // <= 39
+    static constexpr sctl::Integer ANG_DIM = 2 * RAD_DIM_;
     static constexpr sctl::Integer INTERP_ORDER = 12;
     static constexpr sctl::Integer Ngrid = PATCH_DIM * PATCH_DIM;
     static constexpr sctl::Integer Npolar = RAD_DIM * ANG_DIM;

@@ -4,9 +4,7 @@
 
 // This example shows how to build a surface from RBC and ZBS coefficients. It
 // then computes the force-free field on the boundary and also evaluates at
-// points in the interior (away from the surface).
-// Note: Evaluation points very close to the surface will have large errors
-// because the code is not designed to handle near-singular integration.
+// points in the interior (at any distance from the surface).
 //
 // # Compiling and running:
 // make bin/example1

@@ -48,9 +48,9 @@ namespace detail_offsurf {
 
 /**
  * Layer potentials of a toroidal surface at off-surface targets, by quadrature on panels that resolve the surface. The
- * panels and the operator are set up once per set of targets.
+ * panels and the operator are set up once per set of targets. Target points must not lie on the surface.
  *
- * @tparam SKer the SCTL kernel.
+ * @tparam SKer the SCTL kernel, e.g. sctl::Laplace3D_FxdU.
  */
 template <class Real, class SKer> class OffSurfaceOp {
     static constexpr sctl::Integer COORD_DIM = 3;
@@ -92,7 +92,8 @@ template <class Real, class SKer> class OffSurfaceOp {
      * Add the potential of the densities F at the target points to U. If the panels do not resolve F, they are fit
      * again.
      *
-     * @param[in,out] U the potential at the target points in SoA order.
+     * @param[in,out] U the potential at the target points in SoA order; it is resized and set to zero first if its
+     * size is wrong.
      *
      * @param[in] F the densities on the grid in SoA order.
      */

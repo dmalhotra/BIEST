@@ -22,11 +22,18 @@ namespace biest {
  *
  * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures.
  *
- * @tparam PATCH_DIM0 the partition of unity function is defined on a grid of
- * dimensions PATCH_DIM0 x PATCH_DIM0.
+ * @tparam PATCH_DIM0 radius, in grid spacings of the upsampled source grid, of
+ * the partition of unity around each target point. The patch has
+ * (2*PATCH_DIM0+1) x (2*PATCH_DIM0+1) grid points.
  *
  * @tparam RAD_DIM the order of the polar quadrature rule. Radial dimension is
- * RAD_DIM and angular dimension is 2*RAD_DIM
+ * RAD_DIM (3*RAD_DIM when HedgehogOrder > 1) and angular dimension is
+ * 2*RAD_DIM.
+ *
+ * @tparam HedgehogOrder 0 or 1 gives the principal value on the surface. A
+ * value in [2, 16] gives the one-sided limit from the side opposite to the
+ * normal (the interior for outward normals), by extrapolation from points
+ * off the surface.
  */
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 25, sctl::Integer RAD_DIM = 18, sctl::Integer HedgehogOrder = 1> class BoundaryIntegralOp {
     static constexpr sctl::Integer COORD_DIM = 3;
@@ -36,49 +43,58 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     /**
      * Constructor.
      *
-     * @param comm the communicator.
+     * @param comm the communicator. With several processes, the target points
+     * are divided among the processes, and every process holds all the data.
      */
     BoundaryIntegralOp(const sctl::Comm& comm = sctl::Comm::Self());
 
     /**
-     * Returns the dimensions of the boundary integral operator.
-     *
-     * @param[in] i indicates source dimensions when i==0 and target dimensions
-     * when i==1.
+     * Returns the dimensions of the boundary integral operator: the size of
+     * the density vector (KDIM0 times the number of grid points) for i==0, and
+     * of the potential vector (KDIM1 times the number of target points) for
+     * i==1.
      */
     sctl::Long Dim(sctl::Integer i) const;
 
     /**
-     * Setup the layer-potential operator.
+     * Setup the layer-potential operator and precompute the singular
+     * corrections. The target points are the grid points of the surfaces.
      *
      * @param[in] Svec vector containing the surfaces.
      *
-     * @param[in] ker the kernel function.
+     * @param[in] ker the kernel function; it must outlive the operator.
      *
-     * @param[in] trg_idx_ vector of indices identifying a subset of the surface
-     * grid points which will be the target points.
+     * @param[in] trg_idx_ (optional) for each surface, the indices of the grid
+     * points which will be the target points.
      */
     template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>());
 
     /**
-     * Evaluate the layer-potential operator.
+     * Evaluate the layer-potential operator. Interactions between different
+     * surfaces use the trapezoidal rule only, so the surfaces must be well
+     * separated relative to the grid spacing.
      *
-     * @param[out] U the vector of computed potentials at the target points in
-     * SoA order.
+     * @param[in,out] U the vector of computed potentials at the target points
+     * in SoA order. If U already has the right size the potential is added to
+     * it; otherwise it is resized and set to zero first.
      *
      * @param[in] F the vector of surface density values at surface grid points
-     * in SoA order.
+     * in SoA order. Several densities can be stacked; their potentials are
+     * stacked in U in the same order.
      */
     void operator()(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) const;
 
     /**
-     * Evaluate the potential at off-surface points, at any distance from the surfaces.
+     * Evaluate the potential at off-surface points, at any distance from the
+     * surfaces. The panels for near-surface quadrature are rebuilt on every
+     * call.
      *
-     * @param[out] U the computed potential in SoA order.
+     * @param[in,out] U the computed potential in SoA order, added to U if it
+     * already has the right size.
      *
      * @param[in] Xt the position of the target points in SoA order.
      *
-     * @param[in] F the density function at grid points in SoA order for each
+     * @param[in] F one density function at grid points in SoA order for each
      * surface concatenated together.
      *
      * @param[in] ker the kernel function given to SetupSingular().
@@ -115,6 +131,10 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
 /**
  * Compute layer-potentials on toroidal surfaces with field-period symmetry.
+ * The density is given on one field period, and the potential is computed on
+ * one field period. The quadrature parameters are chosen at run time from the
+ * number of requested digits. An object must not be copied after
+ * SetupSingular().
  *
  * @tparam Real datatype for reals can be float, double or sctl::QuadReal.
  *
@@ -122,27 +142,36 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
  *
  * @tparam KDIM1 degrees-of-freedom of the potential per target point.
  *
- * @tparam HedgehogOrder Use Hedgehog quadrature (required for hyper-singular kernels) when HedgehogOrder > 1
+ * @tparam HedgehogOrder as in BoundaryIntegralOp: a value > 1 gives the
+ * one-sided limit from the side opposite to the normal instead of the
+ * principal value.
  */
 template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::Integer KDIM1=1, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
   public:
 
+    /**
+     * Constructor.
+     *
+     * @param comm the communicator.
+     */
     explicit FieldPeriodBIOp(const sctl::Comm& comm = sctl::Comm::Self());
 
     ~FieldPeriodBIOp();
 
     /**
-     * Build the surface object from data surface nodal data on one field period.
+     * Build the full-torus surface object (NFP*surf_Nt x surf_Np grid) from
+     * the surface coordinates on one field period.
      *
      * @param[in] X the surface coordinates (in one field period) in the order
-     * {x11, x12, ..., x1Np, x21, x22, ... , xNtNp, y11, ... , z11, ...}.
+     * {x11, x12, ..., x1Np, x21, x22, ... , xNtNp, y11, ... , z11, ...}. The
+     * toroidal index may increase in either direction about the z-axis.
      *
      * @param[in] NFP number of toroidal field periods. The surface as well as
      * the magnetic field must have this toroidal periodic symmetry.
      *
-     * @param[in] Nt surface discretization order in toroidal direction (in one field period).
+     * @param[in] surf_Nt surface discretization order in toroidal direction (in one field period).
      *
-     * @param[in] Np surface discretization order in poloidal direction.
+     * @param[in] surf_Np surface discretization order in poloidal direction.
      */
     static biest::Surface<Real> BuildSurface(const sctl::Vector<Real>& X, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np);
 
@@ -157,20 +186,27 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
      *
      * @param[in] NFP number of toroidal field periods. The output potential will only be computed for one field-period.
      *
-     * @param[in] src_Nt maximum discretization order for input density in toroidal direction (in one field period).
+     * @param[in] src_Nt maximum discretization order for input density in toroidal direction (on the full torus;
+     * NFP*Nt for a density on an Nt x Np grid per field period).
      *
      * @param[in] src_Np maximum discretization order for input density in poloidal direction.
      *
      * @param[in] trg_Nt output potential discretization order in toroidal direction (in one field period).
      *
      * @param[in] trg_Np output potential discretization order in poloidal direction.
+     *
+     * @param[in] qNt, qNp dimensions of the quadrature grid on the full torus.
+     * When either is zero, they are chosen from digits and refined, at most
+     * three times, until the error of the Laplace double-layer identity is
+     * below 10^-digits.
      */
     void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt = 0, const sctl::Long qNp = 0);
 
     /**
      * Evaluate the potential from given density.
      *
-     * @param[in] U output potential computed on surface nodes in one field-period.
+     * @param[in,out] U output potential computed on surface nodes in one
+     * field-period, added to U if it already has the right size.
      *
      * @param[in] F density function given at discretization nodes in one field-period.
      *
@@ -181,7 +217,8 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
      * @param[in] src_Np discretization order for F in poloidal direction.
      *
      * The parameters NFP, src_Nt, and src_Np for F do not have to be the same as those in SetupSingular. The density F
-     * will be re-sampled to the resolution QuadNt() x QuadNp() for evaluating the quadratures. The user can avoid this
+     * is completed to the full torus by symmetry (a 3-component density is rotated as a Cartesian vector) and
+     * re-sampled to the resolution QuadNt() x QuadNp() for evaluating the quadratures. The user can avoid this
      * extra work by providing F already sampled at this resolution (i.e. NFP=1, src_Nt=QuadNt(), src_Np=QuadNp()).
      */
     void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP=1, const sctl::Integer src_Nt=-1, const sctl::Integer src_Np=-1) const;
@@ -249,7 +286,7 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
     void* (*biop_build)(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
     void (*biop_delete)(void** self);
     void (*biop_eval)(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self);
-    sctl::Integer NFP_;
+    sctl::Integer NFP_, tor_orient_;
     sctl::Long trg_Nt_, trg_Np_;
     sctl::Long quad_Nt_, quad_Np_;
     sctl::Vector<biest::Surface<Real>> Svec_;

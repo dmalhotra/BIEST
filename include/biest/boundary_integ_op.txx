@@ -65,7 +65,7 @@ namespace biest {
         Op[i] = SurfaceOp<Real>(comm_, Nt0[i]*UPSAMPLE, Np0[i]*UPSAMPLE);
         Upsample(S.Coord(), Xsrc[i], Nt0[i], Np0[i]);
         Op[i].Grad2D(dXsrc[i], Xsrc[i]);
-        normal_orient = Op[i].SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
+        normal_orient[i] = Op[i].SurfNormalAreaElem(&Xn_src[i], &Xa_src[i], dXsrc[i], &Xsrc[i]);
         dim[0] += ker.Dim(0) * (Xsrc0.Dim() / COORD_DIM);
         dim[1] += ker.Dim(1) * (Xtrg[i].Dim() / COORD_DIM);
       }
@@ -314,6 +314,7 @@ namespace biest {
 
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::FieldPeriodBIOp(const sctl::Comm& comm) : biop(nullptr), comm_(comm) {
       NFP_ = 0;
+      tor_orient_ = 1;
       trg_Nt_ = 0;
       trg_Np_ = 0;
       quad_Nt_ = 0;
@@ -330,6 +331,7 @@ namespace biest {
       trg_Nt_ = trg_Nt;
       trg_Np_ = trg_Np;
       NFP_ = NFP;
+      tor_orient_ = biest::SurfaceOp<Real>::ToroidalOrientation(Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
 
       Real optim_aspect_ratio = 0, cond = 1;
       sctl::StaticArray<Real,2> aspect_ratio{100,0};
@@ -454,8 +456,8 @@ namespace biest {
         biop_eval(U, F, biop);
       } else {
         sctl::Vector<Real> F_, F__;
-        biest::SurfaceOp<Real>::CompleteVecField(F_, false, false, NFP, src_Nt_, src_Np_, F);
-        biest::SurfaceOp<Real>::Resample(F__, quad_Nt_, quad_Np_, F_, NFP_*src_Nt_, src_Np_);
+        biest::SurfaceOp<Real>::CompleteVecField(F_, false, false, NFP, src_Nt_, src_Np_, F, 0, tor_orient_);
+        biest::SurfaceOp<Real>::Resample(F__, quad_Nt_, quad_Np_, F_, NFP*src_Nt_, src_Np_);
         biop_eval(U, F__, biop);
       }
     }

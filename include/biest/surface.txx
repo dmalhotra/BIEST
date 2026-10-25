@@ -719,7 +719,7 @@ template <class Real> void WriteVTK(const std::string& fname, const sctl::Intege
   SurfaceOp<Real>::CompleteVecField(X_, true, half_period, NFP, surf_Nt, surf_Np, X, (half_period?sctl::const_pi<Real>()/(NFP*src_Nt*2):0)-(half_period?sctl::const_pi<Real>()/(NFP*surf_Nt*2):0));
   SurfaceOp<Real>::Resample(Svec[0].Coord(), NFP*(half_period?2:1)*src_Nt, src_Np, X_, NFP*(half_period?2:1)*surf_Nt, surf_Np);
 
-  SurfaceOp<Real>::CompleteVecField(F_, false, half_period, NFP, src_Nt, src_Np, F);
+  SurfaceOp<Real>::CompleteVecField(F_, false, half_period, NFP, src_Nt, src_Np, F, 0, SurfaceOp<Real>::ToroidalOrientation(X, surf_Nt, surf_Np));
   biest::WriteVTK(fname.c_str(), Svec, F_);
 }
 

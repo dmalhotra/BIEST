@@ -48,9 +48,9 @@ namespace detail_offsurf {
 
 /**
  * Layer potentials of a toroidal surface at off-surface targets, by quadrature on panels that resolve the surface. The
- * panels and the operator are set up once per set of targets.
+ * panels and the operator are set up once per set of targets. Target points must not lie on the surface.
  *
- * @tparam SKer the SCTL kernel.
+ * @tparam SKer the SCTL kernel, e.g. sctl::Laplace3D_FxdU.
  */
 template <class Real, class SKer> class OffSurfaceOp {
     static constexpr sctl::Integer COORD_DIM = 3;
@@ -92,7 +92,8 @@ template <class Real, class SKer> class OffSurfaceOp {
      * Add the potential of the densities F at the target points to U. If the panels do not resolve F, they are fit
      * again.
      *
-     * @param[in,out] U the potential at the target points in SoA order.
+     * @param[in,out] U the potential at the target points in SoA order; it is resized and set to zero first if its
+     * size is wrong.
      *
      * @param[in] F the densities on the grid in SoA order.
      */
@@ -143,6 +144,7 @@ template <class Real, class SKer> class OffSurfaceOp {
 
     sctl::Long Mt, Mp; // number of panels in the toroidal and the poloidal direction
     sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation, in each direction
+    bool warned_panels, warned_interp; // whether FitPanels has printed each of its warnings since Setup
     bool flip; // whether the poloidal parameter of the panels is reversed, so that the panel normals point outward
     sctl::Long Kt, Kp; // number of upsampled grid points spanned by the stencils of the nodes of a panel
     sctl::Vector<sctl::Long> wt0, wp0; // index on the upsampled grid of the first of these points, for each panel

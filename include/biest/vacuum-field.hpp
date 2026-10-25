@@ -15,20 +15,25 @@ namespace biest {
 
   /**
    * Constructs a vacuum field in the exterior of a surface given B.n on the
-   * surface and magnitude of the toroidal current.
+   * surface and magnitude of the toroidal current. The surface and the fields
+   * have toroidal field-period symmetry, and are given on one field period.
    */
   template <class Real> class ExtVacuumField : public VacuumFieldBase<Real,true> {
     public:
 
     /**
-     * Constructor
+     * Constructor.
+     *
+     * @param[in] verbose print the GMRES residuals.
      */
     explicit ExtVacuumField(bool verbose = false) : VacuumFieldBase<Real,true>(verbose) {}
 
     /**
      * Setup the ExtVacuumField object.
      *
-     * @param[in] digits number of decimal digits of accuracy.
+     * @param[in] digits number of decimal digits of accuracy. It sets the
+     * quadrature parameters and the GMRES tolerance 10^-digits; the quadratures
+     * are set up at the first solve.
      *
      * @param[in] NFP number of toroidal field periods. The surface as well as
      * the magnetic field must have this toroidal periodic symmetry.
@@ -39,16 +44,18 @@ namespace biest {
      * @param[in] surf_Np surface discretization order in poloidal direction.
      *
      * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
-     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}.
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}. The toroidal
+     * index may increase in either direction about the z-axis; the magnetic
+     * field grid follows the same direction.
      *
      * @param[in] Nt B-field discretization order in toroidal direction (in one
      * field period).
      *
      * @param[in] Np B-field discretization order in poloidal direction.
      *
-     * The resolution parameters for the surface shape (Nt, Np), and the
-     * magnetic field (Nt, Np) do not need to be related to each other in any
-     * particular way.
+     * The resolution parameters for the surface shape (surf_Nt, surf_Np), and
+     * the magnetic field (Nt, Np) do not need to be related to each other in
+     * any particular way.
      */
     void Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
 
@@ -57,10 +64,11 @@ namespace biest {
      * surface normal vector.
      *
      * @param[in] B the surface vector field B = {Bx11, Bx12, ..., Bx1Np, Bx21,
-     * Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, where Nt and Np are the
-     * number of discretizations in toroidal and poloidal directions.
+     * Bx22, ... , BxNtNp, By11, ... , Bz11, ...} on the Nt x Np grid of one
+     * field period.
      *
-     * @return the dot product of the surface field B with the surface normal.
+     * @return the dot product of the surface field B with the unit normal
+     * pointing out of the torus.
      */
     std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
 
@@ -68,43 +76,68 @@ namespace biest {
      * Computes Bplasma on the exterior of a toroidal surface such that
      * Bplasma.n + Bcoil_dot_N = 0 on the surface and poloidal circulation of
      * Bplasma equals Jplasma. Bplasma is represented using layer potentials as
-     * grad(S[sigma]) + curl(S[J]). The surface current J is harmonic surface
-     * vector field and sigma is computed by solving a boundary integral
-     * equation (BIE) formulation using GMRES. Bplasma, sigma and J are
-     * returned.
+     * -grad(S[sigma]) + curl(S[J]). The surface current J is a harmonic surface
+     * vector field with net toroidal current Jplasma, flowing in the direction
+     * of decreasing toroidal grid index, and sigma is computed by solving a
+     * boundary integral equation (BIE) formulation using GMRES. Bplasma, sigma
+     * and J are returned.
      *
-     * @return Bplasma, sigma and J on the Nt x Np grid (in row-major order).
+     * @param[in] Bcoil_dot_N the normal component of the external field on the
+     * Nt x Np grid, e.g. from ComputeBdotN().
+     *
+     * @param[in] Jplasma the net toroidal current of J (with mu0 = 1).
+     *
+     * @return Bplasma, sigma and J on the Nt x Np grid of one field period (in
+     * SoA order). J is empty when Jplasma == 0.
      */
     std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> ComputeBplasma(const std::vector<Real>& Bcoil_dot_N, const Real Jplasma = 0) const;
 
     /**
-     * Compute U = S[sigma] on the toroidal surface.
+     * Compute the single-layer potential U = S[sigma] on the toroidal surface.
      *
-     * @param[in] sigma the single-layer density on the surface discretization nodes.
+     * @param[in] sigma the single-layer density on the Nt x Np grid of one
+     * field period.
      *
-     * @return the potential U on the surface discretization nodes.
+     * @return the potential U on the same grid.
      */
     std::vector<Real> ComputeU(const std::vector<Real>& sigma) const;
 
+    /**
+     * Evaluate Bplasma = -grad(S[sigma]) + curl(S[J]) at points outside the
+     * surface, at any distance from it.
+     *
+     * @param[in] Xt the target points in SoA order {x1, x2, ..., y1, ..., z1, ...}.
+     *
+     * @param[in] sigma, J the densities returned by ComputeBplasma().
+     *
+     * @return Bplasma at the target points in SoA order.
+     */
     std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const std::vector<Real>& J) const;
   };
 
   /**
    * Constructs a vacuum field in the interior of a surface given B.n on the
    * surface and the magnitude of the current through the center of the torus.
+   * The surface and the fields have toroidal field-period symmetry, and are
+   * given on one field period. The z-axis must pass through the hole of the
+   * torus.
    */
   template <class Real> class IntVacuumField : public VacuumFieldBase<Real,false> {
     public:
 
     /**
-     * Constructor
+     * Constructor.
+     *
+     * @param[in] verbose print the GMRES residuals.
      */
     explicit IntVacuumField(bool verbose = false) : VacuumFieldBase<Real,false>(verbose) {}
 
     /**
      * Setup the IntVacuumField object.
      *
-     * @param[in] digits number of decimal digits of accuracy.
+     * @param[in] digits number of decimal digits of accuracy. It sets the
+     * quadrature parameters and the GMRES tolerance 10^-digits; the quadratures
+     * are set up at the first solve.
      *
      * @param[in] NFP number of toroidal field periods. The surface as well as
      * the magnetic field must have this toroidal periodic symmetry.
@@ -115,16 +148,18 @@ namespace biest {
      * @param[in] surf_Np surface discretization order in poloidal direction.
      *
      * @param[in] X the surface coordinates in the order {x11, x12, ..., x1Np,
-     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}.
+     * x21, x22, ... , x(surf_Nt,surf_Np), y11, ... , z11, ...}. The toroidal
+     * index may increase in either direction about the z-axis; the magnetic
+     * field grid follows the same direction.
      *
      * @param[in] Nt B-field discretization order in toroidal direction (in one
      * field period).
      *
      * @param[in] Np B-field discretization order in poloidal direction.
      *
-     * The resolution parameters for the surface shape (Nt, Np), and the
-     * magnetic field (Nt, Np) do not need to be related to each other in any
-     * particular way.
+     * The resolution parameters for the surface shape (surf_Nt, surf_Np), and
+     * the magnetic field (Nt, Np) do not need to be related to each other in
+     * any particular way.
      */
     void Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
 
@@ -133,10 +168,11 @@ namespace biest {
      * surface normal vector.
      *
      * @param[in] B the surface vector field B = {Bx11, Bx12, ..., Bx1Np, Bx21,
-     * Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, where Nt and Np are the
-     * number of discretizations in toroidal and poloidal directions.
+     * Bx22, ... , BxNtNp, By11, ... , Bz11, ...} on the Nt x Np grid of one
+     * field period.
      *
-     * @return the dot product of the surface field B with the surface normal.
+     * @return the dot product of the surface field B with the unit normal
+     * pointing out of the torus.
      */
     std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
 
@@ -144,23 +180,42 @@ namespace biest {
      * Computes B on the interior of a toroidal surface such that B.n + B1_dot_N = 0 on
      * the surface and toroidal circulation of B equals I0. B is represented as the sum of
      * a layer potential and the field due to a straight wire carrying a current I0
-     * through the axis of the torus: grad(S[sigma]) + I0/(2 pi R) \hat(phi). The unknown
+     * through the axis of the torus: -grad(S[sigma]) + I0/(2 pi R) phi_hat. The unknown
      * density sigma is computed by solving a boundary integral equation (BIE) formulation
      * using GMRES. B, and sigma are returned.
      *
-     * @return B, sigma on the Nt x Np grid (in row-major order).
+     * @param[in] B1_dot_N the normal component of the field B1 on the Nt x Np
+     * grid, e.g. from ComputeBdotN().
+     *
+     * @param[in] I0 the toroidal circulation of B, along a loop that goes
+     * counterclockwise around the z-axis.
+     *
+     * @return B, sigma on the Nt x Np grid of one field period (in SoA order).
      */
     std::tuple<std::vector<Real>,std::vector<Real>> ComputeB(const std::vector<Real>& B1_dot_N, const Real I0 = 0) const;
 
     /**
-     * Compute U = S[sigma] on the toroidal surface.
+     * Compute the single-layer potential U = S[sigma] on the toroidal surface.
      *
-     * @param[in] sigma the single-layer density on the surface discretization nodes.
+     * @param[in] sigma the single-layer density on the Nt x Np grid of one
+     * field period.
      *
-     * @return the potential U on the surface discretization nodes.
+     * @return the potential U on the same grid.
      */
     std::vector<Real> ComputeU(const std::vector<Real>& sigma) const;
 
+    /**
+     * Evaluate B = -grad(S[sigma]) + I0/(2 pi R) phi_hat at points inside
+     * the surface, at any distance from it.
+     *
+     * @param[in] Xt the target points in SoA order {x1, x2, ..., y1, ..., z1, ...}.
+     *
+     * @param[in] sigma the density returned by ComputeB().
+     *
+     * @param[in] I0 the current given to ComputeB().
+     *
+     * @return B at the target points in SoA order.
+     */
     std::vector<Real> EvalOffSurface(const std::vector<Real>& Xt, const std::vector<Real>& sigma, const Real I0) const;
   };
 
@@ -217,7 +272,7 @@ namespace biest {
      * @param[in] Xt exterior off-surface target points in the order {x1, x2,
      * ..., xNtrg, y1, ..., z1, ...}.
      *
-     * @return the vector field B = grad(S[sigma]) at on-surface points in one
+     * @return the vector field B = grad(S[sigma]) + BiotSavart(J) at on-surface points in one
      * field period on the Nt x Np grid in the order B = {Bx11, Bx12, ...,
      * Bx1Np, Bx21, Bx22, ... , BxNtNp, By11, ... , Bz11, ...}, Also returns
      * the B field at the exterior off-surface target points Xt in the order

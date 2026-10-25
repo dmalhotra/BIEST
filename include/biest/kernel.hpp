@@ -13,6 +13,10 @@
 
 namespace biest {
 
+/**
+ * The kernel function interface, with KDIM0 density components per source
+ * point and KDIM1 potential components per target point.
+ */
 template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1> class KernelFunction {
     typedef void (KerFn)(const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& v_src, const sctl::Vector<Real>& r_trg, sctl::Vector<Real>& v_trg, sctl::Integer Nthread, const void* ctx);
 
@@ -39,13 +43,15 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
      * omitted, the matrix is assembled by evaluating kerfn_ once per source and
      * per source degree-of-freedom, which costs one call per (source, KDIM0)
      * pair.
+     *
+     * @param[in] kerfn_, cost_, ctx_ as in the constructor above.
      */
     KernelFunction(std::function<KerFn> kerfn_, std::function<MatFn> matfn_, sctl::Long cost_, const void* ctx_) : kerfn(kerfn_), matfn(matfn_), ctx(ctx_), cost(cost_) {}
 
     /**
      * Gives the number of degrees-of-freedom per-source or target.
      *
-     * @param[in] i integrer value in {0, 1} which indicates sources (for 0) and
+     * @param[in] i integer value in {0, 1} which indicates sources (for 0) and
      * targets (for 1).
      *
      * @return the number of degrees-of-freedom per-source (when i==0) and
@@ -54,7 +60,8 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
     static constexpr sctl::Integer Dim(sctl::Integer i) { return i == 0 ? KDIM0 : KDIM1; }
 
     /**
-     * Evaluates the kernel function.
+     * Evaluates the kernel function by direct summation, and adds the
+     * potential to v_trg.
      *
      * @param[in] r_src the coordinates of the source points in
      * structure-of-array (SoA) order i.e.  {x1, ..., xn, y1, ..., z1, ...}.
@@ -65,8 +72,8 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
      *
      * @param[in] r_trg the coordinates of the target points in SoA order.
      *
-     * @param[out] v_trg the computed potential values at each target point in
-     * SoA order.
+     * @param[in,out] v_trg the computed potential values at each target point
+     * in SoA order; it is resized and set to zero first if its size is wrong.
      */
     void operator()(const sctl::Vector<Real>& r_src, const sctl::Vector<Real>& n_src, const sctl::Vector<Real>& v_src, const sctl::Vector<Real>& r_trg, sctl::Vector<Real>& v_trg) const {
       sctl::Long Ns = r_src.Dim() / COORD_DIM;
@@ -331,67 +338,133 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
     SKer sctl_ker;
 };
 
+/**
+ * Stokes kernels. The kernel objects are static.
+ *
+ * @tparam ORDER digits of accuracy of the reciprocal square root in the
+ * kernel evaluation.
+ *
+ * @tparam Nv the SIMD vector length.
+ */
 template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Stokes3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
 
   public:
+    /**
+     * Stokes double layer; 3 density and 3 potential components.
+     */
     static SctlKernelFunction<Real,sctl::Stokes3D_DxU,ORDER,Nv>& DxU() {
       static SctlKernelFunction<Real,sctl::Stokes3D_DxU,ORDER,Nv> ker(31, nullptr);
       return ker;
     }
 };
 
+/**
+ * Laplace kernels, with r = x - y for a target point x and a source point y
+ * with normal n. The kernel objects are static.
+ *
+ * @tparam ORDER digits of accuracy of the reciprocal square root in the
+ * kernel evaluation.
+ *
+ * @tparam Nv the SIMD vector length.
+ */
 template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Laplace3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 1;
   static constexpr sctl::Integer KDIM1 = 1;
 
   public:
+    /**
+     * Single layer 1/(4 pi |r|); 1 density and 1 potential component.
+     */
     static SctlKernelFunction<Real,sctl::Laplace3D_FxU,ORDER,Nv>& FxU() {
       static SctlKernelFunction<Real,sctl::Laplace3D_FxU,ORDER,Nv> ker(12, nullptr);
       return ker;
     }
 
+    /**
+     * Gradient of the single layer with respect to x, -r/(4 pi |r|^3); 1
+     * density and 3 potential components.
+     */
     static SctlKernelFunction<Real,sctl::Laplace3D_FxdU,ORDER,Nv>& FxdU() {
       static SctlKernelFunction<Real,sctl::Laplace3D_FxdU,ORDER,Nv> ker(19, nullptr);
       return ker;
     }
 
+    /**
+     * Hessian of the single layer with respect to x; 1 density and 9
+     * potential components.
+     */
     static SctlKernelFunction<Real,sctl::Laplace3D_Fxd2U,ORDER,Nv>& Fxd2U() {
       static SctlKernelFunction<Real,sctl::Laplace3D_Fxd2U,ORDER,Nv> ker(61, nullptr);
       return ker;
     }
 
+    /**
+     * Double layer n.r/(4 pi |r|^3); 1 density and 1 potential component.
+     */
     static SctlKernelFunction<Real,sctl::Laplace3D_DxU,ORDER,Nv>& DxU() {
       static SctlKernelFunction<Real,sctl::Laplace3D_DxU,ORDER,Nv> ker(20, nullptr);
       return ker;
     }
 
+    /**
+     * Gradient of the double layer with respect to x; 1 density and 3
+     * potential components.
+     */
     static SctlKernelFunction<Real,sctl::Laplace3D_DxdU,ORDER,Nv>& DxdU() {
       static SctlKernelFunction<Real,sctl::Laplace3D_DxdU,ORDER,Nv> ker(39, nullptr);
       return ker;
     }
 };
 
+/**
+ * Biot-Savart kernels, with r = x - y for a target point x and a source point
+ * y. The kernel objects are static.
+ *
+ * @tparam ORDER digits of accuracy of the reciprocal square root in the
+ * kernel evaluation.
+ *
+ * @tparam Nv the SIMD vector length.
+ */
 template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class BiotSavart3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 3;
   static constexpr sctl::Integer KDIM1 = 3;
 
   public:
+    /**
+     * Biot-Savart law f x r/(4 pi |r|^3) for the density f; 3 density and 3
+     * potential components.
+     */
     static SctlKernelFunction<Real,sctl::BiotSavart3D_FxU,ORDER,Nv>& FxU() {
       static SctlKernelFunction<Real,sctl::BiotSavart3D_FxU,ORDER,Nv> ker(27, nullptr);
       return ker;
     }
 
+    /**
+     * Gradient of the Biot-Savart field with respect to x; 3 density and 9
+     * potential components.
+     */
     static SctlKernelFunction<Real,sctl::BiotSavart3D_FxdU,ORDER,Nv>& FxdU() {
       static SctlKernelFunction<Real,sctl::BiotSavart3D_FxdU,ORDER,Nv> ker(127, nullptr);
       return ker;
     }
 };
 
+/**
+ * Helmholtz kernels with a real wavenumber k, with r = x - y for a target
+ * point x and a source point y with normal n. Complex values are stored as
+ * real and imaginary parts. The object holds k and must outlive any operator
+ * that uses its kernels.
+ *
+ * @tparam ORDER digits of accuracy of the reciprocal square root in the
+ * kernel evaluation.
+ *
+ * @tparam Nv the SIMD vector length.
+ */
 template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::DefaultVecLen<Real>()> class Helmholtz3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 2;
@@ -403,6 +476,11 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
 
   public:
 
+    /**
+     * Constructor.
+     *
+     * @param[in] k the wavenumber.
+     */
     Helmholtz3D(Real k) :
       k_(k),
       ker_FxU(24, &k_),
@@ -410,10 +488,21 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
       ker_FxdU(41, &k_)
       {}
 
+    /**
+     * Single layer exp(ik|r|)/(4 pi |r|); 2 density and 2 potential
+     * components.
+     */
     const KerFxU& FxU() const { return ker_FxU; }
 
+    /**
+     * Gradient of the single layer with respect to x; 2 density and 6
+     * potential components.
+     */
     const KerFxdU& FxdU() const { return ker_FxdU; }
 
+    /**
+     * Double layer; 2 density and 2 potential components.
+     */
     const KerDxU& DxU() const { return ker_DxU; }
 
   private:
@@ -424,6 +513,12 @@ template <class Real, sctl::Integer ORDER = 13, sctl::Integer Nv = sctl::Default
     KerFxdU ker_FxdU;
 };
 
+/**
+ * Difference of the Helmholtz and Laplace single layers, (exp(ik|r|) - 1)/(4 pi
+ * |r|), with a real wavenumber k. Complex values are stored as real and
+ * imaginary parts. The object holds k and must outlive any operator that uses
+ * its kernels.
+ */
 template <class Real> class HelmholtzDiff3D {
   static constexpr sctl::Integer COORD_DIM = 3;
   static constexpr sctl::Integer KDIM0 = 2;
@@ -433,10 +528,18 @@ template <class Real> class HelmholtzDiff3D {
 
   public:
 
+    /**
+     * Constructor.
+     *
+     * @param[in] k the wavenumber.
+     */
     HelmholtzDiff3D(Real k) :
       k_(k),
       ker_FxdU(47, &k_) {}
 
+    /**
+     * Gradient with respect to x; 2 density and 6 potential components.
+     */
     const KerFxdU& FxdU() const { return ker_FxdU; }
 
   private:

@@ -87,4 +87,5 @@ references:
     repository-code: "https://github.com/dmalhotra/SCTL"
     url: "https://sctl.readthedocs.io"
     license: Apache-2.0
+    doi: "10.5281/zenodo.23511629"
     notes: "BIEST is built on SCTL, included as the git submodule extern/SCTL."

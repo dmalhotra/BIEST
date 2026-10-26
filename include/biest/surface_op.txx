@@ -4,8 +4,164 @@
 
 #include <sctl.hpp>
 #include <omp.h>
+#include <map>
+#include <memory>
+#include <tuple>
 
 namespace biest {
+
+// The 2D transforms of the periodic grids are done as 1D transforms of their rows and of their columns, a few at a
+// time by each thread, from loops of all threads: a 2D transform by FFTW on many threads splits its work into teams
+// of fewer threads, and libgomp ends the threads that a team smaller than the one before does not use, to create them
+// again for the next larger team.
+namespace detail_surfop {
+
+  /**
+   * Returns the FFT of howmany 1D transforms of n points of the given type, on one thread. It is set up on the first
+   * call and kept until the program ends, for all callers and all threads: the execution of a plan is thread safe.
+   */
+  template <class Real> const sctl::FFT<Real>& CachedFFT(const sctl::FFT_Type type, const sctl::Long howmany, const sctl::Long n) {
+    using Key = std::tuple<sctl::Integer, sctl::Long, sctl::Long>;
+    static auto* plans = new std::map<Key, std::unique_ptr<sctl::FFT<Real>>>(); // never freed: a plan may be in use until the program ends
+    const sctl::FFT<Real>* fft;
+    #pragma omp critical(BIEST_CachedFFT)
+    {
+      auto& plan = (*plans)[Key((sctl::Integer)type, howmany, n)];
+      if (!plan) {
+        plan.reset(new sctl::FFT<Real>());
+        sctl::StaticArray<sctl::Long,1> dim{n};
+        plan->Setup(type, howmany, sctl::Vector<sctl::Long>(1, dim, false), 1);
+      }
+      fft = plan.get();
+    }
+    return *fft;
+  }
+
+  constexpr sctl::Long FFT_ROWS = 8; // rows transformed together, by one thread
+  constexpr sctl::Long FFT_COLS = 4; // columns transformed together, by one thread: 4 complex values fill 64 bytes
+  constexpr sctl::Long LOOP_POINTS = 8192; // the fewest points in all for which the transforms use all threads
+
+  /**
+   * Returns the number of threads for loops of 1D transforms of n points in all: all if n is at least LOOP_POINTS,
+   * else one, and one inside a parallel region. Never a team of other sizes: see above.
+   */
+  inline sctl::Integer LoopThreads(const sctl::Long n) {
+    if (omp_in_parallel()) return 1;
+    return (n >= LOOP_POINTS ? omp_get_max_threads() : 1);
+  }
+
+  /**
+   * Returns Q rounded up to a multiple of FFT_COLS: the leading dimension, in complex values, of the arrays whose
+   * columns are transformed.
+   */
+  inline sctl::Long PaddedCols(const sctl::Long Q) {
+    return (Q + FFT_COLS - 1) / FFT_COLS * FFT_COLS;
+  }
+
+  /**
+   * Fourier transform of R rows of n real values, FFT_ROWS rows at a time by each thread: in(r) returns an iterator to
+   * the values of row r, and out(r, c) gets the first Qm unnormalized Fourier coefficients of row r, as an iterator c
+   * to complex values.
+   */
+  template <class Real, class In, class Out> void RowsR2C(const sctl::Long R, const sctl::Long n, const sctl::Long Qm, const In& in, const Out& out) {
+    const sctl::Long Q = n / 2 + 1, Nb = (R + FFT_ROWS - 1) / FFT_ROWS;
+    SCTL_ASSERT(Qm <= Q);
+    const sctl::FFT<Real>& fft = CachedFFT<Real>(sctl::FFT_Type::R2C, FFT_ROWS, n);
+    #pragma omp parallel num_threads(LoopThreads(R * n))
+    {
+      sctl::ScratchBuf<Real> X_buf(FFT_ROWS * n), C_buf(FFT_ROWS * Q * 2);
+      sctl::Vector<Real> X(X_buf), C(C_buf);
+      #pragma omp for schedule(static)
+      for (sctl::Long b = 0; b < Nb; b++) {
+        const sctl::Long r0 = b * FFT_ROWS, nr = std::min(FFT_ROWS, R - r0);
+        for (sctl::Long i = 0; i < FFT_ROWS; i++) {
+          if (i < nr) {
+            const auto x = in(r0 + i);
+            for (sctl::Long j = 0; j < n; j++) X[i * n + j] = x[j];
+          } else {
+            for (sctl::Long j = 0; j < n; j++) X[i * n + j] = 0;
+          }
+        }
+        fft.Execute(X, C, false);
+        for (sctl::Long i = 0; i < nr; i++) out(r0 + i, (sctl::ConstIterator<Real>)C.begin() + i * Q * 2);
+      }
+    }
+  }
+
+  /**
+   * Inverse Fourier transform of R rows of n real values, FFT_ROWS rows at a time by each thread: in(r, c) sets the
+   * first Qm unnormalized Fourier coefficients of row r, as an iterator c to complex values, the others being zero,
+   * and out(r, x) gets the values of row r, as an iterator x.
+   */
+  template <class Real, class In, class Out> void RowsC2R(const sctl::Long R, const sctl::Long n, const sctl::Long Qm, const In& in, const Out& out) {
+    const sctl::Long Q = n / 2 + 1, Nb = (R + FFT_ROWS - 1) / FFT_ROWS;
+    SCTL_ASSERT(Qm <= Q);
+    const sctl::FFT<Real>& fft = CachedFFT<Real>(sctl::FFT_Type::C2R, FFT_ROWS, n);
+    #pragma omp parallel num_threads(LoopThreads(R * n))
+    {
+      sctl::ScratchBuf<Real> C_buf(FFT_ROWS * Q * 2), X_buf(FFT_ROWS * n);
+      sctl::Vector<Real> C(C_buf), X(X_buf);
+      #pragma omp for schedule(static)
+      for (sctl::Long b = 0; b < Nb; b++) {
+        const sctl::Long r0 = b * FFT_ROWS, nr = std::min(FFT_ROWS, R - r0);
+        for (sctl::Long i = 0; i < FFT_ROWS; i++) {
+          const sctl::Iterator<Real> c = C.begin() + i * Q * 2;
+          if (i < nr) in(r0 + i, c);
+          else for (sctl::Long q = 0; q < 2 * Qm; q++) c[q] = 0;
+          for (sctl::Long q = 2 * Qm; q < 2 * Q; q++) c[q] = 0;
+        }
+        fft.Execute(C, X, false);
+        for (sctl::Long i = 0; i < nr; i++) out(r0 + i, (sctl::ConstIterator<Real>)X.begin() + i * n);
+      }
+    }
+  }
+
+  /**
+   * Transform along the columns of dof blocks of rows, FFT_COLS columns at a time by each thread. Of column q < Qm of
+   * block k, the Nt0 complex values A[(k*Nt0 + t)*ld + q] are transformed, op(c1, c0, q) sets from these Fourier
+   * coefficients c0 the Nt1 coefficients c1 (iterators to complex values), and their inverse transform is written to
+   * B[(k*Nt1 + t)*ld + q]; the columns from Qm to ld are set to zero. The leading dimension ld is PaddedCols(Qm), and B
+   * may be A if Nt1 = Nt0.
+   */
+  template <class Real, class Op> void Columns(const sctl::Iterator<Real> B, const sctl::Long Nt1, const sctl::ConstIterator<Real> A, const sctl::Long Nt0, const sctl::Long dof, const sctl::Long ld, const sctl::Long Qm, const Op& op) {
+    constexpr sctl::Long CB = FFT_COLS;
+    SCTL_ASSERT(ld == PaddedCols(Qm));
+    const sctl::Long Nb = ld / CB; // blocks of columns of each block of rows
+    const sctl::FFT<Real>& fwd = CachedFFT<Real>(sctl::FFT_Type::C2C, CB, Nt0);
+    const sctl::FFT<Real>& inv = CachedFFT<Real>(sctl::FFT_Type::C2C_INV, CB, Nt1);
+    #pragma omp parallel num_threads(LoopThreads(dof * Qm * (Nt0 + Nt1)))
+    {
+      sctl::ScratchBuf<Real> a_buf(CB * Nt0 * 2), ahat_buf(CB * Nt0 * 2), bhat_buf(CB * Nt1 * 2), b_buf(CB * Nt1 * 2);
+      sctl::Vector<Real> a(a_buf), ahat(ahat_buf), bhat(bhat_buf), b(b_buf);
+      #pragma omp for schedule(static)
+      for (sctl::Long task = 0; task < dof * Nb; task++) {
+        const sctl::Long k = task / Nb, q0 = (task % Nb) * CB;
+        for (sctl::Long t = 0; t < Nt0; t++) {
+          const sctl::ConstIterator<Real> src = A + ((k * Nt0 + t) * ld + q0) * 2;
+          for (sctl::Long j = 0; j < CB; j++) {
+            a[(j * Nt0 + t) * 2 + 0] = src[j * 2 + 0];
+            a[(j * Nt0 + t) * 2 + 1] = src[j * 2 + 1];
+          }
+        }
+        fwd.Execute(a, ahat, false);
+        for (sctl::Long j = 0; j < CB; j++) {
+          const sctl::Iterator<Real> c1 = bhat.begin() + j * Nt1 * 2;
+          if (q0 + j < Qm) op(c1, (sctl::ConstIterator<Real>)ahat.begin() + j * Nt0 * 2, q0 + j);
+          else for (sctl::Long t = 0; t < 2 * Nt1; t++) c1[t] = 0;
+        }
+        inv.Execute(bhat, b, false);
+        for (sctl::Long t = 0; t < Nt1; t++) {
+          const sctl::Iterator<Real> dst = B + ((k * Nt1 + t) * ld + q0) * 2;
+          for (sctl::Long j = 0; j < CB; j++) {
+            dst[j * 2 + 0] = b[(j * Nt1 + t) * 2 + 0];
+            dst[j * 2 + 1] = b[(j * Nt1 + t) * 2 + 1];
+          }
+        }
+      }
+    }
+  }
+
+}
 
 template <class Real> SurfaceOp<Real>::SurfaceOp(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np) {
   Init(comm, Nt, Np);
@@ -23,67 +179,54 @@ template <class Real> SurfaceOp<Real>& SurfaceOp<Real>::operator=(const SurfaceO
 template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X0_, sctl::Long Nt0, sctl::Long Np0, sctl::Vector<Real>& X1_, sctl::Long Nt1, sctl::Long Np1) {
   assert(X0_.Dim() % (Nt0 * Np0) == 0);
   const sctl::Long dof = X0_.Dim() / (Nt0 * Np0);
-
-  sctl::Long Nt0_ = Nt0;
-  sctl::Long Np0_ = Np0 / 2 + 1;
-
-  sctl::Long Nt1_ = Nt1;
-  sctl::Long Np1_ = Np1 / 2 + 1;
-
-  sctl::FFT<Real> fft_r2c0, fft_c2r_;
-  { // howmany=dof: batched transform on aligned base
-    sctl::StaticArray<sctl::Long, 2> fft_dim0{Nt0, Np0};
-    sctl::StaticArray<sctl::Long, 2> fft_dim_{Nt1, Np1};
-    fft_r2c0.Setup(sctl::FFT_Type::R2C, dof, sctl::Vector<sctl::Long>(2, fft_dim0, false), omp_get_max_threads());
-    fft_c2r_.Setup(sctl::FFT_Type::C2R, dof, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
+  if (Nt1 == Nt0 && Np1 == Np0) { // the same grid: the interpolant at the grid points is X0
+    if (X1_.Dim() != X0_.Dim()) X1_.ReInit(X0_.Dim());
+    if (X0_.Dim() && &X1_[0] != &X0_[0]) sctl::omp_par::memcpy(X1_.begin(), X0_.begin(), X0_.Dim());
+    return;
   }
 
-  sctl::ScratchBuf<Real> X0__buf(X0_.Dim()), tmp0_buf(dof * Nt0_ * Np0_ * 2), tmp__buf(dof * Nt1_ * Np1_ * 2);
-  sctl::Vector<Real> X0__(X0__buf), tmp0(tmp0_buf), tmp_(tmp__buf);
-  sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // aligned copy (preserves const X0_)
-  fft_r2c0.Execute(X0__, tmp0, false);
-  {
-    const sctl::Long N = tmp_.Dim();
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long i = 0; i < N; i++) tmp_[i] = 0;
-  }
+  { // the rows, then the columns of each component, then the rows; A and B: the Fourier coefficients along the rows,
+    // before and after the transforms of the columns, the first Qm of each row
+    const sctl::Long Q0 = Np0 / 2 + 1, Q1 = Np1 / 2 + 1, Qm = std::min(Q0, Q1), ld = detail_surfop::PaddedCols(Qm);
+    sctl::ScratchBuf<Real> A_buf(dof * Nt0 * ld * 2), B_buf(dof * Nt1 * ld * 2);
+    const sctl::Iterator<Real> A = A_buf.begin(), B = B_buf.begin();
+    const sctl::ConstIterator<Real> X0 = X0_.begin();
+    detail_surfop::RowsR2C<Real>(dof * Nt0, Np0, Qm, [X0,Np0](const sctl::Long r) { return X0 + r * Np0; }, [A,ld,Qm](const sctl::Long r, const sctl::ConstIterator<Real> c) {
+      for (sctl::Long q = 0; q < 2 * Qm; q++) A[r * ld * 2 + q] = c[q];
+      for (sctl::Long q = 2 * Qm; q < 2 * ld; q++) A[r * ld * 2 + q] = 0;
+    });
 
-  Real scale = 1 / (Real)(Nt0 * Np0); // FFT is unnormalized
-  sctl::Long Ntt = std::min(Nt0_, Nt1_);
-  sctl::Long Npp = std::min(Np0_, Np1_);
-  #pragma omp parallel for collapse(2) schedule(static)
-  for (sctl::Long k = 0; k < dof; k++) {
-    for (sctl::Long t = 0; t <= Ntt / 2; t++) {
-      Real scale_ = 1;
-      if (Nt0%2==0 && Nt0_ < Nt1_ && t == Ntt/2) scale_ = 0.5;
-      if (Nt1%2==0 && Nt1_ < Nt0_ && t == Ntt/2) scale_ = 2.0;
-      for (sctl::Long p = 0; p < Npp; p++) {
-        Real scale__ = 1;
-        if (Np0%2==0 && Np0_ < Np1_ && p == Npp-1) scale__ = 0.5;
-        if (Np1%2==0 && Np1_ < Np0_ && p == Npp-1) scale__ = 2.0;
-        tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 0] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 0];
-        tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 1] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 1];
+    const Real scale = 1 / (Real)(Nt0 * Np0); // FFT is unnormalized
+    const sctl::Long Ntt = std::min(Nt0, Nt1);
+    detail_surfop::Columns<Real>(B, Nt1, A, Nt0, dof, ld, Qm, [=](const sctl::Iterator<Real> c1, const sctl::ConstIterator<Real> c0, const sctl::Long q) {
+      Real scale__ = 1;
+      if (Np0%2==0 && Q0 < Q1 && q == Qm-1) scale__ = 0.5;
+      if (Np1%2==0 && Q1 < Q0 && q == Qm-1) scale__ = 2.0;
+      for (sctl::Long t = 0; t < 2 * Nt1; t++) c1[t] = 0;
+      for (sctl::Long t = 0; t <= Ntt / 2; t++) {
+        Real scale_ = 1;
+        if (Nt0%2==0 && Nt0 < Nt1 && t == Ntt/2) scale_ = 0.5;
+        if (Nt1%2==0 && Nt1 < Nt0 && t == Ntt/2) scale_ = 2.0;
+        c1[t * 2 + 0] = scale * scale_ * scale__ * c0[t * 2 + 0];
+        c1[t * 2 + 1] = scale * scale_ * scale__ * c0[t * 2 + 1];
       }
-    }
-  }
-  #pragma omp parallel for collapse(2) schedule(static)
-  for (sctl::Long k = 0; k < dof; k++) {
-    for (sctl::Long t = 0; t < Ntt / 2; t++) {
-      Real scale_ = 1;
-      if (Nt0%2==0 && Nt0_ < Nt1_ && t == Ntt/2-1) scale_ = 0.5;
-      if (Nt1%2==0 && Nt1_ < Nt0_ && t == Ntt/2-1) scale_ = 2.0;
-      for (sctl::Long p = 0; p < Npp; p++) {
-        Real scale__ = 1;
-        if (Np0%2==0 && Np0_ < Np1_ && p == Npp-1) scale__ = 0.5;
-        if (Np1%2==0 && Np1_ < Np0_ && p == Npp-1) scale__ = 2.0;
-        tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 0] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 0];
-        tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 1] = scale * scale_ * scale__ * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 1];
+      for (sctl::Long t = 0; t < Ntt / 2; t++) {
+        Real scale_ = 1;
+        if (Nt0%2==0 && Nt0 < Nt1 && t == Ntt/2-1) scale_ = 0.5;
+        if (Nt1%2==0 && Nt1 < Nt0 && t == Ntt/2-1) scale_ = 2.0;
+        c1[(Nt1 - t - 1) * 2 + 0] = scale * scale_ * scale__ * c0[(Nt0 - t - 1) * 2 + 0];
+        c1[(Nt1 - t - 1) * 2 + 1] = scale * scale_ * scale__ * c0[(Nt0 - t - 1) * 2 + 1];
       }
-    }
-  }
+    });
 
-  if (X1_.Dim() != dof  * Nt1 * Np1) X1_.ReInit(dof * Nt1 * Np1);
-  fft_c2r_.Execute(tmp_, X1_, false);
+    if (X1_.Dim() != dof * Nt1 * Np1) X1_.ReInit(dof * Nt1 * Np1);
+    const sctl::Iterator<Real> X1 = X1_.begin();
+    detail_surfop::RowsC2R<Real>(dof * Nt1, Np1, Qm, [B,ld,Qm](const sctl::Long r, const sctl::Iterator<Real> c) {
+      for (sctl::Long q = 0; q < 2 * Qm; q++) c[q] = B[r * ld * 2 + q];
+    }, [X1,Np1](const sctl::Long r, const sctl::ConstIterator<Real> x) {
+      for (sctl::Long j = 0; j < Np1; j++) X1[r * Np1 + j] = x[j];
+    });
+  }
 
   { // Floating-point correction
     sctl::Long Ut = Nt1 / Nt0;
@@ -107,47 +250,44 @@ template <class Real> void SurfaceOp<Real>::Grad2D(sctl::Vector<Real>& dX, const
   if (dX.Dim() != dof * 2 * Nt_ * Np_) dX.ReInit(dof * 2 * Nt_ * Np_);
   if (!dof) return;
 
-  sctl::FFT<Real> *fft_r2c_p, *fft_c2r_p;
-  #pragma omp critical(BIEST_Grad2D_fft) // guard the lazy per-dof plan cache
-  {
-    auto& plans = Grad2D_fft_[dof]; // cached per dof; built once
-    if (!plans.first.Dim(0)) {
-      sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
-      plans.first .Setup(sctl::FFT_Type::R2C, dof,   sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
-      plans.second.Setup(sctl::FFT_Type::C2R, 2*dof, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
+  // The derivative along the rows from their transforms; along the columns, from the transforms of the columns of
+  // the transforms of the rows. A: the Fourier coefficients along the rows
+  const sctl::Long Nt = Nt_, Np = Np_, N = Nt * Np, Q = Np / 2 + 1, ld = detail_surfop::PaddedCols(Q);
+  sctl::ScratchBuf<Real> A_buf(dof * Nt * ld * 2);
+  const sctl::Iterator<Real> A = A_buf.begin(), dX_ = dX.begin();
+  const sctl::ConstIterator<Real> X_ = X.begin();
+  detail_surfop::RowsR2C<Real>(dof * Nt, Np, Q, [X_,Np](const sctl::Long r) { return X_ + r * Np; }, [A,ld,Q](const sctl::Long r, const sctl::ConstIterator<Real> c) {
+    for (sctl::Long q = 0; q < 2 * Q; q++) A[r * ld * 2 + q] = c[q];
+    for (sctl::Long q = 2 * Q; q < 2 * ld; q++) A[r * ld * 2 + q] = 0;
+  });
+
+  const Real sp = (2 * sctl::const_pi<Real>()) / (Real)Np; // FFT is unnormalized
+  detail_surfop::RowsC2R<Real>(dof * Nt, Np, Q, [A,ld,Q,sp](const sctl::Long r, const sctl::Iterator<Real> c) {
+    for (sctl::Long p = 0; p < Q; p++) {
+      const Real real = A[(r * ld + p) * 2 + 0] * sp, imag = A[(r * ld + p) * 2 + 1] * sp;
+      c[p * 2 + 0] = imag * p;
+      c[p * 2 + 1] = -real * p;
     }
-    fft_r2c_p = &plans.first;
-    fft_c2r_p = &plans.second;
-  }
-  sctl::FFT<Real>& fft_r2c = *fft_r2c_p;
-  sctl::FFT<Real>& fft_c2r = *fft_c2r_p;
+  }, [dX_,Nt,Np,N](const sctl::Long r, const sctl::ConstIterator<Real> x) {
+    const sctl::Long k = r / Nt, t = r % Nt;
+    for (sctl::Long j = 0; j < Np; j++) dX_[(k * 2 + 1) * N + t * Np + j] = x[j];
+  });
 
-  const sctl::Long Nt = Nt_;
-  const sctl::Long Np = Np_ / 2 + 1;   // complex cols per component
-  const sctl::Long csz = Nt * Np * 2;  // complex size (reals)
-  SCTL_ASSERT(fft_c2r.Dim(1) == dX.Dim());
-
-  sctl::ScratchBuf<Real> coeff_buf(fft_r2c.Dim(1)), grad_coeff_buf(fft_c2r.Dim(0));
-  sctl::Vector<Real> coeff(coeff_buf), grad_coeff(grad_coeff_buf);
-  fft_r2c.Execute(X, coeff); // const overload preserves X
-
-  const Real scal = (2 * sctl::const_pi<Real>()) / (Real)(Nt_ * Np_); // FFT is unnormalized
-  #pragma omp parallel for collapse(2) schedule(static)
-  for (sctl::Long k = 0; k < dof; k++) {
+  const Real st = (2 * sctl::const_pi<Real>()) / (Real)(Nt * Np); // FFT is unnormalized
+  detail_surfop::Columns<Real>(A, Nt, A, Nt, dof, ld, Q, [Nt,st](const sctl::Iterator<Real> c1, const sctl::ConstIterator<Real> c0, const sctl::Long q) {
     for (sctl::Long t = 0; t < Nt; t++) {
       const Real tt = (Real)(t - (t > Nt / 2 ? Nt : 0));
-      for (sctl::Long p = 0; p < Np; p++) {
-        const sctl::Long i  = k*csz + (t * Np + p) * 2;        // coeff(k,t,p)
-        const sctl::Long it = (k*2+0)*csz + (t * Np + p) * 2;  // grad_coeff(k, d/dtheta)
-        const sctl::Long ip = (k*2+1)*csz + (t * Np + p) * 2;  // grad_coeff(k, d/dphi)
-        Real real = coeff[i + 0] * scal;
-        Real imag = coeff[i + 1] * scal;
-        grad_coeff[it + 0] =  imag * tt;  grad_coeff[it + 1] = -real * tt;
-        grad_coeff[ip + 0] =  imag * p;   grad_coeff[ip + 1] = -real * p;
-      }
+      const Real real = c0[t * 2 + 0] * st, imag = c0[t * 2 + 1] * st;
+      c1[t * 2 + 0] = imag * tt;
+      c1[t * 2 + 1] = -real * tt;
     }
-  }
-  fft_c2r.Execute(grad_coeff, dX); // howmany=2*dof: writes directly into dX [dof][2][grid]
+  });
+  detail_surfop::RowsC2R<Real>(dof * Nt, Np, Q, [A,ld,Q](const sctl::Long r, const sctl::Iterator<Real> c) {
+    for (sctl::Long q = 0; q < 2 * Q; q++) c[q] = A[r * ld * 2 + q];
+  }, [dX_,Nt,Np,N](const sctl::Long r, const sctl::ConstIterator<Real> x) {
+    const sctl::Long k = r / Nt, t = r % Nt;
+    for (sctl::Long j = 0; j < Np; j++) dX_[(k * 2 + 0) * N + t * Np + j] = x[j];
+  });
 }
 
 template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real>* normal, sctl::Vector<Real>* area_elem, const sctl::Vector<Real>& dX, const sctl::Vector<Real>* X) const {
@@ -758,7 +898,6 @@ template <class Real> void SurfaceOp<Real>::Init(const sctl::Comm& comm, sctl::L
   comm_ = comm;
   solver = sctl::GMRES<Real>(comm_,false);
 
-  Grad2D_fft_.clear(); // drop plans for old Nt_/Np_
   if (!Nt_ || !Np_) return;
 }
 

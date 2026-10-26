@@ -93,7 +93,8 @@ namespace biest {
       sctl::Long SrcOffset = 0, SingularTrgOffset = 0;
       for (sctl::Long s = 0; s < Xsrc.Dim(); s++) {
         const sctl::Vector<Real> F_(dof * ker_ptr->Dim(0) * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + dof * ker_ptr->Dim(0) * SrcOffset, false);
-        Upsample(F_, Fsrc, Nt0[s], Np0[s]);
+        if (UPSAMPLE == 1) Fsrc.ReInit(F_.Dim(), (sctl::Iterator<Real>)F_.begin(), false); // the same grid: F_ itself
+        else Upsample(F_, Fsrc, Nt0[s], Np0[s]);
 
         sctl::Long TrgOffset = 0;
         for (sctl::Long t = 0; t < Xtrg.Dim(); t++) {
@@ -235,6 +236,11 @@ namespace biest {
     template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0) {
       assert(X0_.Dim() % (Nt0 * Np0) == 0);
       const sctl::Long dof = X0_.Dim() / (Nt0 * Np0);
+      if (UPSAMPLE == 1) { // the same grid: the interpolant at the grid points is X0
+        if (X_.Dim() != X0_.Dim()) X_.ReInit(X0_.Dim());
+        if (X0_.Dim() && &X_[0] != &X0_[0]) sctl::omp_par::memcpy(X_.begin(), X0_.begin(), X0_.Dim());
+        return;
+      }
       sctl::Long Nt1 = UPSAMPLE * Nt0;
       sctl::Long Np1 = UPSAMPLE * Np0;
 
@@ -455,7 +461,8 @@ namespace biest {
       if (NFP == 1 && src_Nt_ == QuadNt() && src_Np_ == QuadNp()) {
         biop_eval(U, F, biop);
       } else {
-        sctl::Vector<Real> F_, F__;
+        sctl::ScratchBuf<Real> F_buf(KDIM0 * NFP * src_Nt_ * src_Np_), F__buf(KDIM0 * quad_Nt_ * quad_Np_);
+        sctl::Vector<Real> F_(F_buf), F__(F__buf);
         biest::SurfaceOp<Real>::CompleteVecField(F_, false, false, NFP, src_Nt_, src_Np_, F, 0, tor_orient_);
         biest::SurfaceOp<Real>::Resample(F__, quad_Nt_, quad_Np_, F_, NFP*src_Nt_, src_Np_);
         biop_eval(U, F__, biop);

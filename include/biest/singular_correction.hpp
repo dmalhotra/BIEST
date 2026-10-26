@@ -25,12 +25,24 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     using Vec = sctl::Vec<Real>;
     static constexpr sctl::Integer VecLen = Vec::Size();
 
-    // The precomputed tables, in sctl::Vector for its 64-byte alignment: the vector loads from M_G2P cross a cache line
-    // for every row if it starts 16 or 48 bytes past one, as std::vector may.
+    // The vectors of the interpolation between the patch and the polar grid: the widest of at most VecLen values that
+    // divides INTERP_ORDER, so that the rows of a window are whole vectors (4 values with AVX2 or AVX-512).
+    static constexpr sctl::Integer InterpVecLen() {
+      sctl::Integer n = 1;
+      while (2 * n <= VecLen && INTERP_ORDER % (2 * n) == 0) n *= 2;
+      return n;
+    }
+    static constexpr sctl::Integer IVecLen = InterpVecLen();
+    using IVec = sctl::Vec<Real, IVecLen>;
+
+    // The precomputed tables, in sctl::Vector for its 64-byte alignment. The Lagrange weights from the patch grid to
+    // polar point j are the products of 1D ones along the two directions of the patch: W_G2P holds, for each point,
+    // the INTERP_ORDER weights a along the first direction and then the INTERP_ORDER weights b along the second, of the
+    // window of the patch at I_G2P[j].
     static sctl::Vector<Real> qx, qw;
     static sctl::Vector<Real> Gpou_, Ppou_;
     static sctl::Vector<sctl::Integer> I_G2P;
-    static sctl::Vector<Real> M_G2P;
+    static sctl::Vector<Real> W_G2P;
     static sctl::Vector<Real> HedgehogWts_;
 
   public:
@@ -55,7 +67,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::qw;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Gpou_;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::Ppou_;
-template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::M_G2P;
+template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::W_G2P;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<Real> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::HedgehogWts_;
 template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> sctl::Vector<sctl::Integer> SingularCorrection<Real,PATCH_DIM0,RAD_DIM_,KDIM0,KDIM1,HedgehogOrder>::I_G2P;
 
@@ -137,26 +149,18 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
       }
     }
   }
-  if (!I_G2P.Dim()) { // Set I_G2P, M_G2P
+  if (!I_G2P.Dim()) { // Set I_G2P, W_G2P
     sctl::Vector<sctl::Integer> I_G2P_(Npolar);
-    sctl::Vector<Real> M_G2P_(Npolar * INTERP_ORDER * INTERP_ORDER + VecLen);
-    M_G2P_.SetZero(); // the VecLen values past the end, which the vector loads read
+    sctl::Vector<Real> W_G2P_(Npolar * 2 * INTERP_ORDER);
 
     Real h = 1 / (Real)(INTERP_ORDER - 1);
-    auto lagrange_interp = [&](Real x0, Real x1, sctl::Integer i0, sctl::Integer i1) { // (x0,x1) \in [0,1]x[0,1]
+    auto lagrange_interp = [&](Real x, sctl::Integer i) { // the weight of node i at x \in [0,1]
       Real p=1;
-      Real z0 = i0 * h;
-      Real z1 = i1 * h;
-      for (sctl::Integer j0 = 0; j0 < INTERP_ORDER; j0++) {
-        if (j0 != i0) {
-          Real y0 = j0 * h;
-          p *= (x0 - y0) / (z0 - y0);
-        }
-      }
-      for (sctl::Integer j1 = 0; j1 < INTERP_ORDER; j1++) {
-        if (j1 != i1) {
-          Real y1 = j1 * h;
-          p *= (x1 - y1) / (z1 - y1);
+      Real z = i * h;
+      for (sctl::Integer j = 0; j < INTERP_ORDER; j++) {
+        if (j != i) {
+          Real y = j * h;
+          p *= (x - y) / (z - y);
         }
       }
       return p;
@@ -174,10 +178,9 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
         Real z1 = (x1 * (PATCH_DIM - 1) - y1) * h;
 
         I_G2P_[i0 * ANG_DIM + i1] = y0 * PATCH_DIM + y1;
-        for (sctl::Integer j0 = 0; j0 < INTERP_ORDER; j0++) {
-          for (sctl::Integer j1 = 0; j1 < INTERP_ORDER; j1++) {
-            M_G2P_[(((i0 * ANG_DIM + i1) * INTERP_ORDER) + j0) * INTERP_ORDER + j1] = lagrange_interp(z0, z1, j0, j1);
-          }
+        for (sctl::Integer j = 0; j < INTERP_ORDER; j++) {
+          W_G2P_[((i0 * ANG_DIM + i1) * 2 + 0) * INTERP_ORDER + j] = lagrange_interp(z0, j);
+          W_G2P_[((i0 * ANG_DIM + i1) * 2 + 1) * INTERP_ORDER + j] = lagrange_interp(z1, j);
         }
       }
     }
@@ -185,7 +188,7 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     #pragma omp critical (SingularCorrection_InitPrecomp)
     if (!I_G2P.Dim()) {
       I_G2P.Swap(I_G2P_);
-      M_G2P.Swap(M_G2P_);
+      W_G2P.Swap(W_G2P_);
     }
   }
   if (!HedgehogWts_.Dim()) { // Set HedgehogWts_
@@ -305,43 +308,36 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
   }
 
   { // Lagrange interpolation
-    auto matvec = [&](sctl::Vector<Real>& Vout, const sctl::Vector<Real>& Vin, const sctl::Vector<Real>& M) {
-      sctl::Integer dof = Vin.Dim() / Ngrid;
-      SCTL_ASSERT(Vin.Dim() == dof * Ngrid);
-      SCTL_ASSERT(Vout.Dim() == dof * Npolar);
-      Vout.SetZero();
+    // To polar point j, the value of a component is a^T W b, for the INTERP_ORDER x INTERP_ORDER window W of its patch
+    // values at I_G2P[j] and the 1D weights a, b of W_G2P: the rows of W scaled by a and summed, in vectors, then the
+    // dot with b. COORD_DIM components at a time, Ngrid apart in Vin and Npolar apart in Vout.
+    constexpr sctl::Integer NV = INTERP_ORDER / IVecLen; // vectors in a row of a window
+    auto interp = [&](const sctl::Iterator<Real> Vout, const sctl::ConstIterator<Real> Vin) {
       for (sctl::Integer j = 0; j < Npolar; j++) {
-        sctl::ConstIterator<Real> M_ = M.begin() + j * INTERP_ORDER * INTERP_ORDER;
-        for (sctl::Integer k = 0; k < dof; k++) {
-          Real tmp = 0;
-          sctl::ConstIterator<Real> Vin_ = Vin.begin() + k * Ngrid + I_G2P[j];
-          if (1) { // Vectorized
-            constexpr sctl::Integer Ntmp = (INTERP_ORDER+VecLen-1)/VecLen;
-
-            Vec Vtmp[Ntmp];
-            for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) Vtmp[i1] = Vec::Zero();
-            for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
-              for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) {
-                Vtmp[i1] = FMA(Vec::Load(&M_[i0 * INTERP_ORDER + i1 * VecLen]), Vec::Load(&Vin_[i0 * PATCH_DIM + i1 * VecLen]), Vtmp[i1]);
-              }
-            }
-            alignas(VecLen*sizeof(Real)) Real tmp_[Ntmp * VecLen];
-            for (sctl::Integer i1 = 0; i1 < Ntmp; i1++) Vtmp[i1].StoreAligned(tmp_ + i1*VecLen);
-            for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) tmp += tmp_[i1];
-          } else {
-            for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
-              for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) {
-                tmp += M_[i0 * INTERP_ORDER + i1] * Vin_[i0 * PATCH_DIM + i1];
-              }
-            }
+        const sctl::ConstIterator<Real> a = W_G2P.begin() + j * 2 * INTERP_ORDER, b = a + INTERP_ORDER;
+        const sctl::ConstIterator<Real> W = Vin + I_G2P[j];
+        IVec V[COORD_DIM][NV];
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+          for (sctl::Integer v = 0; v < NV; v++) V[k][v] = IVec::Zero();
+        }
+        for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
+          const IVec ai = IVec::Load1(&a[i0]);
+          for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+            for (sctl::Integer v = 0; v < NV; v++) V[k][v] = FMA(ai, IVec::Load(&W[k * Ngrid + i0 * PATCH_DIM + v * IVecLen]), V[k][v]);
           }
-          Vout[k * Npolar + j] = tmp;
+        }
+        IVec bv[NV];
+        for (sctl::Integer v = 0; v < NV; v++) bv[v] = IVec::Load(&b[v * IVecLen]);
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+          IVec acc = V[k][0] * bv[0];
+          for (sctl::Integer v = 1; v < NV; v++) acc = FMA(V[k][v], bv[v], acc);
+          Vout[k * Npolar + j] = sctl::reduce(acc);
         }
       }
-      //sctl::Profile::Add_FLOP(dof*Npolar*INTERP_ORDER*INTERP_ORDER);
     };
-    matvec(P , G , M_G2P);
-    matvec(Pg, Gg , M_G2P);
+    interp(P.begin(), G.begin());
+    interp(Pg.begin(), Gg.begin());
+    interp(Pg.begin() + COORD_DIM * Npolar, Gg.begin() + COORD_DIM * Ngrid);
     for (sctl::Integer i = 0; i < Npolar; i++) { // Compute Pn, Pa
        Real n0 = Pg[2 * Npolar + i] * Pg[5 * Npolar + i] - Pg[3 * Npolar + i] * Pg[4 * Npolar + i];
        Real n1 = Pg[4 * Npolar + i] * Pg[1 * Npolar + i] - Pg[5 * Npolar + i] * Pg[0 * Npolar + i];
@@ -383,21 +379,27 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
           }
         }
       }
-      for (sctl::Integer j = 0; j < Npolar; j++) { // MGrid <-- MPolar * Transpose(M_G2P)
-        sctl::Iterator<Real> MGrid_ = MGrid[I_G2P[j]];
-        sctl::ConstIterator<Real> MPolar_ = MPolar[j];
-        sctl::ConstIterator<Real> M_G2P_ = M_G2P.begin() + j * INTERP_ORDER * INTERP_ORDER;
-        for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
-          for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) {
-            Real M_G2P__ = M_G2P_[i0 * INTERP_ORDER + i1];
-            sctl::Iterator<Real> MGrid__ = MGrid_ + (i0 * PATCH_DIM + i1) * KDIM1;
-            for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) {
-              for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
-                for (sctl::Integer l = 0; l < HedgehogOrder_; l++) {
-                  MGrid__[k0 * Ngrid * KDIM1 + k1] += M_G2P__ * MPolar_[(k0 * Npolar * KDIM1 + k1) * HedgehogOrder_ + l] * HedgehogWts_[l];
-                }
-              }
-            }
+      // MGrid <-- MPolar times the transpose of the interpolation: for a source component, with v the KDIM1 values of
+      // polar point j (its hedgehog values combined), the window of MGrid at I_G2P[j] gets a b^T v; row i0 of the
+      // window, its INTERP_ORDER * KDIM1 values contiguous, gets a[i0] times u = b (x) v.
+      constexpr sctl::Integer NU = INTERP_ORDER * KDIM1 / IVecLen; // vectors in a row of a window
+      for (sctl::Integer j = 0; j < Npolar; j++) {
+        const sctl::ConstIterator<Real> a = W_G2P.begin() + j * 2 * INTERP_ORDER, b = a + INTERP_ORDER;
+        const sctl::ConstIterator<Real> MPolar_ = MPolar[j];
+        for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) {
+          alignas(sizeof(IVec)) Real u[INTERP_ORDER * KDIM1];
+          for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
+            Real v = 0;
+            for (sctl::Integer l = 0; l < HedgehogOrder_; l++) v += MPolar_[(k0 * Npolar * KDIM1 + k1) * HedgehogOrder_ + l] * HedgehogWts_[l];
+            for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) u[i1 * KDIM1 + k1] = b[i1] * v;
+          }
+          IVec uv[NU];
+          for (sctl::Integer m = 0; m < NU; m++) uv[m] = IVec::LoadAligned(u + m * IVecLen);
+          const sctl::Iterator<Real> R0 = MGrid[k0 * Ngrid + I_G2P[j]];
+          for (sctl::Integer i0 = 0; i0 < INTERP_ORDER; i0++) {
+            const IVec ai = IVec::Load1(&a[i0]);
+            const sctl::Iterator<Real> R = R0 + i0 * PATCH_DIM * KDIM1;
+            for (sctl::Integer m = 0; m < NU; m++) FMA(ai, uv[m], IVec::Load(&R[m * IVecLen])).Store(&R[m * IVecLen]);
           }
         }
       }

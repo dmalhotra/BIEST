@@ -119,10 +119,12 @@ template <class Real, class SKer> class OffSurfaceOp {
   private:
 
     /**
-     * Split the panels until they resolve the surface and the densities F: on each panel, the last two Legendre
-     * coefficients along each direction of the surface coordinates, of their derivatives and of F are within the
-     * tolerance, unless the panel is the finest allowed (16 nodes per grid point). Set Ut and Up to the smallest
-     * values, at least their current values, for which the local interpolation is accurate on the finest panels.
+     * Split the panels until they resolve the surface and the densities F: on each panel, along each direction, the
+     * last two Legendre coefficients of the surface coordinates, of their derivatives and of F are within the
+     * tolerance, and the area of the panel by its quadrature differs from the sum over its two halves by at most the
+     * tolerance times the surface area, unless the panel is the finest allowed (32 nodes per grid point). Set Ut and
+     * Up to the smallest values, at least their current values, for which the local interpolation is accurate on the
+     * finest panels.
      */
     void FitPanels(const sctl::Vector<Real>& F);
 

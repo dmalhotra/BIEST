@@ -225,9 +225,12 @@ which handles targets at any distance from the surface:
    nodes. Starting from a coarse :math:`4\times 4` mesh in the grid parameters, each panel is split in half along
    the toroidal direction, the poloidal direction or both, until on every panel the last two Legendre coefficients
    along each direction of the surface coordinates, of their derivatives (which give the normal and the area element)
-   and of the densities are below the requested tolerance, relative to the largest value of each field. The panels
-   are therefore small only where the surface or the densities vary rapidly. A panel is not split beyond 16 nodes per
-   grid point.
+   and of the densities are below the requested tolerance, relative to the largest value of each field, and the area
+   of the panel by its quadrature differs from the sum of the areas of its two halves along each direction by at most
+   the tolerance times the surface area. The second test catches area elements that the quadrature does not resolve
+   although the surface coordinates are resolved: the area element is the square root of a polynomial on each panel,
+   and near a sharp concave fold of the surface its branch points are close to the panel. The panels are therefore
+   small only where the surface or the densities vary rapidly. A panel is not split beyond 32 nodes per grid point.
 2. The surface coordinates and the densities are interpolated from the periodic grid to the panel nodes: first FFT
    upsampling (by a factor up to 16, chosen to meet the tolerance on the finest panels), then local 12-point Lagrange
    interpolation.

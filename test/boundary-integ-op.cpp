@@ -4,6 +4,7 @@
 
 // Tests of BoundaryIntegralOp and FieldPeriodBIOp with Gauss's identity: the Laplace double-layer potential of
 // the density 1 is -1 inside the surface, -1/2 on it (principal value) and 0 outside.
+// Also a test of OffSurfaceOp with the single-layer potential, on a surface that is hard for its panels.
 
 #include "test-utils.hpp"
 
@@ -85,6 +86,45 @@ int main(int argc, char** argv) {
     F = 1;
     op(U, F);
     res.Check("BoundaryIntegralOp<HedgehogOrder=4>: D[1] = -1 (interior limit)", MaxAbs(U + 1), 1e-3);
+  }
+
+  { // OffSurfaceOp: the single-layer potential S[1] far from an axisymmetric torus whose cross-section
+    // r = 0.25 (1 + 0.6 cos 6 phi) has six sharp concave folds, where the panels must be smaller for the area element
+    // than for the surface coordinates; against the trapezoidal rule on the grid upsampled 32 times poloidally
+    const sctl::Long Nt = 96, Np = 64, N = Nt * Np, M = 64;
+    biest::Surface<Real> S(Nt, Np, biest::SurfType::None);
+    for (sctl::Long t = 0; t < Nt; t++) {
+      for (sctl::Long p = 0; p < Np; p++) {
+        const Real theta = 2 * pi * t / Nt, phi = 2 * pi * p / Np;
+        const Real r = 0.25 * (1 + 0.6 * sctl::cos<Real>(6 * phi)), R = 1 + r * sctl::cos<Real>(phi);
+        S.Coord(t, p, 0) = R * sctl::cos<Real>(theta);
+        S.Coord(t, p, 1) = R * sctl::sin<Real>(theta);
+        S.Coord(t, p, 2) = r * sctl::sin<Real>(phi);
+      }
+    }
+    sctl::Vector<Real> Xt(COORD_DIM * M); // points on the sphere of radius 5
+    for (sctl::Long i = 0; i < M; i++) {
+      const Real z = -1 + (2 * i + 1) / (Real)M, a = 2.399963 * i, s = sctl::sqrt<Real>(1 - z * z);
+      Xt[0 * M + i] = 5 * s * sctl::cos<Real>(a);
+      Xt[1 * M + i] = 5 * s * sctl::sin<Real>(a);
+      Xt[2 * M + i] = 5 * z;
+    }
+    const auto& sl = biest::Laplace3D<Real>::FxU();
+    sctl::Vector<Real> F(N), U, Uref;
+    F = 1;
+    biest::OffSurfaceOp op(sl, comm);
+    op.Setup(S.Coord(), Nt, Np, Xt, 1e-10, F);
+    op.Eval(U, F);
+
+    const sctl::Long Mp = 32 * Np;
+    sctl::Vector<Real> Xu, Fu(Nt * Mp), dXu, normal, area;
+    biest::SurfaceOp<Real>::Upsample(S.Coord(), Nt, Np, Xu, Nt, Mp);
+    Fu = 1;
+    biest::SurfaceOp<Real> surf_op(comm, Nt, Mp);
+    surf_op.Grad2D(dXu, Xu);
+    surf_op.SurfNormalAreaElem(&normal, &area, dXu, &Xu);
+    surf_op.EvalSurfInteg(Uref, Xt, Xu, normal, area, Fu, sl);
+    res.Check("OffSurfaceOp: S[1] off a surface with sharp concave folds", MaxRelDiff(U, Uref), 1e-9);
   }
 
   for (const sctl::Integer orient : {1, -1}) { // FieldPeriodBIOp on a surface with 5 field periods, with the toroidal index increasing counterclockwise (orient = 1) or clockwise

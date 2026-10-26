@@ -228,6 +228,30 @@ namespace detail_offsurf {
   }
 
   /**
+   * Returns the area of panel e of P, with the grid parameters in [0,1), by the Gauss-Legendre rule with weights wts on
+   * its ORDER x ORDER nodes.
+   *
+   * @param[in] dX the derivatives of the surface coordinates at the nodes of the P panels: the 3 components of dX/dt,
+   * then those of dX/dp, each for all panels.
+   */
+  template <class Real, sctl::Integer ORDER> Real PanelArea(const sctl::ConstIterator<Real> dX, const sctl::Long P, const sctl::Long e, const Panel& q, const sctl::Long Mt0, const sctl::Long Mp0, const sctl::Vector<Real>& wts) {
+    Real area = 0;
+    for (sctl::Integer i = 0; i < ORDER; i++) {
+      for (sctl::Integer j = 0; j < ORDER; j++) {
+        const sctl::Long n = i * ORDER + j;
+        Real xt[3], xp[3];
+        for (sctl::Integer k = 0; k < 3; k++) {
+          xt[k] = dX[(k * P + e) * ORDER * ORDER + n];
+          xp[k] = dX[((3 + k) * P + e) * ORDER * ORDER + n];
+        }
+        const Real n0 = xt[1] * xp[2] - xt[2] * xp[1], n1 = xt[2] * xp[0] - xt[0] * xp[2], n2 = xt[0] * xp[1] - xt[1] * xp[0];
+        area += wts[i] * wts[j] * sctl::sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
+      }
+    }
+    return area / ((Real)(Mt0 << q.lt) * (Real)(Mp0 << q.lp));
+  }
+
+  /**
    * Returns the lines of the components of Y along the toroidal (dir = 0) or poloidal (dir = 1) direction, as the rows
    * of a matrix.
    *
@@ -423,10 +447,11 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const 
   const detail_offsurf::PanelRule<Real> rule(ORDER);
 
   // Y: the fields that the panels must resolve, X, its derivatives along each direction, which give the normal and the
-  // area element, and F; scal: for each component, the reciprocal of the largest value of its field
+  // area element, and F; scal: for each component, the reciprocal of the largest value of its field; sA: the reciprocal
+  // of the surface area, by the trapezoidal rule on the grid with the parameters in [0,1)
   const sctl::Long Nc = 3 * COORD_DIM + Nf;
   sctl::Vector<Real> Y(Nc * N), scal(Nc);
-  Real sX, st, sp, sF;
+  Real sX, st, sp, sF, sA;
   {
     sctl::Vector<Real> dX; // dX/dt and dX/dp, for each component of X
     SurfaceOp<Real>(sctl::Comm::Self(), Nt_, Np_).Grad2D(dX, X_);
@@ -444,15 +469,27 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const 
     sp = inv_max(2 * COORD_DIM, 3 * COORD_DIM);
     sF = inv_max(3 * COORD_DIM, Nc);
     for (sctl::Long c = 0; c < Nc; c++) scal[c] = (c < COORD_DIM ? sX : (c < 2 * COORD_DIM ? st : (c < 3 * COORD_DIM ? sp : sF)));
+    Real area = 0;
+    for (sctl::Long i = 0; i < N; i++) {
+      Real xt[COORD_DIM], xp[COORD_DIM];
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+        xt[k] = dX[(k * 2 + 0) * N + i];
+        xp[k] = dX[(k * 2 + 1) * N + i];
+      }
+      const Real n0 = xt[1] * xp[2] - xt[2] * xp[1], n1 = xt[2] * xp[0] - xt[0] * xp[2], n2 = xt[0] * xp[1] - xt[1] * xp[0];
+      area += sctl::sqrt<Real>(n0 * n0 + n1 * n1 + n2 * n2);
+    }
+    sA = N / area;
   }
 
-  const auto max_level = [](const sctl::Long M0, const sctl::Long N_) { // at most 16 panel nodes per grid point
+  const auto max_level = [](const sctl::Long M0, const sctl::Long N_) { // at most 32 panel nodes per grid point
     sctl::Integer l = 0;
-    while ((M0 << (l + 1)) * ORDER <= 16 * N_) l++;
+    while ((M0 << (l + 1)) * ORDER <= 32 * N_) l++;
     return l;
   };
   const sctl::Integer lt_max = max_level(Mt0, Nt_), lp_max = max_level(Mp0, Np_);
   const sctl::Vector<Real>& nds = sctl::QuadElemList<Real>::ParamNodes(ORDER);
+  const sctl::Vector<Real>& wts = sctl::LegQuadRule<Real>::wts(ORDER);
   const sctl::Matrix<Real> A = detail_offsurf::LegendreCoeffMatrix<Real>(ORDER);
   bool resolved = true;
   for (sctl::Long Ut0 = 0, Up0 = 0; ; ) {
@@ -481,16 +518,31 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const 
     Ut0 = Ut;
     Up0 = Up;
 
-    // Split the panels, along one or both directions, until the last two Legendre coefficients of each field along
-    // each direction are within tol, or the panels are the finest allowed
+    // Split the panels, along one or both directions, until along each direction the last two Legendre coefficients of
+    // each field are within tol, and the area of the panel by its quadrature differs from the sum of the areas of its
+    // two halves by at most tol times the surface area, or the panels are the finest allowed. The test of the area
+    // catches an area element that the quadrature does not resolve although X and its derivatives are resolved: the
+    // area element is the square root of a polynomial, and near a sharp concave fold of the surface its branch points
+    // are close to the panel.
     sctl::Vector<Real> Yf;
     UpsampleGrid(Yf, Y);
+    const sctl::Long Nfine = Ut * Nt_ * Up * Np_;
+    const sctl::Vector<Real> dXf(2 * COORD_DIM * Nfine, Yf.begin() + COORD_DIM * Nfine, false); // dX/dt and dX/dp in Yf
     sctl::Vector<detail_offsurf::Panel> todo = panels, done;
     resolved = true;
     while (todo.Dim()) {
       const sctl::Long P = todo.Dim();
-      sctl::Vector<Real> V;
+      sctl::Vector<Real> V, Vh;
       detail_offsurf::PanelNodeValues<Real>(V, Yf, Ut * Nt_, Up * Np_, todo, Mt0, Mp0, nds, false, STENCIL);
+      sctl::Vector<detail_offsurf::Panel> halves(4 * P); // of panel e: 4e, 4e+1 along the toroidal direction, 4e+2, 4e+3
+      for (sctl::Long e = 0; e < P; e++) {
+        const detail_offsurf::Panel& q = todo[e];
+        halves[4 * e + 0] = detail_offsurf::Panel{q.lt + 1, q.lp, 2 * q.it + 0, q.ip};
+        halves[4 * e + 1] = detail_offsurf::Panel{q.lt + 1, q.lp, 2 * q.it + 1, q.ip};
+        halves[4 * e + 2] = detail_offsurf::Panel{q.lt, q.lp + 1, q.it, 2 * q.ip + 0};
+        halves[4 * e + 3] = detail_offsurf::Panel{q.lt, q.lp + 1, q.it, 2 * q.ip + 1};
+      }
+      detail_offsurf::PanelNodeValues<Real>(Vh, dXf, Ut * Nt_, Up * Np_, halves, Mt0, Mp0, nds, false, STENCIL);
       sctl::Vector<sctl::Integer> split(P); // bit 0: split along the toroidal direction, bit 1: along the poloidal
       bool resolved_ = true;
       #pragma omp parallel for schedule(static) reduction(&&:resolved_)
@@ -503,6 +555,13 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const 
           tp = std::max<Real>(tp, tp_);
         }
         const detail_offsurf::Panel& q = todo[e];
+        { // the area of the panel against the sum of the areas of its halves along each direction
+          const auto half = [&](const sctl::Integer h) { return detail_offsurf::PanelArea<Real,ORDER>(Vh.begin(), 4 * P, 4 * e + h, halves[4 * e + h], Mt0, Mp0, wts); };
+          const Real A0 = detail_offsurf::PanelArea<Real,ORDER>(V.begin() + COORD_DIM * P * Nnds, P, e, q, Mt0, Mp0, wts);
+          const Real round = 64 * ORDER * sctl::machine_eps<Real>(); // for areas of size 1
+          tt = std::max<Real>(tt, sA * sctl::fabs<Real>(A0 - half(0) - half(1)) - round);
+          tp = std::max<Real>(tp, sA * sctl::fabs<Real>(A0 - half(2) - half(3)) - round);
+        }
         split[e] = (tt > tol_ && q.lt < lt_max ? 1 : 0) | (tp > tol_ && q.lp < lp_max ? 2 : 0);
         if ((tt > tol_ && q.lt >= lt_max) || (tp > tol_ && q.lp >= lp_max)) resolved_ = false;
       }

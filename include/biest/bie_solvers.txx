@@ -69,7 +69,7 @@ namespace detail_bie_solvers {
         const sctl::Long N = S.NTor() * S.NPol();
         const sctl::Vector<Real> J0_(COORD_DIM * N, J0.begin() + COORD_DIM * dsp, false);
         OffSurfaceOp op(BiotSavart3D<Real>::FxU(), comm);
-        op.Setup(S.Coord(), S.NTor(), S.NPol(), X, tol, J0_);
+        op.Setup(S.Coord(), S.NTor(), S.NPol(), X, tol);
         op.Eval(B, J0_);
         dsp += N;
       }
@@ -918,9 +918,9 @@ namespace detail_bie_solvers {
         const sctl::Vector<Real> Fpotn(COORD_DIM * 2 * N, Fgrad.begin() + 2 * N, false);
 
         OffSurfaceOp op_grad(helm.FxdU(), comm), op_potn(helm.FxU(), comm);
-        op_grad.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol, Fgrad);
+        op_grad.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol);
         op_grad.Eval(Ugrad, Fgrad);
-        op_potn.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol, Fpotn);
+        op_potn.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol);
         op_potn.Eval(Upotn, Fpotn);
         dsp += N;
       }

@@ -128,7 +128,7 @@ namespace biest {
         const sctl::Vector<Real> F_(ker_ptr->Dim(0) * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + ker_ptr->Dim(0) * SrcOffset, false);
         Upsample(F_, Fsrc, Nt0[s], Np0[s]);
         OffSurfaceOp<Real,SKer> op(ker, comm_);
-        op.Setup(Xsrc[s], Nt0[s] * UPSAMPLE, Np0[s] * UPSAMPLE, Xt, tol, Fsrc);
+        op.Setup(Xsrc[s], Nt0[s] * UPSAMPLE, Np0[s] * UPSAMPLE, Xt, tol);
         op.Eval(U, Fsrc);
         SrcOffset += Nt0[s] * Np0[s];
       }

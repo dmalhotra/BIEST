@@ -402,7 +402,6 @@ template <class Real> class SurfaceOp {
     sctl::Comm comm_;
     sctl::Long Nt_, Np_;
     mutable sctl::GMRES<Real> solver;
-    mutable std::map<sctl::Long, std::pair<sctl::FFT<Real>, sctl::FFT<Real>>> Grad2D_fft_; // per-dof R2C/C2R plans (cleared in Init)
 };
 
 }

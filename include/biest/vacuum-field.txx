@@ -273,12 +273,12 @@ namespace biest {
     if (sigma_.Dim()) {
       const sctl::Vector<Real> F = sigma_ * (Real)-1;
       OffSurfaceOp op(Laplace3D<Real>::FxdU());
-      op.Setup(XX, NFP_*Nt_, Np_, Xtrg_, tol, F);
+      op.Setup(XX, NFP_*Nt_, Np_, Xtrg_, tol);
       op.Eval(Bplasma, F);
     }
     if (J_.Dim()) {
       OffSurfaceOp op(BiotSavart3D<Real>::FxU());
-      op.Setup(XX, NFP_*Nt_, Np_, Xtrg_, tol, J_);
+      op.Setup(XX, NFP_*Nt_, Np_, Xtrg_, tol);
       op.Eval(Bplasma, J_);
     }
 

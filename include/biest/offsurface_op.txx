@@ -3,7 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <algorithm>
+#include <map>
+#include <memory>
 #include <numeric>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -78,20 +81,51 @@ namespace detail_offsurf {
    * to x in [0,1].
    */
   template <class Real> Real LocalModeError(const sctl::Integer p, const Real phi) {
-    sctl::StaticArray<Real,64> wts;
+    sctl::StaticArray<Real,64> wts, c, s; // c, s: exp(i phi x) at the points
     SCTL_ASSERT(p <= 64);
+    for (sctl::Integer j = 0; j < p; j++) {
+      c[j] = sctl::cos<Real>(phi * (j - p / 2 + 1));
+      s[j] = sctl::sin<Real>(phi * (j - p / 2 + 1));
+    }
     Real err = 0;
     for (sctl::Integer q = 0; q <= 8; q++) { // x in [0,1/2]; the error is symmetric about 1/2
       const Real x = q / (Real)16;
       LocalWeights<Real>(wts, p, x);
       Real re = -sctl::cos<Real>(phi * x), im = -sctl::sin<Real>(phi * x);
       for (sctl::Integer j = 0; j < p; j++) {
-        re += wts[j] * sctl::cos<Real>(phi * (j - p / 2 + 1));
-        im += wts[j] * sctl::sin<Real>(phi * (j - p / 2 + 1));
+        re += wts[j] * c[j];
+        im += wts[j] * s[j];
       }
       err = std::max<Real>(err, sctl::sqrt<Real>(re * re + im * im));
     }
     return err;
+  }
+
+  /**
+   * Returns LocalModeError(p, 2 pi k / n) for k = 0, ..., Nk-1. It is computed on the first call and kept until the
+   * program ends, for all callers.
+   */
+  template <class Real> const sctl::Vector<Real>& ModeErrors(const sctl::Integer p, const sctl::Long n, const sctl::Long Nk) {
+    using Key = std::tuple<sctl::Integer, sctl::Long, sctl::Long>;
+    static auto* cache = new std::map<Key, std::unique_ptr<sctl::Vector<Real>>>(); // never freed, like the FFT plans
+    const Key key(p, n, Nk);
+    const sctl::Vector<Real>* err = nullptr;
+    #pragma omp critical(BIEST_ModeErrors)
+    {
+      const auto it = cache->find(key);
+      if (it != cache->end()) err = it->second.get();
+    }
+    if (err) return *err;
+    std::unique_ptr<sctl::Vector<Real>> err_(new sctl::Vector<Real>(Nk));
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long k = 0; k < Nk; k++) (*err_)[k] = LocalModeError<Real>(p, 2 * sctl::const_pi<Real>() * k / n);
+    #pragma omp critical(BIEST_ModeErrors)
+    {
+      auto& entry = (*cache)[key];
+      if (!entry) entry = std::move(err_);
+      err = entry.get();
+    }
+    return *err;
   }
 
   /**
@@ -302,12 +336,13 @@ namespace detail_offsurf {
   template <class Real> sctl::Matrix<Real> GridLines(const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Integer dir) {
     const sctl::Long N = Nt * Np, Nc = Y.Dim() / N;
     sctl::Matrix<Real> R(dir ? Nc * Nt : Nc * Np, dir ? Np : Nt);
-    for (sctl::Long c = 0; c < Nc; c++) {
-      for (sctl::Long i = 0; i < Nt; i++) {
-        for (sctl::Long j = 0; j < Np; j++) {
-          if (dir) R[c * Nt + i][j] = Y[(c * Nt + i) * Np + j];
-          else R[c * Np + j][i] = Y[(c * Nt + i) * Np + j];
-        }
+    if (dir) {
+      if (Y.Dim()) sctl::omp_par::memcpy(R.begin(), Y.begin(), Y.Dim());
+    } else {
+      #pragma omp parallel for schedule(static)
+      for (sctl::Long r = 0; r < Nc * Np; r++) { // component c, poloidal index j
+        const sctl::Long c = r / Np, j = r % Np;
+        for (sctl::Long i = 0; i < Nt; i++) R[r][i] = Y[(c * Nt + i) * Np + j];
       }
     }
     return R;
@@ -328,14 +363,23 @@ namespace detail_offsurf {
     const sctl::Long Nr = R.Dim(0), N = R.Dim(1), Nk = N / 2 + 1;
     if (!Nr) return U0;
 
-    // The transforms are small: on one thread, as many threads would cost more to set up and synchronize than they save
-    sctl::Vector<Real> coeff; // Fourier coefficients of the rows, divided by N
+    // the Fourier coefficients of the rows, divided by N; their sizes, those of the modes of the real rows; and the sum of
+    // these over each row
+    sctl::Vector<Real> coeff(Nr * Nk * 2), mag(Nr * Nk), mag_sum(Nr);
     {
-      sctl::FFT<Real> fft;
-      sctl::StaticArray<sctl::Long,1> dim{N};
-      fft.Setup(sctl::FFT_Type::R2C, Nr, sctl::Vector<sctl::Long>(1, dim, false), 1);
-      fft.Execute(sctl::Vector<Real>(Nr * N, (sctl::Iterator<Real>)R.begin(), false), coeff);
-      for (auto& c : coeff) c /= N;
+      const sctl::Iterator<Real> C = coeff.begin(), M = mag.begin(), Ms = mag_sum.begin();
+      const sctl::ConstIterator<Real> R_ = R.begin();
+      detail_surfop::RowsR2C<Real>(Nr, N, Nk, [R_,N](const sctl::Long r) { return R_ + r * N; }, [C,M,Ms,Nk,N](const sctl::Long r, const sctl::ConstIterator<Real> c) {
+        Real sum = 0;
+        for (sctl::Long k = 0; k < Nk; k++) {
+          const Real re = c[k * 2 + 0] / N, im = c[k * 2 + 1] / N;
+          C[(r * Nk + k) * 2 + 0] = re;
+          C[(r * Nk + k) * 2 + 1] = im;
+          M[r * Nk + k] = sctl::sqrt<Real>(re * re + im * im) * (k == 0 || 2 * k == N ? 1 : 2);
+          sum += M[r * Nk + k];
+        }
+        Ms[r] = sum;
+      });
     }
     sctl::StaticArray<Real,64> wmid; // stencil weights at the midpoint of a grid cell
     SCTL_ASSERT(p <= 64);
@@ -354,17 +398,13 @@ namespace detail_offsurf {
       if (U < U0) continue;
       sctl::Vector<sctl::Long> rows; // the rows with the largest estimated error, from their mode sizes
       {
-        sctl::Vector<Real> err_k(Nk), est(Nr);
-        for (sctl::Long k = 0; k < Nk; k++) err_k[k] = LocalModeError<Real>(p, 2 * sctl::const_pi<Real>() * k / (U * N));
+        const sctl::Vector<Real>& err_k = ModeErrors<Real>(p, U * N, Nk);
+        sctl::Vector<Real> est(Nr);
         #pragma omp parallel for schedule(static)
         for (sctl::Long r = 0; r < Nr; r++) {
-          Real e = 0, size = 0;
-          for (sctl::Long k = 0; k < Nk; k++) {
-            const Real m = sctl::sqrt<Real>(coeff[(r * Nk + k) * 2] * coeff[(r * Nk + k) * 2] + coeff[(r * Nk + k) * 2 + 1] * coeff[(r * Nk + k) * 2 + 1]) * (k == 0 || 2 * k == N ? 1 : 2);
-            e += m * err_k[k];
-            size += m;
-          }
-          est[r] = (e - round * size) * scal;
+          Real e = 0;
+          for (sctl::Long k = 0; k < Nk; k++) e += mag[r * Nk + k] * err_k[k];
+          est[r] = (e - round * mag_sum[r]) * scal;
         }
         std::vector<sctl::Long> order_(Nr);
         std::iota(order_.begin(), order_.end(), 0);
@@ -375,37 +415,51 @@ namespace detail_offsurf {
         for (sctl::Long i = 0; i < Ns; i++) rows[i] = order_[i];
       }
 
-      // the rows upsampled 2U times: the even points are the rows upsampled U times, the odd points the midpoints
-      const sctl::Long Nf = 2 * U * N, Nfk = Nf / 2 + 1, Ns = rows.Dim();
-      sctl::Vector<Real> fine_coeff(Ns * Nfk * 2), fine;
-      fine_coeff.SetZero();
-      for (sctl::Long i = 0; i < Ns; i++) {
-        for (sctl::Long k = 0; k < Nk; k++) {
-          const Real scal_k = (2 * k == N ? (Real)0.5 : (Real)1); // the Nyquist mode of even N is a cosine
-          fine_coeff[(i * Nfk + k) * 2 + 0] = coeff[(rows[i] * Nk + k) * 2 + 0] * scal_k;
-          fine_coeff[(i * Nfk + k) * 2 + 1] = coeff[(rows[i] * Nk + k) * 2 + 1] * scal_k;
-        }
-      }
+      // the rows upsampled 2U times: the even points are the rows upsampled U times, the odd points the midpoints;
+      // ext: the even points of each row, extended periodically by p on each side, and mid: the odd points
+      const sctl::Long n = U * N, Ns = rows.Dim(), Ld = n + 2 * p;
+      sctl::Vector<Real> ext(Ns * Ld), mid(Ns * n);
       {
-        sctl::FFT<Real> fft;
-        sctl::StaticArray<sctl::Long,1> dim{Nf};
-        fft.Setup(sctl::FFT_Type::C2R, Ns, sctl::Vector<sctl::Long>(1, dim, false), 1);
-        fft.Execute(fine_coeff, fine, false);
+        const sctl::Iterator<Real> E = ext.begin(), Mi = mid.begin();
+        const sctl::ConstIterator<Real> C = coeff.begin();
+        detail_surfop::RowsC2R<Real>(Ns, 2 * n, Nk, [C,&rows,Nk,N](const sctl::Long i, const sctl::Iterator<Real> c) {
+          for (sctl::Long k = 0; k < Nk; k++) {
+            const Real scal_k = (2 * k == N ? (Real)0.5 : (Real)1); // the Nyquist mode of even N is a cosine
+            c[k * 2 + 0] = C[(rows[i] * Nk + k) * 2 + 0] * scal_k;
+            c[k * 2 + 1] = C[(rows[i] * Nk + k) * 2 + 1] * scal_k;
+          }
+        }, [E,Mi,n,p,Ld](const sctl::Long i, const sctl::ConstIterator<Real> g) {
+          for (sctl::Long j = -p; j < n + p; j++) E[i * Ld + p + j] = g[2 * (((j % n) + n) % n)];
+          for (sctl::Long j = 0; j < n; j++) Mi[i * n + j] = g[2 * j + 1];
+        });
       }
-      Real err = 0;
-      for (sctl::Long i = 0; i < Ns; i++) {
-        const sctl::Long n = U * N;
-        const sctl::ConstIterator<Real> g = fine.begin() + i * Nf;
+      constexpr sctl::Long CHUNK = 256; // points of a row in a task
+      const sctl::Long Nch = (n + CHUNK - 1) / CHUNK;
+      sctl::Vector<Real> err_ch(Ns * Nch), size_ch(Ns * Nch); // the largest error and value in each chunk of each row
+      #pragma omp parallel for schedule(static)
+      for (sctl::Long task = 0; task < Ns * Nch; task++) {
+        const sctl::Long i = task / Nch, j0 = (task % Nch) * CHUNK, j1 = std::min(n, j0 + CHUNK);
+        const sctl::ConstIterator<Real> e_ = ext.begin() + i * Ld + p, m_ = mid.begin() + i * n;
         Real e = 0, size = 0;
-        for (sctl::Long j = 0; j < n; j++) {
+        for (sctl::Long j = j0; j < j1; j++) {
           Real v = 0;
-          for (sctl::Integer m = 0; m < p; m++) v += wmid[m] * g[2 * (((j - p / 2 + 1 + m) % n + n) % n)];
-          e = std::max<Real>(e, sctl::fabs<Real>(v - g[2 * j + 1]));
-          size = std::max<Real>(size, sctl::fabs<Real>(g[2 * j]));
+          for (sctl::Integer m = 0; m < p; m++) v += wmid[m] * e_[j - p / 2 + 1 + m];
+          e = std::max<Real>(e, sctl::fabs<Real>(v - m_[j]));
+          size = std::max<Real>(size, sctl::fabs<Real>(e_[j]));
         }
-        err = std::max<Real>(err, (e - round * size) * scal);
+        err_ch[task] = e;
+        size_ch[task] = size;
       }
-      if (err <= tol) return U;
+      Real err_max = 0;
+      for (sctl::Long i = 0; i < Ns; i++) {
+        Real e = 0, size = 0;
+        for (sctl::Long c = 0; c < Nch; c++) {
+          e = std::max<Real>(e, err_ch[i * Nch + c]);
+          size = std::max<Real>(size, size_ch[i * Nch + c]);
+        }
+        err_max = std::max<Real>(err_max, (e - round * size) * scal);
+      }
+      if (err_max <= tol) return U;
     }
     return -1;
   }

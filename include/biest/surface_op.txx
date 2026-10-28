@@ -161,6 +161,36 @@ namespace detail_surfop {
     }
   }
 
+  /**
+   * Multiply the normalized 2D Fourier coefficients of dof fields on a periodic Nt x Np grid: Y is the inverse
+   * transform of the coefficients of X, each times the complex factor that factor(f, t, q) sets f to, for the toroidal
+   * frequency t (from -Nt/2 to Nt/2) and the poloidal frequency q (from 0 to Np/2). Y may be X.
+   */
+  template <class Real, class Factor> void FourierMultiply(const sctl::Iterator<Real> Y, const sctl::ConstIterator<Real> X, const sctl::Long dof, const sctl::Long Nt, const sctl::Long Np, const Factor& factor) {
+    const sctl::Long Q = Np / 2 + 1, ld = PaddedCols(Q);
+    sctl::ScratchBuf<Real> A_buf(dof * Nt * ld * 2); // the Fourier coefficients along the rows
+    const sctl::Iterator<Real> A = A_buf.begin();
+    RowsR2C<Real>(dof * Nt, Np, Q, [X,Np](const sctl::Long r) { return X + r * Np; }, [A,ld,Q](const sctl::Long r, const sctl::ConstIterator<Real> c) {
+      for (sctl::Long q = 0; q < 2 * Q; q++) A[r * ld * 2 + q] = c[q];
+      for (sctl::Long q = 2 * Q; q < 2 * ld; q++) A[r * ld * 2 + q] = 0;
+    });
+    const Real scale = 1 / (Real)(Nt * Np); // FFT is unnormalized
+    Columns<Real>(A, Nt, A, Nt, dof, ld, Q, [&factor,Nt,scale](const sctl::Iterator<Real> c1, const sctl::ConstIterator<Real> c0, const sctl::Long q) {
+      for (sctl::Long t = 0; t < Nt; t++) {
+        Real f[2];
+        factor(f, t - (t > Nt / 2 ? Nt : 0), q);
+        const Real real = c0[t * 2 + 0] * scale, imag = c0[t * 2 + 1] * scale;
+        c1[t * 2 + 0] = real * f[0] - imag * f[1];
+        c1[t * 2 + 1] = real * f[1] + imag * f[0];
+      }
+    });
+    RowsC2R<Real>(dof * Nt, Np, Q, [A,ld,Q](const sctl::Long r, const sctl::Iterator<Real> c) {
+      for (sctl::Long q = 0; q < 2 * Q; q++) c[q] = A[r * ld * 2 + q];
+    }, [Y,Np](const sctl::Long r, const sctl::ConstIterator<Real> x) {
+      for (sctl::Long j = 0; j < Np; j++) Y[r * Np + j] = x[j];
+    });
+  }
+
 }
 
 template <class Real> SurfaceOp<Real>::SurfaceOp(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np) {
@@ -488,49 +518,40 @@ template <class Real> void SurfaceOp<Real>::ProjZeroMean(sctl::Vector<Real>& Fpr
   }
 }
 
+template <class Real> std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> SurfaceOp<Real>::SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_) {
+  Real Lt = 0, Lp = 0;
+  sctl::Long N = Nt_ * Np_;
+  #pragma omp parallel for schedule(static) reduction(+:Lt,Lp)
+  for (sctl::Long i = 0; i < N; i++) {
+    Real Xt = dX[(2*0+0) * N + i];
+    Real Yt = dX[(2*1+0) * N + i];
+    Real Zt = dX[(2*2+0) * N + i];
+
+    Real Xp = dX[(2*0+1) * N + i];
+    Real Yp = dX[(2*1+1) * N + i];
+    Real Zp = dX[(2*2+1) * N + i];
+
+    Lt += sqrt(Xt * Xt + Yt * Yt + Zt * Zt);
+    Lp += sqrt(Xp * Xp + Yp * Yp + Zp * Zp);
+  }
+  const Real invLt2 = N * N / (Lt * Lt);
+  const Real invLp2 = N * N / (Lp * Lp);
+
+  return [Nt_, Np_, invLt2, invLp2](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) {
+    const sctl::Long dof = x.Dim() / (Nt_ * Np_);
+    SCTL_ASSERT(x.Dim() == dof * Nt_ * Np_);
+    if (Sx.Dim() != x.Dim()) Sx.ReInit(x.Dim());
+    detail_surfop::FourierMultiply<Real>(Sx.begin(), x.begin(), dof, Nt_, Np_, [invLt2,invLp2](Real* f, const sctl::Long tt, const sctl::Long pp) { // coeff(t,p) <-- coeff(t,p) / (t*t + p*p)
+      f[0] = (tt || pp ? 1 / (Real)(tt*tt*invLt2 + pp*pp*invLp2) : 0);
+      f[1] = 0;
+    });
+  };
+}
+
 template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
   auto spectral_InvSurfLap = [this](sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, sctl::Long Nt_, sctl::Long Np_, Real tol, sctl::Integer max_iter) {
-    sctl::FFT<Real> fft_r2c, fft_c2r;
-    sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
-    fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
-    fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
-
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> IdentityOp =[](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { Sx = x; };
-    std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = [Nt_, Np_, &fft_r2c, &fft_c2r, &dX](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) {
-      sctl::Vector<Real> coeff;
-      fft_r2c.Execute(x, coeff);
-      coeff *= 1 / (Real)(Nt_ * Np_); // FFT is unnormalized
-
-      Real Lt = 0, Lp = 0;
-      sctl::Long N = Nt_ * Np_;
-      for (sctl::Long i = 0; i < N; i++) {
-        Real Xt = dX[(2*0+0) * N + i];
-        Real Yt = dX[(2*1+0) * N + i];
-        Real Zt = dX[(2*2+0) * N + i];
-
-        Real Xp = dX[(2*0+1) * N + i];
-        Real Yp = dX[(2*1+1) * N + i];
-        Real Zp = dX[(2*2+1) * N + i];
-
-        Lt += sqrt(Xt * Xt + Yt * Yt + Zt * Zt);
-        Lp += sqrt(Xp * Xp + Yp * Yp + Zp * Zp);
-      }
-      Real invLt2 = N * N / (Lt * Lt);
-      Real invLp2 = N * N / (Lp * Lp);
-
-      sctl::Long Nt0_ = Nt_;
-      sctl::Long Np0_ = fft_r2c.Dim(1) / (Nt0_ * 2);
-      for (sctl::Long t = 0; t < Nt0_; t++) { // coeff(t,p) <-- coeff(t,p) / (t*t + p*p)
-        for (sctl::Long p = 0; p < Np0_; p++) {
-          sctl::Long tt = (t - (t > Nt0_ / 2 ? Nt0_ : 0));
-          sctl::Long pp = p;
-          Real scal = (tt || pp ? 1 / (Real)(tt*tt*invLt2 + pp*pp*invLp2) : 0);
-          coeff[(t * Np0_ + p) * 2 + 0] *= scal;
-          coeff[(t * Np0_ + p) * 2 + 1] *= scal;
-        }
-      }
-      fft_c2r.Execute(coeff, Sx);
-    };
+    std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = SpectralInvLap(dX, Nt_, Np_);
     SurfaceOp<Real> Sop(comm_, Nt_, Np_);
     Sop.InvSurfLapPrecond(InvLapF, FPrecond, IdentityOp, dX, F, tol, max_iter);
   };
@@ -545,49 +566,8 @@ template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLa
 
 template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
   auto spectral_GradInvSurfLap = [this](sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, sctl::Long Nt_, sctl::Long Np_, Real tol, sctl::Integer max_iter) {
-    sctl::FFT<Real> fft_r2c, fft_c2r;
-    sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
-    fft_r2c.Setup(sctl::FFT_Type::R2C, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
-    fft_c2r.Setup(sctl::FFT_Type::C2R, 1, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
-
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> IdentityOp = [](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { Sx = x; };
-    std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = [Nt_, Np_, &fft_r2c, &fft_c2r, &dX](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) {
-      sctl::Vector<Real> coeff;
-      fft_r2c.Execute(x, coeff);
-      coeff *= 1 / (Real)(Nt_ * Np_); // FFT is unnormalized
-
-      Real Lt = 0, Lp = 0;
-      sctl::Long N = Nt_ * Np_;
-      #pragma omp parallel for schedule(static) reduction(+:Lt,Lp)
-      for (sctl::Long i = 0; i < N; i++) {
-        Real Xt = dX[(2*0+0) * N + i];
-        Real Yt = dX[(2*1+0) * N + i];
-        Real Zt = dX[(2*2+0) * N + i];
-
-        Real Xp = dX[(2*0+1) * N + i];
-        Real Yp = dX[(2*1+1) * N + i];
-        Real Zp = dX[(2*2+1) * N + i];
-
-        Lt += sqrt(Xt * Xt + Yt * Yt + Zt * Zt);
-        Lp += sqrt(Xp * Xp + Yp * Yp + Zp * Zp);
-      }
-      Real invLt2 = N * N / (Lt * Lt);
-      Real invLp2 = N * N / (Lp * Lp);
-
-      sctl::Long Nt0_ = Nt_;
-      sctl::Long Np0_ = fft_r2c.Dim(1) / (Nt0_ * 2);
-      #pragma omp parallel for schedule(static)
-      for (sctl::Long t = 0; t < Nt0_; t++) { // coeff(t,p) <-- coeff(t,p) / (t*t + p*p)
-        for (sctl::Long p = 0; p < Np0_; p++) {
-          sctl::Long tt = (t - (t > Nt0_ / 2 ? Nt0_ : 0));
-          sctl::Long pp = p;
-          Real scal = (tt || pp ? 1 / (Real)(tt*tt*invLt2 + pp*pp*invLp2) : 0);
-          coeff[(t * Np0_ + p) * 2 + 0] *= scal;
-          coeff[(t * Np0_ + p) * 2 + 1] *= scal;
-        }
-      }
-      fft_c2r.Execute(coeff, Sx);
-    };
+    std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = SpectralInvLap(dX, Nt_, Np_);
     sctl::Vector<Real> InvLapF;
     SurfaceOp<Real> Sop(comm_, Nt_, Np_);
     Sop.InvSurfLapPrecond(InvLapF, FPrecond, IdentityOp, dX, F, tol, max_iter);
@@ -1008,36 +988,17 @@ template <class Real> void SurfaceOp<Real>::RotateToroidal(sctl::Vector<Real>& X
   SCTL_ASSERT(X.Dim() == dof*Nt_*Np_);
   if (X_.Dim() != dof*Nt_*Np_) X_.ReInit(dof*Nt_*Np_);
 
-  sctl::FFT<Real> fft_r2c, fft_c2r;
-  sctl::StaticArray<sctl::Long, 2> fft_dim{Nt_, Np_};
-  fft_r2c.Setup(sctl::FFT_Type::R2C, dof, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads()); // howmany=dof: batched transform on aligned base
-  fft_c2r.Setup(sctl::FFT_Type::C2R, dof, sctl::Vector<sctl::Long>(2, fft_dim, false), omp_get_max_threads());
-
-  const sctl::Long Nt = Nt_;
-  const sctl::Long Np = Np_ / 2 + 1;    // complex cols per component
-  const sctl::Long csz = Nt * Np * 2;   // complex size (reals)
-  SCTL_ASSERT(fft_r2c.Dim(1) == dof * csz);
-
-  sctl::ScratchBuf<Real> coeff_buf(fft_r2c.Dim(1)), coeff_buf_(fft_c2r.Dim(0));
-  sctl::Vector<Real> coeff(coeff_buf), coeff_(coeff_buf_);
-  fft_r2c.Execute(X, coeff); // const overload preserves X
-  coeff *= 1 / (Real)(Nt_ * Np_); // FFT is unnormalized
-
-  #pragma omp parallel for collapse(2) schedule(static)
-  for (sctl::Long k = 0; k < dof; k++) {
-    for (sctl::Long t = 0; t < Nt; t++) { // coeff_(k,t,p) <-- coeff rotated by t*dtheta
-      const Real cos_tdt = sctl::cos<Real>((t - (t > Nt / 2 ? Nt : 0))*dtheta);
-      const Real sin_tdt = sctl::sin<Real>((t - (t > Nt / 2 ? Nt : 0))*dtheta);
-      for (sctl::Long p = 0; p < Np; p++) {
-        const sctl::Long i = k*csz + (t * Np + p) * 2;
-        Real real = coeff[i + 0];
-        Real imag = coeff[i + 1];
-        coeff_[i + 0] = real*cos_tdt - imag*sin_tdt;
-        coeff_[i + 1] = real*sin_tdt + imag*cos_tdt;
-      }
-    }
+  // coeff(k,t,p) <-- coeff(k,t,p) rotated by t*dtheta
+  sctl::Vector<Real> rot(Nt_ * 2); // the factors of the toroidal frequencies, at t in [0, Nt_)
+  for (sctl::Long t = 0; t < Nt_; t++) {
+    rot[t * 2 + 0] = sctl::cos<Real>((t - (t > Nt_ / 2 ? Nt_ : 0))*dtheta);
+    rot[t * 2 + 1] = sctl::sin<Real>((t - (t > Nt_ / 2 ? Nt_ : 0))*dtheta);
   }
-  fft_c2r.Execute(coeff_, X_);
+  detail_surfop::FourierMultiply<Real>(X_.begin(), X.begin(), dof, Nt_, Np_, [&rot,Nt_](Real* f, const sctl::Long tt, const sctl::Long) {
+    const sctl::Long t = (tt < 0 ? tt + Nt_ : tt);
+    f[0] = rot[t * 2 + 0];
+    f[1] = rot[t * 2 + 1];
+  });
 }
 template <class Real> sctl::Integer SurfaceOp<Real>::ToroidalOrientation(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
   const sctl::Long N = Nt * Np;

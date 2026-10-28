@@ -397,6 +397,12 @@ template <class Real> class SurfaceOp {
 
     static Real max_norm(const sctl::Vector<Real>& x);
 
+    /**
+     * Returns the preconditioner of InvSurfLap() and GradInvSurfLap() on an Nt_ x Np_ grid with derivatives dX: the
+     * inverse of the Laplacian in the grid parameters, scaled by the mean lengths of the grid lines, in Fourier space.
+     */
+    static std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_);
+
     void LaplaceBeltramiReference(sctl::Vector<Real>& f0, sctl::Vector<Real>& u0, const sctl::Vector<Real>& X, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X) const;
 
     sctl::Comm comm_;

@@ -379,7 +379,8 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
 }
 
 template <class Real> void SurfaceOp<Real>::SurfCurl(sctl::Vector<Real>& CurlF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, const sctl::Vector<Real>& F) const {
-  sctl::Vector<Real> GradF;
+  sctl::ScratchBuf<Real> GradF_buf(COORD_DIM * F.Dim()); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> GradF(GradF_buf);
   SurfGrad(GradF, dX, F);
   { // Compute CurlF <--curl(GradF)
     sctl::Long N = Nt_ * Np_;
@@ -403,17 +404,7 @@ template <class Real> void SurfaceOp<Real>::SurfCurl(sctl::Vector<Real>& CurlF, 
   }
 }
 
-template <class Real> void SurfaceOp<Real>::SurfGrad(sctl::Vector<Real>& GradFvec, const sctl::Vector<Real>& dXvec_, const sctl::Vector<Real>& Fvec) const {
-  auto transpose0 = [this](sctl::Vector<Real>& V) {
-    sctl::Long dof = V.Dim() / (Nt_ * Np_);
-    assert(V.Dim() == dof * Nt_ * Np_);
-    sctl::Matrix<Real>(Nt_ * Np_, dof, V.begin(), false) = sctl::Matrix<Real>(dof, Nt_ * Np_, V.begin(), false).Transpose();
-  };
-  auto transpose1 = [this](sctl::Vector<Real>& V) {
-    sctl::Long dof = V.Dim() / (Nt_ * Np_);
-    assert(V.Dim() == Nt_ * Np_ * dof);
-    sctl::Matrix<Real>(dof, Nt_ * Np_, V.begin(), false) = sctl::Matrix<Real>(Nt_ * Np_, dof, V.begin(), false).Transpose();
-  };
+template <class Real> void SurfaceOp<Real>::SurfGrad(sctl::Vector<Real>& GradFvec, const sctl::Vector<Real>& dXvec, const sctl::Vector<Real>& Fvec) const {
   auto inv2x2 = [](Mat<Real, 2, 2> M) {
     Mat<Real, 2, 2> Mout;
     Real oodet = 1 / (M[0][0] * M[1][1] - M[0][1] * M[1][0]);
@@ -423,36 +414,36 @@ template <class Real> void SurfaceOp<Real>::SurfGrad(sctl::Vector<Real>& GradFve
     Mout[1][1] = M[0][0] * oodet;
     return Mout;
   };
-  SCTL_ASSERT(dXvec_.Dim() == 2 * COORD_DIM * Nt_ * Np_);
+  SCTL_ASSERT(dXvec.Dim() == 2 * COORD_DIM * Nt_ * Np_);
+  const sctl::Long N = Nt_ * Np_, dof = Fvec.Dim() / N;
+  assert(Fvec.Dim() == dof * N);
 
-  auto dXvec = dXvec_;
-  sctl::Vector<Real> dFvec;
+  // dFvec in scratch memory, like the temporaries of the operators that SurfGrad is part of: GMRES applies them at
+  // every iteration (InvSurfLap), and a new allocation of this size is new memory for the threads to fault in
+  sctl::ScratchBuf<Real> dFvec_buf(dof * 2 * N);
+  sctl::Vector<Real> dFvec(dFvec_buf);
   Grad2D(dFvec, Fvec);
-  transpose0(dXvec);
-  transpose0(dFvec);
 
-  { // Set GradFvec
-    sctl::Long dof = Fvec.Dim() / (Nt_ * Np_);
-    assert(Fvec.Dim() == Nt_ * Np_ * dof);
-    if (GradFvec.Dim() != dof * COORD_DIM * Nt_ * Np_) {
-      GradFvec.ReInit(dof * COORD_DIM * Nt_ * Np_);
+  if (GradFvec.Dim() != dof * COORD_DIM * N) GradFvec.ReInit(dof * COORD_DIM * N);
+  #pragma omp parallel for schedule(static)
+  for (sctl::Long i = 0; i < N; i++) { // the components (k*2+d)*N+i of dXvec and dFvec, and (k*COORD_DIM+l)*N+i of GradFvec
+    Mat<Real, 3, 2> dX_du;
+    for (sctl::Integer l = 0; l < COORD_DIM; l++) {
+      for (sctl::Integer d = 0; d < 2; d++) dX_du[l][d] = dXvec[(l*2+d)*N+i];
     }
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
-      const Mat<Real, 3, 2, false> dX_du(dXvec.begin() + i*3*2);
-      const auto du_dX = inv2x2(dX_du.Transpose() * dX_du) * dX_du.Transpose();
-      for (sctl::Long k = 0; k < dof; k++) {
-        const Mat<Real, 1, 2, false> dF_du(dFvec.begin() + (i*dof+k)*1*2);
-        Mat<Real, 1, 3, false> GradF(GradFvec.begin() + (i*dof+k)*1*3);
-        GradF = dF_du * du_dX;
-      }
+    const auto du_dX = inv2x2(dX_du.Transpose() * dX_du) * dX_du.Transpose();
+    for (sctl::Long k = 0; k < dof; k++) {
+      Mat<Real, 1, 2> dF_du;
+      for (sctl::Integer d = 0; d < 2; d++) dF_du[0][d] = dFvec[(k*2+d)*N+i];
+      const Mat<Real, 1, 3> GradF = dF_du * du_dX;
+      for (sctl::Integer l = 0; l < COORD_DIM; l++) GradFvec[(k*COORD_DIM+l)*N+i] = GradF[0][l];
     }
-    transpose1(GradFvec);
   }
 }
 
 template <class Real> void SurfaceOp<Real>::SurfDiv(sctl::Vector<Real>& DivF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const {
-  sctl::Vector<Real> GradF;
+  sctl::ScratchBuf<Real> GradF_buf(COORD_DIM * F.Dim()); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> GradF(GradF_buf);
   SurfGrad(GradF, dX, F);
   { // Compute DivF <-- trace(GradF)
     sctl::Long N = Nt_ * Np_;
@@ -475,7 +466,8 @@ template <class Real> void SurfaceOp<Real>::SurfDiv(sctl::Vector<Real>& DivF, co
 }
 
 template <class Real> void SurfaceOp<Real>::SurfLap(sctl::Vector<Real>& LapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const {
-  sctl::Vector<Real> GradF;
+  sctl::ScratchBuf<Real> GradF_buf(COORD_DIM * F.Dim()); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> GradF(GradF_buf);
   SurfGrad(GradF, dX, F);
   SurfDiv(LapF, dX, GradF);
 }
@@ -498,18 +490,20 @@ template <class Real> void SurfaceOp<Real>::SurfInteg(sctl::Vector<Real>& I, con
 
 template <class Real> void SurfaceOp<Real>::ProjZeroMean(sctl::Vector<Real>& Fproj, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const {
   sctl::Long N = this->Nt_ * this->Np_;
-  sctl::Vector<Real> area_elem;
+  sctl::ScratchBuf<Real> area_elem_buf(N); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> area_elem(area_elem_buf);
   SurfNormalAreaElem(nullptr, &area_elem, dX, nullptr);
 
-  sctl::Vector<Real> Favg, SurfArea, one(N);
-  one = 1;
-  SurfInteg(SurfArea, area_elem, one);
+  Real SurfArea = 0;
+  #pragma omp parallel for schedule(static) reduction(+:SurfArea)
+  for (sctl::Long i = 0; i < N; i++) SurfArea += area_elem[i];
 
+  sctl::Vector<Real> Favg;
   SurfInteg(Favg, area_elem, F);
-  Favg /= SurfArea[0];
+  Favg /= SurfArea;
 
   sctl::Long dof = Favg.Dim();
-  Fproj.ReInit(dof * N);
+  if (Fproj.Dim() != dof * N) Fproj.ReInit(dof * N);
   for (sctl::Long k = 0; k < dof; k++) {
     #pragma omp parallel for schedule(static)
     for (sctl::Long i = 0; i < N; i++) {
@@ -586,13 +580,20 @@ template <class Real> void SurfaceOp<Real>::InvSurfLapPrecond(sctl::Vector<Real>
   typename sctl::GMRES<Real>::ParallelOp fn = [this,&LeftPrecond,&RightPrecond,&dX](sctl::Vector<Real>* fx, const sctl::Vector<Real>& x) {
     (*fx) = 0;
     SCTL_ASSERT(fx);
-    sctl::Vector<Real> Sx, LSx;
+    // The temporaries in scratch memory (see SurfGrad); Sx may be resized by RightPrecond, which then allocates it, and
+    // is zero for a RightPrecond that adds to its output
+    const sctl::Long Nx = x.Dim();
+    sctl::ScratchBuf<Real> Sx_buf(Nx), LSx_buf(Nx), Proj_Sx_buf(Nx);
+    sctl::Vector<Real> Sx(Sx_buf, false), LSx(LSx_buf), Proj_Sx(Proj_Sx_buf);
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long i = 0; i < Nx; i++) Sx[i] = 0;
     RightPrecond(Sx, x);
+    SCTL_ASSERT(Sx.Dim() == Nx);
 
     SurfLap(LSx, dX, Sx);
-    sctl::Vector<Real> Proj_Sx;
     ProjZeroMean(Proj_Sx, dX, Sx);
-    LSx += (Sx - Proj_Sx)*1;
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long i = 0; i < Nx; i++) LSx[i] += (Sx[i] - Proj_Sx[i]) * 1;
 
     LeftPrecond(*fx, LSx);
   };

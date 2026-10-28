@@ -241,7 +241,8 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] LeftPrecond the left preconditioner.
      *
-     * @param[in] RightPrecond the right preconditioner.
+     * @param[in] RightPrecond the right preconditioner. Each preconditioner
+     * may add to its output, which it is given empty or zero.
      *
      * @param[in] dX the derivatives of the surface coordinates, from Grad2D().
      *

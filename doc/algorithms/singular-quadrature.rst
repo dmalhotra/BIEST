@@ -207,8 +207,11 @@ used for the other results in the paper. In the test of [MCOT2020]_ (Fig. 2), th
 2. It sets :math:`R` to the largest value in :math:`\{6, 8, 12, 16, 20, \ldots, 64\}` that does not exceed
    :math:`1.6\,d\,c`, and :math:`q = \lfloor 1.6 R \rfloor`.
 3. It chooses a quadrature grid with spacings of about the same size in the two directions, at least as fine as the
-   surface, the density and the patch require. It then refines this grid up to three times, until the Laplace double
-   layer of a constant density (which equals :math:`-1/2` on the surface) is accurate to :math:`d` digits.
+   surface, the density and the patch require. It then tests the grid: the Laplace double layer of a constant density
+   (which equals :math:`-1/2` on the surface) at the targets. While the test is not accurate to :math:`d` digits, it
+   refines the grid by the factor that the error predicts for :math:`d+1` digits, assuming geometric convergence,
+   unless that factor is below 1.5 (the error no longer decreases with the grid, as when the patch limits it), with at
+   most three tests. The quadrature grid is the last grid tested.
 
 .. _algorithms-off-surface:
 

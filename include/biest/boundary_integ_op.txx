@@ -234,73 +234,7 @@ namespace biest {
     }
 
     template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0) {
-      assert(X0_.Dim() % (Nt0 * Np0) == 0);
-      const sctl::Long dof = X0_.Dim() / (Nt0 * Np0);
-      if (UPSAMPLE == 1) { // the same grid: the interpolant at the grid points is X0
-        if (X_.Dim() != X0_.Dim()) X_.ReInit(X0_.Dim());
-        if (X0_.Dim() && &X_[0] != &X0_[0]) sctl::omp_par::memcpy(X_.begin(), X0_.begin(), X0_.Dim());
-        return;
-      }
-      sctl::Long Nt1 = UPSAMPLE * Nt0;
-      sctl::Long Np1 = UPSAMPLE * Np0;
-
-      sctl::Long Nt0_ = Nt0;
-      sctl::Long Np0_ = Np0 / 2 + 1;
-
-      sctl::Long Nt1_ = Nt1;
-      sctl::Long Np1_ = Np1 / 2 + 1;
-
-      sctl::FFT<Real> fft_r2c0, fft_c2r_;
-      { // howmany=dof: batched transform on aligned base (no per-component sub-views)
-        sctl::StaticArray<sctl::Long, 2> fft_dim0{Nt0, Np0};
-        sctl::StaticArray<sctl::Long, 2> fft_dim_{Nt1, Np1};
-        fft_r2c0.Setup(sctl::FFT_Type::R2C, dof, sctl::Vector<sctl::Long>(2, fft_dim0, false), omp_get_max_threads());
-        fft_c2r_.Setup(sctl::FFT_Type::C2R, dof, sctl::Vector<sctl::Long>(2, fft_dim_, false), omp_get_max_threads());
-      }
-
-      sctl::Vector<Real> tmp0, tmp_;
-      sctl::ScratchBuf<Real> X0__buf(X0_.Dim());
-      sctl::Vector<Real> X0__(X0__buf);
-      sctl::omp_par::memcpy(X0__.begin(), X0_.begin(), X0_.Dim()); // aligned copy (preserves const X0_)
-      fft_r2c0.Execute(X0__, tmp0);
-      SCTL_ASSERT(tmp0.Dim() == dof * Nt0_ * Np0_ * 2);
-      if (tmp_.Dim() != dof * Nt1_ * Np1_ * 2) tmp_.ReInit(dof * Nt1_ * Np1_ * 2);
-      tmp_.SetZero();
-
-      Real scale = 1 / (Real)(Nt0 * Np0); // FFT is unnormalized
-      sctl::Long Ntt = std::min(Nt0_, Nt1_);
-      sctl::Long Npp = std::min(Np0_, Np1_);
-      for (sctl::Long k = 0; k < dof; k++) {
-        for (sctl::Long t = 0; t < (Ntt + 1) / 2; t++) {
-          for (sctl::Long p = 0; p < Npp; p++) {
-            tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 0] = scale * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 0];
-            tmp_[((k * Nt1_ + t) * Np1_ + p) * 2 + 1] = scale * tmp0[((k * Nt0_ + t) * Np0_ + p) * 2 + 1];
-          }
-        }
-        for (sctl::Long t = 0; t < Ntt / 2; t++) {
-          for (sctl::Long p = 0; p < Npp; p++) {
-            tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 0] = scale * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 0];
-            tmp_[((k * Nt1_ + (Nt1_ - t - 1)) * Np1_ + p) * 2 + 1] = scale * tmp0[((k * Nt0_ + (Nt0_ - t - 1)) * Np0_ + p) * 2 + 1];
-          }
-        }
-      }
-
-      if (X_.Dim() != dof  * Nt1 * Np1) X_.ReInit(dof * Nt1 * Np1);
-      fft_c2r_.Execute(tmp_, X_);
-
-      { // Floating-point correction
-        sctl::Long Ut = Nt1 / Nt0;
-        sctl::Long Up = Np1 / Np0;
-        if (Nt1 == Nt0 * Ut && Np1 == Np0 * Up) {
-          for (sctl::Long k = 0; k < dof; k++) {
-            for (sctl::Long t = 0; t < Nt0; t++) {
-              for (sctl::Long p = 0; p < Np0; p++) {
-                X_[(k * Nt1 + t * Ut) * Np1 + p * Up] = X0_[(k * Nt0 + t) * Np0 + p];
-              }
-            }
-          }
-        }
-      }
+      SurfaceOp<Real>::Upsample(X0_, Nt0, Np0, X_, UPSAMPLE * Nt0, UPSAMPLE * Np0);
     }
 
     template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> Real BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::max_norm(const sctl::Vector<Real>& x) {
@@ -388,26 +322,24 @@ namespace biest {
         quad_Np_ =       trg_Np_  * (sctl::Long)sctl::ceil(std::max<sctl::Long>(std::max<sctl::Long>(surf_Np, src_Np),                    2*PDIM+1) / (Real)      trg_Np_ );
         quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)sctl::ceil(std::max<Real>((Real)std::max<sctl::Long>(surf_Nt, src_Nt), optim_aspect_ratio*quad_Np_) / (Real)(NFP_*trg_Nt_));
 
-        for (sctl::Integer i = 0; i < 3; i++) { // adaptive refinement using double-layer test
-          sctl::Long quad_Nt = (sctl::Long)sctl::ceil(quad_Nt_ / (Real)surf_Nt) * surf_Nt;
-          sctl::Long quad_Np = (sctl::Long)sctl::ceil(quad_Np_ / (Real)surf_Np) * surf_Np;
-
+        // Adaptive refinement using the double-layer test at the targets, at most three tests: while the error is
+        // above 10^-digits, a grid finer by the factor that the error predicts for digits+1 digits, unless that factor
+        // is below 1.5. The grids are multiples of the target grid, and the last one tested is the quadrature grid.
+        for (sctl::Integer i = 0; i < 3; i++) {
           FieldPeriodBIOp<Real, COORD_DIM, 1, 1> dbl_op(comm_);
-          dbl_op.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, NFP_, 0, 0, surf_Nt/NFP_, surf_Np, quad_Nt, quad_Np);
-          sctl::Vector<Real> U, F(quad_Nt * quad_Np); F = 1;
+          dbl_op.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, NFP_, 0, 0, trg_Nt_, trg_Np_, quad_Nt_, quad_Np_);
+          sctl::Vector<Real> U, F(quad_Nt_ * quad_Np_); F = 1;
           dbl_op.Eval(U, F);
 
           Real err = 0;
           for (const auto& a : U) err = std::max<Real>(err, sctl::fabs<Real>(a+(Real)0.5));
-          Real scal = std::max<Real>(1, (digits+1)/(sctl::log(err)/sctl::log((Real)0.1))); // assuming exponential/geometric convergence
-          quad_Nt_ = (sctl::Long)(scal * quad_Nt);
-          quad_Np_ = (sctl::Long)(scal * quad_Np);
-          if (err < sctl::pow<Real>((Real)0.1,digits) || scal < 1.5) break;
+          if (err < sctl::pow<Real>((Real)0.1,digits)) break;
+          const Real got = std::max<Real>(1, sctl::log(err)/sctl::log((Real)0.1)); // the digits of the test, at least 1
+          const Real scal = (digits+1)/got; // assuming exponential/geometric convergence
+          if (scal < 1.5 || i == 2) break;
+          quad_Np_ =       trg_Np_  * (sctl::Long)sctl::ceil(scal * quad_Np_ / (Real)      trg_Np_ );
+          quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)sctl::ceil(scal * quad_Nt_ / (Real)(NFP_*trg_Nt_));
         }
-
-        // quad_Nt_/quad_Np_ ~ optim_aspect_ratio
-        quad_Np_ =       trg_Np_  * (sctl::Long)sctl::round((quad_Nt_/optim_aspect_ratio) / (Real)      trg_Np_ );
-        quad_Nt_ = (NFP_*trg_Nt_) * (sctl::Long)sctl::round((optim_aspect_ratio*quad_Np_) / (Real)(NFP_*trg_Nt_));
       }
       if (!(quad_Np_ > 2*PDIM  ) ||
           !(quad_Nt_ >= Svec[0].NTor()) ||

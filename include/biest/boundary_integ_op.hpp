@@ -113,7 +113,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
     template <class Surface, class Kernel> void SetupHelper(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>());
 
-    static void Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0); // TODO: Replace by upsample in SurfaceOp
+    static void Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0); // SurfaceOp::Upsample by UPSAMPLE in each direction
 
     static Real max_norm(const sctl::Vector<Real>& x);
 
@@ -196,9 +196,10 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
      * @param[in] trg_Np output potential discretization order in poloidal direction.
      *
      * @param[in] qNt, qNp dimensions of the quadrature grid on the full torus.
-     * When either is zero, they are chosen from digits and refined, at most
-     * three times, until the error of the Laplace double-layer identity is
-     * below 10^-digits.
+     * When either is zero, they are chosen from digits and refined, with at
+     * most three tests, until the error of the Laplace double-layer identity
+     * at the targets is below 10^-digits or the next grid would be less than
+     * 1.5 times finer; the quadrature grid is the last grid tested.
      */
     void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt = 0, const sctl::Long qNp = 0);
 

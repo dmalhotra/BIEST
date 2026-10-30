@@ -133,9 +133,9 @@ namespace detail_bie_solvers {
       auto& BI_biot_savart = BI_biot_savart_; // the operators of the object: see VacuumField()
       auto& BI_lap_grad = BI_lap_grad_;
       auto& BI_laplace = BI_laplace_;
-      BI_biot_savart.SetupSingular(Svec, ker_biot_savart);
-      BI_lap_grad.SetupSingular(Svec, ker_lap_grad);
-      BI_laplace.SetupSingular(Svec, ker_laplace);
+      BI_biot_savart.SetupSingular(Svec, ker_biot_savart, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+      BI_lap_grad.SetupSingular(Svec, ker_lap_grad, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+      BI_laplace.SetupSingular(Svec, ker_laplace, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
       sctl::Profile::Toc();
 
       sctl::Profile::Tic("ComputeJ", &comm);
@@ -567,9 +567,9 @@ namespace detail_bie_solvers {
         BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_diff(comm);
         BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad(comm);
         BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_potn(comm);
-        BI_grad_diff.SetupSingular(Svec, ker_grad_diff);
-        BI_grad.SetupSingular(Svec, ker_grad);
-        BI_potn.SetupSingular(Svec, ker_potn);
+        BI_grad_diff.SetupSingular(Svec, ker_grad_diff, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+        BI_grad.SetupSingular(Svec, ker_grad, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+        BI_potn.SetupSingular(Svec, ker_potn, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
         sctl::Profile::Toc();
 
         auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) )
@@ -1098,9 +1098,9 @@ namespace detail_bie_solvers {
       auto& BI_grad_diff = BI_grad_diff_; // the operators of the object: see TaylorState()
       auto& BI_grad = BI_grad_;
       auto& BI_potn = BI_potn_;
-      BI_grad_diff.SetupSingular(Svec, ker_grad_diff);
-      BI_grad.SetupSingular(Svec, ker_grad);
-      BI_potn.SetupSingular(Svec, ker_potn);
+      BI_grad_diff.SetupSingular(Svec, ker_grad_diff, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+      BI_grad.SetupSingular(Svec, ker_grad, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+      BI_potn.SetupSingular(Svec, ker_potn, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
       sctl::Profile::Toc();
 
       auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) )

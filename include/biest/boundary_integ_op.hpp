@@ -5,6 +5,9 @@
 #ifndef _BOUNDARY_INTEG_OP_HPP_
 #define _BOUNDARY_INTEG_OP_HPP_
 
+#include <memory>
+#include <vector>
+
 #include <biest/offsurface_op.hpp>
 #include <biest/surface.hpp>
 #include <sctl.hpp>
@@ -60,19 +63,30 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
      * Setup the layer-potential operator and precompute the singular
      * corrections. The target points are the grid points of the surfaces.
      *
+     * With several surfaces, the potential of a surface at the targets of
+     * another one is the trapezoidal rule on the grid upsampled UPSAMPLE times,
+     * except at the targets too close to the surface for it to be accurate to
+     * tol: within (log(1/tol) / (2 pi) + 1) times the local grid spacing, as
+     * its error is about exp(-2 pi d / h) at a distance d for a spacing h.
+     * There, with a kernel that is an SctlKernelFunction, the potential is
+     * that of OffSurfaceOp, by quadrature on panels fit to the surface; with
+     * another kernel, the trapezoidal rule still.
+     *
      * @param[in] Svec vector containing the surfaces.
      *
      * @param[in] ker the kernel function; it must outlive the operator.
      *
      * @param[in] trg_idx_ (optional) for each surface, the indices of the grid
      * points which will be the target points.
+     *
+     * @param[in] tol the accuracy of the potential of a surface at the targets
+     * of another one.
      */
-    template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>());
+    template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>(), const Real tol = (Real)1e-10);
 
     /**
-     * Evaluate the layer-potential operator. Interactions between different
-     * surfaces use the trapezoidal rule only, so the surfaces must be well
-     * separated relative to the grid spacing.
+     * Evaluate the layer-potential operator. The potential of a surface at
+     * the targets of another one is that described in SetupSingular().
      *
      * @param[in,out] U the vector of computed potentials at the target points
      * in SoA order. If U already has the right size the potential is added to
@@ -113,6 +127,33 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
     template <class Surface, class Kernel> void SetupHelper(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>());
 
+    /**
+     * The potential of a surface at targets near it, by OffSurfaceOp: for a kernel whose SCTL kernel is SKer.
+     */
+    struct NearOpBase {
+      virtual ~NearOpBase() = default;
+      virtual void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol) = 0;
+      virtual void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) = 0;
+    };
+    template <class SKer> struct NearOp : NearOpBase {
+      template <sctl::Integer DIGITS, sctl::Integer Nv> NearOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) : op(ker, comm) {}
+      void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol) override { op.Setup(X, Nt, Np, Xt, tol); }
+      void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) override { op.Eval(U, F); }
+      OffSurfaceOp<Real,SKer> op;
+    };
+
+    /**
+     * Returns a NearOp for a kernel that is an SctlKernelFunction, and else null.
+     */
+    template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> static std::unique_ptr<NearOpBase> NewNearOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) { return std::unique_ptr<NearOpBase>(new NearOp<SKer>(ker, comm)); }
+    template <class Kernel> static std::unique_ptr<NearOpBase> NewNearOp(const Kernel&, const sctl::Comm&) { return nullptr; }
+
+    /**
+     * Set up the potential of each surface at the targets of the others: find the targets near the surface, and set
+     * up a NearOp for them (see SetupSingular()).
+     */
+    template <class Surface, class Kernel> void SetupCross(const sctl::Vector<Surface>& Svec, const Kernel& ker, const Real tol);
+
     static void Upsample(const sctl::Vector<Real>& X0_, sctl::Vector<Real>& X_, sctl::Long Nt0, sctl::Long Np0); // SurfaceOp::Upsample by UPSAMPLE in each direction
 
     static Real max_norm(const sctl::Vector<Real>& x);
@@ -127,6 +168,15 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     sctl::Vector<sctl::Vector<Real>> Xtrg, Xsrc, dXsrc, Xn_src, Xa_src;
     sctl::Vector<sctl::Vector<SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1,HedgehogOrder>>> singular_correction;
     sctl::Vector<sctl::Vector<sctl::Long>> trg_idx;
+
+    // The targets of surface t for the potential of a surface s != t, at cross[s * Nsurf + t]: those far from s, for
+    // the trapezoidal rule, and those near it, for near_op. Without near_op, all of them by the trapezoidal rule.
+    struct CrossInterac {
+      sctl::Vector<sctl::Long> far_idx, near_idx; // indices into the targets of t
+      sctl::Vector<Real> Xfar; // the coordinates of the far targets, SoA
+      std::unique_ptr<NearOpBase> near_op;
+    };
+    std::vector<CrossInterac> cross;
 };
 
 /**

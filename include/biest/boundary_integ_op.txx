@@ -71,12 +71,111 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_) {
+    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_, const Real tol) {
       SetupHelper(Svec, ker, trg_idx_);
       sctl::Long Nsurf = Svec.Dim();
       singular_correction.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) {
         Op[i].SetupSingularCorrection(singular_correction[i], UPSAMPLE, Xsrc[i], dXsrc[i], ker, normal_orient[i], trg_idx[i]);
+      }
+      SetupCross(Svec, ker, tol);
+    }
+
+    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PATCH_DIM0,RAD_DIM,HedgehogOrder>::SetupCross(const sctl::Vector<Surface>& Svec, const Kernel& ker, const Real tol) {
+      const sctl::Long Nsurf = Svec.Dim();
+      cross.clear();
+      cross.resize(Nsurf * Nsurf);
+      if (Nsurf < 2 || !NewNearOp(ker, comm_)) return; // one surface, or a kernel without OffSurfaceOp
+
+      // A target is near s if it is within R_j = c h_j of a point j of the grid of s upsampled UPSAMPLE times, with h_j
+      // the larger grid spacing at j (the derivatives are with respect to the parameters in [0,1)): one more than
+      // log(1/tol) / (2 pi) grid spacings, for a target that is that far from the surface but not from a grid point.
+      // The grid points are in tiles of B x B, each in a ball (center, radius): a target is near a point of the tile
+      // only if it is within the radius plus the largest R_j of the center.
+      const Real c = sctl::log<Real>(1 / tol) / (2 * sctl::const_pi<Real>()) + 1;
+      constexpr sctl::Long B = 8;
+      for (sctl::Long s = 0; s < Nsurf; s++) {
+        const sctl::Long Nt = Nt0[s] * UPSAMPLE, Np = Np0[s] * UPSAMPLE, N = Nt * Np;
+        const sctl::Long Bt = (Nt + B - 1) / B, Bp = (Np + B - 1) / B;
+        const sctl::Vector<Real>& X = Xsrc[s];
+        const sctl::Vector<Real>& dX = dXsrc[s];
+        sctl::Vector<Real> R2(N), tile(Bt * Bp * (COORD_DIM + 1)); // R_j^2; and for each tile, the center and the reach
+        #pragma omp parallel for schedule(static)
+        for (sctl::Long j = 0; j < N; j++) {
+          Real ht2 = 0, hp2 = 0;
+          for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+            ht2 += dX[(k * 2 + 0) * N + j] * dX[(k * 2 + 0) * N + j];
+            hp2 += dX[(k * 2 + 1) * N + j] * dX[(k * 2 + 1) * N + j];
+          }
+          const Real h = std::max<Real>(sctl::sqrt<Real>(ht2) / Nt, sctl::sqrt<Real>(hp2) / Np);
+          R2[j] = c * c * h * h;
+        }
+        #pragma omp parallel for schedule(static)
+        for (sctl::Long b = 0; b < Bt * Bp; b++) {
+          const sctl::Long t0 = (b / Bp) * B, t1 = std::min(Nt, t0 + B), p0 = (b % Bp) * B, p1 = std::min(Np, p0 + B);
+          Real x0[COORD_DIM] = {0, 0, 0}, rad2 = 0, R2max = 0;
+          for (sctl::Long t = t0; t < t1; t++) {
+            for (sctl::Long p = p0; p < p1; p++) {
+              for (sctl::Integer k = 0; k < COORD_DIM; k++) x0[k] += X[k * N + t * Np + p] / ((t1 - t0) * (p1 - p0));
+            }
+          }
+          for (sctl::Long t = t0; t < t1; t++) {
+            for (sctl::Long p = p0; p < p1; p++) {
+              Real r2 = 0;
+              for (sctl::Integer k = 0; k < COORD_DIM; k++) r2 += (X[k * N + t * Np + p] - x0[k]) * (X[k * N + t * Np + p] - x0[k]);
+              rad2 = std::max<Real>(rad2, r2);
+              R2max = std::max<Real>(R2max, R2[t * Np + p]);
+            }
+          }
+          for (sctl::Integer k = 0; k < COORD_DIM; k++) tile[b * (COORD_DIM + 1) + k] = x0[k];
+          tile[b * (COORD_DIM + 1) + COORD_DIM] = sctl::sqrt<Real>(rad2) + sctl::sqrt<Real>(R2max);
+        }
+
+        for (sctl::Long t = 0; t < Nsurf; t++) {
+          if (t == s) continue;
+          const sctl::Long Ntrg = trg_idx[t].Dim();
+          const sctl::Vector<Real>& Xt = Xtrg[t];
+          sctl::Vector<char> is_near(Ntrg);
+          #pragma omp parallel for schedule(dynamic, 64)
+          for (sctl::Long i = 0; i < Ntrg; i++) {
+            const Real x[COORD_DIM] = {Xt[0 * Ntrg + i], Xt[1 * Ntrg + i], Xt[2 * Ntrg + i]};
+            const auto dist2 = [&x](const Real* y) {
+              Real r2 = 0;
+              for (sctl::Integer k = 0; k < COORD_DIM; k++) r2 += (x[k] - y[k]) * (x[k] - y[k]);
+              return r2;
+            };
+            bool near = false;
+            for (sctl::Long b = 0; b < Bt * Bp && !near; b++) {
+              const Real reach = tile[b * (COORD_DIM + 1) + COORD_DIM];
+              if (dist2(&tile[b * (COORD_DIM + 1)]) >= reach * reach) continue;
+              const sctl::Long t0 = (b / Bp) * B, t1 = std::min(Nt, t0 + B), p0 = (b % Bp) * B, p1 = std::min(Np, p0 + B);
+              for (sctl::Long tt = t0; tt < t1 && !near; tt++) {
+                for (sctl::Long pp = p0; pp < p1 && !near; pp++) {
+                  const sctl::Long j = tt * Np + pp;
+                  const Real y[COORD_DIM] = {X[0 * N + j], X[1 * N + j], X[2 * N + j]};
+                  near = (dist2(y) < R2[j]);
+                }
+              }
+            }
+            is_near[i] = near;
+          }
+
+          CrossInterac& ci = cross[s * Nsurf + t];
+          for (sctl::Long i = 0; i < Ntrg; i++) (is_near[i] ? ci.near_idx : ci.far_idx).PushBack(i);
+          if (!ci.near_idx.Dim()) { // all of them by the trapezoidal rule, on Xtrg[t]
+            ci.far_idx.ReInit(0);
+            continue;
+          }
+          const sctl::Long Nfar = ci.far_idx.Dim(), Nnear = ci.near_idx.Dim();
+          sctl::Vector<Real> Xnear(COORD_DIM * Nnear);
+          ci.Xfar.ReInit(COORD_DIM * Nfar);
+          for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+            for (sctl::Long i = 0; i < Nfar; i++) ci.Xfar[k * Nfar + i] = Xt[k * Ntrg + ci.far_idx[i]];
+            for (sctl::Long i = 0; i < Nnear; i++) Xnear[k * Nnear + i] = Xt[k * Ntrg + ci.near_idx[i]];
+          }
+          ci.near_op = NewNearOp(ker, comm_);
+          ci.near_op->Setup(Svec[s].Coord(), Nt0[s], Np0[s], Xnear, tol);
+        }
       }
     }
 
@@ -104,10 +203,26 @@ namespace biest {
 
         sctl::Long TrgOffset = 0;
         for (sctl::Long t = 0; t < Xtrg.Dim(); t++) {
-          sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[t].Dim(), U.begin() + dof * ker_ptr->Dim(1) * TrgOffset, false);
-          Op[s].EvalSurfInteg(U_, Xtrg[t], Xsrc[s], Xn_src[s], Xa_src[s], Fsrc, *ker_ptr);
-          SCTL_ASSERT(Xtrg[t].Dim()/COORD_DIM == trg_idx[t].Dim());
-          TrgOffset += trg_idx[t].Dim();
+          const sctl::Long Ntrg = trg_idx[t].Dim();
+          sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * Ntrg, U.begin() + dof * ker_ptr->Dim(1) * TrgOffset, false);
+          SCTL_ASSERT(Xtrg[t].Dim()/COORD_DIM == Ntrg);
+          const CrossInterac* ci = (t != s ? &cross[s * Xtrg.Dim() + t] : nullptr);
+          if (!ci || !ci->near_op) {
+            Op[s].EvalSurfInteg(U_, Xtrg[t], Xsrc[s], Xn_src[s], Xa_src[s], Fsrc, *ker_ptr);
+          } else { // the trapezoidal rule at the far targets, and near_op at the near ones (see SetupSingular)
+            const sctl::Long Nfar = ci->far_idx.Dim(), Nnear = ci->near_idx.Dim(), Nc = dof * ker_ptr->Dim(1);
+            sctl::ScratchBuf<Real> Ufar_buf(Nc * Nfar), Unear_buf(Nc * Nnear);
+            sctl::Vector<Real> Ufar(Ufar_buf), Unear(Unear_buf);
+            Ufar = 0;
+            Unear = 0;
+            if (Nfar) Op[s].EvalSurfInteg(Ufar, ci->Xfar, Xsrc[s], Xn_src[s], Xa_src[s], Fsrc, *ker_ptr);
+            ci->near_op->Eval(Unear, F_);
+            for (sctl::Long k = 0; k < Nc; k++) {
+              for (sctl::Long i = 0; i < Nfar; i++) U_[k * Ntrg + ci->far_idx[i]] += Ufar[k * Nfar + i];
+              for (sctl::Long i = 0; i < Nnear; i++) U_[k * Ntrg + ci->near_idx[i]] += Unear[k * Nnear + i];
+            }
+          }
+          TrgOffset += Ntrg;
         }
 
         sctl::Vector<Real> U_(dof * ker_ptr->Dim(1) * trg_idx[s].Dim(), U.begin() + dof * ker_ptr->Dim(1) * SingularTrgOffset, false);

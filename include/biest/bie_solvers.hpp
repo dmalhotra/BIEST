@@ -80,7 +80,10 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      *
      * @param[in] comm the communicator when running in parallel.
      *
-     * @param[in] gmres_tol the relative tolerance for the GMRES linear solve.
+     * @param[in] gmres_tol the relative tolerance for the GMRES linear solve;
+     * with several surfaces, the potential of a surface at the grid points
+     * of another is accurate to 0.1 gmres_tol (see
+     * BoundaryIntegralOp::SetupSingular()).
      *
      * @param[in] gmres_iter the maximum number of GMRES iterations.
      */
@@ -190,7 +193,10 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      *
      * @param[in] comm the communicator when running in parallel.
      *
-     * @param[in] gmres_tol the relative tolerance for the GMRES linear solve.
+     * @param[in] gmres_tol the relative tolerance for the GMRES linear solve;
+     * with several surfaces, the potential of a surface at the grid points
+     * of another is accurate to 0.1 gmres_tol (see
+     * BoundaryIntegralOp::SetupSingular()).
      *
      * @param[in] gmres_iter the maximum number of GMRES iterations.
      *

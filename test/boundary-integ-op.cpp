@@ -76,6 +76,74 @@ int main(int argc, char** argv) {
     res.Check("BoundaryIntegralOp: two surfaces with opposite orientations", err, 1e-4);
   }
 
+  { // BoundaryIntegralOp on two nested tori 0.1 apart, closer than the trapezoidal rule is accurate for (about 0.75
+    // toroidal grid spacings): the potential of each torus at the grid points of the other, against EvalOffSurface
+    const auto torus = [pi](const sctl::Long Nt, const sctl::Long Np, const Real r) {
+      biest::Surface<Real> S(Nt, Np, biest::SurfType::None);
+      for (sctl::Long t = 0; t < Nt; t++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          const Real phi = 2 * pi * t / Nt, theta = 2 * pi * p / Np;
+          const Real R = 1 + r * sctl::cos<Real>(theta) + 0.02 * sctl::cos<Real>(theta - 3 * phi);
+          S.Coord(t, p, 0) = R * sctl::cos<Real>(phi);
+          S.Coord(t, p, 1) = R * sctl::sin<Real>(phi);
+          S.Coord(t, p, 2) = r * sctl::sin<Real>(theta) - 0.02 * sctl::sin<Real>(theta - 3 * phi);
+        }
+      }
+      return S;
+    };
+    const auto density = [](const biest::Surface<Real>& S) { // 1 + x y + z
+      const sctl::Long N = S.NTor() * S.NPol();
+      sctl::Vector<Real> F(N);
+      for (sctl::Long i = 0; i < N; i++) F[i] = 1 + S.Coord()[0 * N + i] * S.Coord()[1 * N + i] + S.Coord()[2 * N + i];
+      return F;
+    };
+    sctl::Vector<biest::Surface<Real>> Svec(2);
+    Svec[0] = torus(60, 30, 0.3);
+    Svec[1] = torus(48, 24, 0.2);
+    const auto check = [&](const auto& ker, const char* name) {
+      constexpr sctl::Integer KDIM1 = std::decay_t<decltype(ker)>::Dim(1);
+      biest::BoundaryIntegralOp<Real,1,KDIM1,1,6,10> op(comm);
+      op.SetupSingular(Svec, ker);
+      sctl::Vector<Real> F, U;
+      for (const auto& S : Svec) for (const auto& f : density(S)) F.PushBack(f);
+      op(U, F);
+
+      sctl::Vector<Real> Uref; // for each surface t, its own potential and that of the other one, s
+      for (sctl::Long t = 0; t < 2; t++) {
+        const sctl::Long s = 1 - t;
+        sctl::Vector<biest::Surface<Real>> St(1), Ss(1);
+        St[0] = Svec[t];
+        Ss[0] = Svec[s];
+        biest::BoundaryIntegralOp<Real,1,KDIM1,1,6,10> op_t(comm), op_s(comm);
+        op_t.SetupSingular(St, ker);
+        op_s.SetupSingular(Ss, ker);
+        sctl::Vector<Real> U_t;
+        op_t(U_t, density(Svec[t]));
+        op_s.EvalOffSurface(U_t, Svec[t].Coord(), density(Svec[s]), ker, 1e-12);
+        for (const auto& u : U_t) Uref.PushBack(u);
+      }
+      res.Check((std::string("BoundaryIntegralOp: two tori 0.1 apart, ") + name + " = own + EvalOffSurface").c_str(), MaxRelDiff(U, Uref), 1e-9);
+
+      sctl::Vector<Real> F2, U2, U2ref; // two densities, F and 2 F, stacked surface by surface
+      sctl::Long offset = 0;
+      for (sctl::Long s = 0; s < 2; s++) {
+        const sctl::Long N = Svec[s].NTor() * Svec[s].NPol();
+        for (const Real a : {1, 2}) for (sctl::Long i = 0; i < N; i++) F2.PushBack(a * F[offset + i]);
+        offset += N;
+      }
+      op(U2, F2);
+      offset = 0;
+      for (sctl::Long t = 0; t < 2; t++) {
+        const sctl::Long M = KDIM1 * Svec[t].NTor() * Svec[t].NPol();
+        for (const Real a : {1, 2}) for (sctl::Long i = 0; i < M; i++) U2ref.PushBack(a * U[offset + i]);
+        offset += M;
+      }
+      res.Check((std::string("BoundaryIntegralOp: two tori 0.1 apart, ") + name + " of two stacked densities").c_str(), MaxRelDiff(U2, U2ref), 1e-10);
+    };
+    check(biest::Laplace3D<Real>::FxU(), "S[F]");
+    check(biest::Laplace3D<Real>::FxdU(), "grad S[F]");
+  }
+
   { // HedgehogOrder > 1 gives the one-sided limit from the interior
     const sctl::Long Nt = 120, Np = 60, N = Nt * Np;
     sctl::Vector<biest::Surface<Real>> Svec(1);

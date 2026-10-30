@@ -248,6 +248,23 @@ Warnings are printed if the grid does not resolve the surface, or the local inte
 density does not reach the requested accuracy. The
 targets must not lie on the surface.
 
+.. _algorithms-between-surfaces:
+
+Interactions between surfaces
+-----------------------------
+
+With several surfaces (a toroidal shell), ``BoundaryIntegralOp`` also computes the potential of each surface at the
+grid points of the others, which are off that surface. The trapezoidal rule on the grid of spacing :math:`h`
+(upsampled ``UPSAMPLE`` times) has an error of about :math:`e^{-2\pi d/h}` at a distance :math:`d` from the surface,
+with :math:`h` the larger of the two grid spacings. For a tolerance :math:`\epsilon` (an argument of
+``SetupSingular``), ``SetupSingular`` finds the targets within :math:`(\log(1/\epsilon)/(2\pi) + 1)\,h` of a grid
+point of the source surface, with the local :math:`h` of that point (the extra :math:`h` covers a target that is
+closer to the surface than to its grid points), and sets up off-surface evaluation (``OffSurfaceOp``, above) for them;
+the other targets keep the trapezoidal rule. The near targets cost more at each evaluation, as the panels have more
+nodes than the grid has points. The solvers use :math:`\epsilon = 0.1\,\mathtt{gmres\_tol}`, and the near
+evaluation needs a kernel of SCTL (``SctlKernelFunction``, as those of ``Laplace3D``, ``BiotSavart3D``,
+``Stokes3D`` and ``Helmholtz3D``); with another kernel all targets keep the trapezoidal rule.
+
 Hedgehog quadrature (``HedgehogOrder``)
 ---------------------------------------
 

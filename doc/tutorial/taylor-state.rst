@@ -83,6 +83,7 @@ Its optional last argument is the accuracy tolerance, ``1e-10`` by default. If t
 
 For the region between two nested surfaces, pass both surfaces, and both the toroidal and the poloidal flux.
 The two surfaces may have different grid resolutions; ``B`` holds the field on both grids, one after the other.
+They may also be close to each other: the field of each surface at the grid points of the other is computed with the trapezoidal rule where it is accurate to ``0.1*gmres_tol``, and closer to the surface by the quadrature of off-surface evaluation (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`).
 This is from ``doc/examples/taylor-state-shell.cpp``:
 
 .. literalinclude:: ../examples/taylor-state-shell.cpp
@@ -98,9 +99,36 @@ The program also evaluates the field at a point inside the shell, and prints (th
    B.Dim() = 24336 = 3 * (104 * 52 + 104 * 26)
    B(2.5, 0, 0) = -3.13866e-13 0.474928 -0.110743
 
+.. _tutorial-repeated-solves:
+
+6. Repeated solves
+------------------
+
+The static ``Compute`` sets up the boundary integral operators for each call, and frees them at its end.
+A code that solves again and again, for example in an optimization of the surface, can instead construct a ``VacuumField`` or ``TaylorState`` object, with the communicator, and call its ``Compute``, which takes the same arguments without the communicator.
+The object keeps the operators, and the vectors of the solve, from one call to the next: a later call sets them up for the surfaces it is given in the memory of the earlier one, as long as the surfaces have no more grid points, rather than allocating that memory again and page faulting it in.
+This is from ``doc/examples/repeated-solves.cpp``:
+
+.. literalinclude:: ../examples/repeated-solves.cpp
+   :language: c++
+   :start-at: biest::VacuumField<Real,1,10,20> vacuum_field(comm);
+   :end-at: taylor_state.Compute(B1,
+   :dedent: 2
+
+which prints
+
+.. code-block:: text
+
+   a = 0.25: max |B| = 7.6027 (vacuum field), 7.55885 (Taylor state)
+   a = 0.3: max |B| = 5.74349 (vacuum field), 5.70378 (Taylor state)
+   a = 0.35: max |B| = 4.62369 (vacuum field), 4.58679 (Taylor state)
+
+The memory held by an object is mostly that of the singular corrections: 13 and 28 times :math:`(2\,\mathtt{PATCH\_DIM0}+1)^2` values for each grid point for ``VacuumField`` and ``TaylorState``.
+An object must not be shared by threads that call ``Compute`` at the same time.
+
 .. _tutorial-quadrature-params:
 
-6. Choosing the quadrature parameters
+7. Choosing the quadrature parameters
 -------------------------------------
 
 The template parameters ``<Real, UPSAMPLE, PATCH_DIM0, RAD_DIM>`` set the singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`).

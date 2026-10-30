@@ -23,6 +23,7 @@ For the method see :ref:`Singular quadrature <algorithms-singular-quadrature>`, 
 
 The template parameters are the number of components of the density and of the potential (which must match the kernel), and the quadrature parameters (see :ref:`choosing the quadrature parameters <tutorial-quadrature-params>`).
 ``SetupSingular`` takes the vector of surfaces and the kernel, and precomputes the singular corrections.
+With several surfaces, the potential of each surface at the grid points of the others is the trapezoidal rule, except at the grid points too close to the surface for it, where it is computed as by ``EvalOffSurface``, to the tolerance given as the last argument of ``SetupSingular`` (``1e-10`` by default; see :ref:`Interactions between surfaces <algorithms-between-surfaces>`).
 The code on this page is from the :ref:`virtual casing example <tutorial-virtual-casing>` below, which uses the layer potentials of the Biot--Savart kernel (3 density components, 3 potential components) and of the gradient of the Laplace single layer (1 density component, 3 potential components):
 
 .. literalinclude:: ../examples/layer-potentials.cpp

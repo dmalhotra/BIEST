@@ -109,6 +109,27 @@ int main(int argc, char** argv) {
     res.Check("TaylorState (lambda = 1), one surface: toroidal flux = tor_flux", sctl::fabs<Real>(toroidal_flux(Btrg, W) - 1), 1e-3);
   }
 
+  { // An object keeps its operators from one call to the next, also when the surface changes: the fields of the static
+    // Compute(), for a surface, then a smaller one (set up in the memory of the first), then the first again
+    VacuumField vacuum_field(comm);
+    TaylorState taylor_state(comm);
+    const biest::Surface<Real> S[3] = {torus(Nt, Np, outer), torus(48, 24, inner), torus(Nt, Np, outer)};
+    Real err_vacuum = 0, err_taylor = 0;
+    for (const auto& S_ : S) {
+      sctl::Vector<biest::Surface<Real>> Svec(1);
+      Svec[0] = S_;
+      sctl::Vector<Real> B0, J0, B1, J1;
+      VacuumField::Compute(B0, J0, 1.0, 0.0, Svec, comm, gmres_tol, gmres_iter);
+      vacuum_field.Compute(B1, J1, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
+      err_vacuum = std::max(err_vacuum, MaxRelDiff(B1, B0));
+      TaylorState::Compute(B0, 1.0, 0.0, 1.0, Svec, comm, gmres_tol, gmres_iter);
+      taylor_state.Compute(B1, 1.0, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
+      err_taylor = std::max(err_taylor, MaxRelDiff(B1, B0));
+    }
+    res.Check("VacuumField object over 3 surfaces: B = static Compute()", err_vacuum, 1e-8);
+    res.Check("TaylorState object over 3 surfaces: B = static Compute()", err_taylor, 1e-8);
+  }
+
   { // Shell: VacuumField(tor_flux, pol_flux) is the limit lambda -> 0 of TaylorState(-tor_flux, -pol_flux)
     sctl::Vector<biest::Surface<Real>> Svec(2);
     Svec[0] = torus(Nt, Np, outer);

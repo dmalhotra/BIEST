@@ -43,10 +43,16 @@ namespace detail_bie_solvers {
 
 }
 
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::VacuumField(const sctl::Comm& comm) : comm_(comm), BI_biot_savart_(comm), BI_lap_grad_(comm), BI_laplace_(comm) {}
+
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
+      VacuumField(comm).Compute(B, J, tor_flux, pol_flux, Svec, gmres_tol, gmres_iter);
+    }
+
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter) {
       sctl::Vector<sctl::Vector<Real>> B_, J_;
       sctl::Vector<Real> tor_flux_, pol_flux_;
-      ComputeHelper(B_, J_, tor_flux_, pol_flux_, Svec, comm, gmres_tol, gmres_iter);
+      ComputeHelper(B_, J_, tor_flux_, pol_flux_, Svec, comm_, gmres_tol, gmres_iter);
       if (Svec.Dim() == 1) {
         B = B_[0] * tor_flux / tor_flux_[0];
         J = J_[0] * tor_flux / tor_flux_[0];
@@ -124,9 +130,9 @@ namespace detail_bie_solvers {
       const auto& ker_laplace = Laplace3D<Real>::FxU();
       const auto& ker_lap_grad = Laplace3D<Real>::FxdU();
       const auto& ker_biot_savart = BiotSavart3D<Real>::FxU();
-      BoundaryIntegralOp<Real,3,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_biot_savart(comm);
-      BoundaryIntegralOp<Real,1,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_lap_grad(comm);
-      BoundaryIntegralOp<Real,1,1,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_laplace(comm);
+      auto& BI_biot_savart = BI_biot_savart_; // the operators of the object: see VacuumField()
+      auto& BI_lap_grad = BI_lap_grad_;
+      auto& BI_laplace = BI_laplace_;
       BI_biot_savart.SetupSingular(Svec, ker_biot_savart);
       BI_lap_grad.SetupSingular(Svec, ker_lap_grad);
       BI_laplace.SetupSingular(Svec, ker_laplace);
@@ -231,9 +237,11 @@ namespace detail_bie_solvers {
           }
         }
       };
-      typename sctl::GMRES<Real>::ParallelOp fn = [&eval_B,&eval_BdotXn](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& F) {
+      typename sctl::GMRES<Real>::ParallelOp fn = [&eval_B,&eval_BdotXn,&BI_lap_grad](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& F) {
         SCTL_ASSERT(BdotXn);
-        sctl::Vector<Real> B;
+        sctl::ScratchBuf<Real> B_buf(BI_lap_grad.Dim(1)); // in scratch memory: see SurfaceOp::SurfGrad
+        sctl::Vector<Real> B(B_buf);
+        B = 0; // eval_B adds to a B of this size
         eval_B(B, F);
         eval_BdotXn(*BdotXn, B);
       };
@@ -387,9 +395,15 @@ namespace detail_bie_solvers {
 
 
 
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::TaylorState(const sctl::Comm& comm) : comm_(comm), BI_grad_diff_(comm), BI_grad_(comm), BI_potn_(comm) {}
+
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
+      TaylorState(comm).Compute(B_out, tor_flux, pol_flux, lambda, Svec, gmres_tol, gmres_iter, LB_tol, m, sigma);
+    }
+
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
       sctl::Vector<sctl::Vector<Real>> B, m_, sigma_;
-      ComputeHelper(B, m_, sigma_, lambda, Svec, comm, gmres_tol, gmres_iter, LB_tol);
+      ComputeHelper(B, m_, sigma_, lambda, Svec, comm_, gmres_tol, gmres_iter, LB_tol);
       if (B.Dim() > 0) B_out = B[0] * tor_flux;
       if (B.Dim() > 1) B_out += B[1] * pol_flux;
       if (m && sigma) {
@@ -503,7 +517,7 @@ namespace detail_bie_solvers {
         sctl::Vector<sctl::Vector<Real>> B_taylor;
         { // Set B_taylor
           sctl::Vector<sctl::Vector<Real>> B, m, sigma;
-          ComputeHelper(B, m, sigma, lambda, Svec, comm, gmres_tol, gmres_iter);
+          TaylorState(comm).ComputeHelper(B, m, sigma, lambda, Svec, comm, gmres_tol, gmres_iter);
           auto append_imag_part = [&SurfDim,&SurfDsp] (sctl::Vector<Real>& w, const sctl::Vector<Real>& v) {
             sctl::Long Nsurf = SurfDim.Dim();
             SCTL_ASSERT(SurfDsp.Dim() == Nsurf);
@@ -575,13 +589,14 @@ namespace detail_bie_solvers {
               sctl::Long N= Nt * Np;
 
               SurfaceOp<Real> surf_op(comm, Nt, Np);
+              sctl::ScratchBuf<Real> GradInvLapSigma_buf(2 * COORD_DIM * N); // in scratch memory: see SurfaceOp::SurfGrad
               sctl::StaticArray<sctl::Vector<Real>, 2> GradInvLapSigma;
               for (sctl::Long k = 0; k < 2; k++) { // Set GradInvLapSigma <-- Grad(invLap(sigma))
+                GradInvLapSigma[k].ReInit(COORD_DIM * N, GradInvLapSigma_buf.begin() + k * COORD_DIM * N, false);
                 const sctl::Vector<Real> sigma__(N, (sctl::Iterator<Real>)sigma_.begin() + k * N, false);
                 if (max_norm(sigma__) > 0) {
                   surf_op.GradInvSurfLap(GradInvLapSigma[k], dX[i], sigma__, gmres_tol, gmres_iter, 1.5);
                 } else {
-                  GradInvLapSigma[k].ReInit(COORD_DIM * N);
                   GradInvLapSigma[k].SetZero();
                 }
               }
@@ -696,18 +711,24 @@ namespace detail_bie_solvers {
           sctl::Long Nsurf = SurfDim.Dim();
           SCTL_ASSERT(SurfDsp.Dim() == Nsurf);
           sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
+          const sctl::Long N6 = COORD_DIM * 2 * N;
 
+          // The temporaries in scratch memory (see SurfaceOp::SurfGrad), as GMRES calls this at every iteration. m: m0 +
+          // mH, else the one of them given
+          sctl::ScratchBuf<Real> m_buf(m0.Dim() && mH.Dim() ? m0.Dim() : 0);
           sctl::Vector<Real> m;
           if (m0.Dim() && mH.Dim()) {
             SCTL_ASSERT(m0.Dim() == mH.Dim());
-            m = m0 + mH;
+            m.ReInit(m_buf.size(), m_buf.begin(), false);
+            for (sctl::Long i = 0; i < m.Dim(); i++) m[i] = m0[i] + mH[i];
           } else if (m0.Dim()) {
-            m = m0;
+            m.ReInit(m0.Dim(), (sctl::Iterator<Real>)m0.begin(), false);
           } else if (mH.Dim()) {
-            m = mH;
+            m.ReInit(mH.Dim(), (sctl::Iterator<Real>)mH.begin(), false);
           }
 
-          sctl::Vector<Real> Grad_v, iQ, iCurlQ, iCurlQ_m0, iCurlQ_mH;
+          sctl::ScratchBuf<Real> Grad_v_buf(B && sigma.Dim() ? N6 : 0), iQ_buf(m.Dim() ? N6 : 0), iCurlQ_buf(B && m.Dim() ? N6 : 0), iCurlQ_m0_buf(B_flux && m0.Dim() ? N6 : 0), iCurlQ_mH_buf(B_flux && mH.Dim() ? N6 : 0);
+          sctl::Vector<Real> Grad_v(Grad_v_buf), iQ(iQ_buf), iCurlQ(iCurlQ_buf), iCurlQ_m0(iCurlQ_m0_buf), iCurlQ_mH(iCurlQ_mH_buf);
           if (B && sigma.Dim()) { // Compute Grad_v
             sctl::Profile::Tic("Compute_Grad_v", &comm);
             Compute_Grad_v(Grad_v, sigma, BI_grad, ker_grad);
@@ -731,27 +752,26 @@ namespace detail_bie_solvers {
           }
 
           if (B_flux) { // B_flux <-- iQ*lambda + iCurlQ_mH + iCurlQ_m0 + 0.5*m0
-            (*B_flux).ReInit(COORD_DIM * 2 * N);
+            if (B_flux->Dim() != N6) B_flux->ReInit(N6);
             (*B_flux) = 0;
-            if (m .Dim()) (*B_flux) += iQ*lambda;
-            if (mH.Dim()) (*B_flux) += iCurlQ_mH;
-            if (m0.Dim()) (*B_flux) += iCurlQ_m0 + m0*(0.5);
+            if (m .Dim()) for (sctl::Long i = 0; i < N6; i++) (*B_flux)[i] += iQ[i]*lambda;
+            if (mH.Dim()) for (sctl::Long i = 0; i < N6; i++) (*B_flux)[i] += iCurlQ_mH[i];
+            if (m0.Dim()) for (sctl::Long i = 0; i < N6; i++) (*B_flux)[i] += iCurlQ_m0[i] + m0[i]*(Real)0.5;
           }
           if (B) { // B <-- -0.5*sigma_Xn - Grad_v + iQ*lambda + iCurlQ + 0.5*m
-            (*B).ReInit(COORD_DIM * 2 * N);
+            if (B->Dim() != N6) B->ReInit(N6);
             (*B) = 0;
-            if (m.Dim()) (*B) += iQ*lambda + iCurlQ + m*(0.5);
+            if (m.Dim()) for (sctl::Long i = 0; i < N6; i++) (*B)[i] += iQ[i]*lambda + iCurlQ[i] + m[i]*(Real)0.5;
             if (sigma.Dim()) { // B <-- B - 0.5*sigma_Xn - Grad_v
-              sctl::Vector<Real> sigma_Xn(COORD_DIM * 2 * N);
               for (sctl::Long i = 0; i < Nsurf; i++) {
                 for (sctl::Long k = 0; k < COORD_DIM; k++) {
                   for (sctl::Long j = 0; j < SurfDim[i]; j++) {
-                    sigma_Xn[COORD_DIM * 2 * SurfDsp[i] + (k*2+0) * SurfDim[i] + j] = Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 0 * SurfDim[i] + j];
-                    sigma_Xn[COORD_DIM * 2 * SurfDsp[i] + (k*2+1) * SurfDim[i] + j] = Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 1 * SurfDim[i] + j];
+                    const sctl::Long idx0 = COORD_DIM * 2 * SurfDsp[i] + (k*2+0) * SurfDim[i] + j, idx1 = idx0 + SurfDim[i];
+                    (*B)[idx0] += (Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 0 * SurfDim[i] + j])*(Real)(-0.5) - Grad_v[idx0];
+                    (*B)[idx1] += (Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 1 * SurfDim[i] + j])*(Real)(-0.5) - Grad_v[idx1];
                   }
                 }
               }
-              (*B) += sigma_Xn*(-0.5) - Grad_v;
             }
           }
         };
@@ -782,7 +802,8 @@ namespace detail_bie_solvers {
           sctl::GMRES<Real> solver(comm, true);
           typename sctl::GMRES<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
             SCTL_ASSERT(BdotXn);
-            sctl::Vector<Real> m, B;
+            sctl::ScratchBuf<Real> m_buf(COORD_DIM * sigma.Dim()), B_buf(COORD_DIM * sigma.Dim()); // see SurfaceOp::SurfGrad
+            sctl::Vector<Real> m(m_buf), B(B_buf);
             sctl::Profile::Tic("Compute_B", &comm);
             Compute_m(m, sigma, gmres_tol / lambda * LB_tol, gmres_iter);
             Compute_B(&B, nullptr, sigma, m, sctl::Vector<Real>());
@@ -1018,7 +1039,8 @@ namespace detail_bie_solvers {
       if (iCurlQ.Dim() != COORD_DIM * 2 * N) iCurlQ.ReInit(COORD_DIM * 2 * N);
       SCTL_ASSERT(m.Dim() == COORD_DIM * 2 * N);
 
-      sctl::Vector<Real> GradQ_(COORD_DIM * COORD_DIM * 2 * N);
+      sctl::ScratchBuf<Real> GradQ_buf(COORD_DIM * COORD_DIM * 2 * N); // in scratch memory: see SurfaceOp::SurfGrad
+      sctl::Vector<Real> GradQ_(GradQ_buf);
       GradQ_ = 0;
       BI_grad(GradQ_, m);
 
@@ -1073,9 +1095,9 @@ namespace detail_bie_solvers {
       const auto& ker_potn = helm.FxU();
       const auto& ker_grad = helm.FxdU();
       const auto& ker_grad_diff = helm_diff.FxdU();
-      BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_diff(comm);
-      BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad(comm);
-      BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_potn(comm);
+      auto& BI_grad_diff = BI_grad_diff_; // the operators of the object: see TaylorState()
+      auto& BI_grad = BI_grad_;
+      auto& BI_potn = BI_potn_;
       BI_grad_diff.SetupSingular(Svec, ker_grad_diff);
       BI_grad.SetupSingular(Svec, ker_grad);
       BI_potn.SetupSingular(Svec, ker_potn);
@@ -1098,13 +1120,14 @@ namespace detail_bie_solvers {
             sctl::Long N= Nt * Np;
 
             SurfaceOp<Real> surf_op(comm, Nt, Np);
+            sctl::ScratchBuf<Real> GradInvLapSigma_buf(2 * COORD_DIM * N); // in scratch memory: see SurfaceOp::SurfGrad
             sctl::StaticArray<sctl::Vector<Real>, 2> GradInvLapSigma;
             for (sctl::Long k = 0; k < 2; k++) { // Set GradInvLapSigma <-- Grad(invLap(sigma))
+              GradInvLapSigma[k].ReInit(COORD_DIM * N, GradInvLapSigma_buf.begin() + k * COORD_DIM * N, false);
               const sctl::Vector<Real> sigma__(N, (sctl::Iterator<Real>)sigma_.begin() + k * N, false);
               if (max_norm(sigma__) > 0) {
                 surf_op.GradInvSurfLap(GradInvLapSigma[k], dX[i], sigma__, gmres_tol, gmres_iter, 1.5);
               } else {
-                GradInvLapSigma[k].ReInit(COORD_DIM * N);
                 GradInvLapSigma[k].SetZero();
               }
             }
@@ -1221,18 +1244,24 @@ namespace detail_bie_solvers {
         sctl::Long Nsurf = SurfDim.Dim();
         SCTL_ASSERT(SurfDsp.Dim() == Nsurf);
         sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
+        const sctl::Long N6 = COORD_DIM * 2 * N;
 
+        // The temporaries in scratch memory (see SurfaceOp::SurfGrad), as GMRES calls this at every iteration. m: m0 +
+        // mH, else the one of them given
+        sctl::ScratchBuf<Real> m_buf(m0.Dim() && mH.Dim() ? m0.Dim() : 0);
         sctl::Vector<Real> m;
         if (m0.Dim() && mH.Dim()) {
           SCTL_ASSERT(m0.Dim() == mH.Dim());
-          m = m0 + mH;
+          m.ReInit(m_buf.size(), m_buf.begin(), false);
+          for (sctl::Long i = 0; i < m.Dim(); i++) m[i] = m0[i] + mH[i];
         } else if (m0.Dim()) {
-          m = m0;
+          m.ReInit(m0.Dim(), (sctl::Iterator<Real>)m0.begin(), false);
         } else if (mH.Dim()) {
-          m = mH;
+          m.ReInit(mH.Dim(), (sctl::Iterator<Real>)mH.begin(), false);
         }
 
-        sctl::Vector<Real> Grad_v, iQ, iCurlQ, iCurlQ_m0, iCurlQ_mH;
+        sctl::ScratchBuf<Real> Grad_v_buf(B && sigma.Dim() ? N6 : 0), iQ_buf(m.Dim() ? N6 : 0), iCurlQ_buf(B && m.Dim() ? N6 : 0), iCurlQ_m0_buf(B_flux && m0.Dim() ? N6 : 0), iCurlQ_mH_buf(B_flux && mH.Dim() ? N6 : 0);
+        sctl::Vector<Real> Grad_v(Grad_v_buf), iQ(iQ_buf), iCurlQ(iCurlQ_buf), iCurlQ_m0(iCurlQ_m0_buf), iCurlQ_mH(iCurlQ_mH_buf);
         if (B && sigma.Dim()) { // Compute Grad_v
           sctl::Profile::Tic("Compute_Grad_v", &comm);
           Compute_Grad_v(Grad_v, sigma, BI_grad, ker_grad);
@@ -1256,27 +1285,26 @@ namespace detail_bie_solvers {
         }
 
         if (B_flux) { // B_flux <-- iQ*lambda + iCurlQ_mH + iCurlQ_m0 + 0.5*m0
-          (*B_flux).ReInit(COORD_DIM * 2 * N);
+          if (B_flux->Dim() != N6) B_flux->ReInit(N6);
           (*B_flux) = 0;
-          if (m .Dim()) (*B_flux) += iQ*lambda;
-          if (mH.Dim()) (*B_flux) += iCurlQ_mH;
-          if (m0.Dim()) (*B_flux) += iCurlQ_m0 + m0*(0.5);
+          if (m .Dim()) for (sctl::Long i = 0; i < N6; i++) (*B_flux)[i] += iQ[i]*lambda;
+          if (mH.Dim()) for (sctl::Long i = 0; i < N6; i++) (*B_flux)[i] += iCurlQ_mH[i];
+          if (m0.Dim()) for (sctl::Long i = 0; i < N6; i++) (*B_flux)[i] += iCurlQ_m0[i] + m0[i]*(Real)0.5;
         }
         if (B) { // B <-- -0.5*sigma_Xn - Grad_v + iQ*lambda + iCurlQ + 0.5*m
-          (*B).ReInit(COORD_DIM * 2 * N);
+          if (B->Dim() != N6) B->ReInit(N6);
           (*B) = 0;
-          if (m.Dim()) (*B) += iQ*lambda + iCurlQ + m*(0.5);
+          if (m.Dim()) for (sctl::Long i = 0; i < N6; i++) (*B)[i] += iQ[i]*lambda + iCurlQ[i] + m[i]*(Real)0.5;
           if (sigma.Dim()) { // B <-- B - 0.5*sigma_Xn - Grad_v
-            sctl::Vector<Real> sigma_Xn(COORD_DIM * 2 * N);
             for (sctl::Long i = 0; i < Nsurf; i++) {
               for (sctl::Long k = 0; k < COORD_DIM; k++) {
                 for (sctl::Long j = 0; j < SurfDim[i]; j++) {
-                  sigma_Xn[COORD_DIM * 2 * SurfDsp[i] + (k*2+0) * SurfDim[i] + j] = Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 0 * SurfDim[i] + j];
-                  sigma_Xn[COORD_DIM * 2 * SurfDsp[i] + (k*2+1) * SurfDim[i] + j] = Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 1 * SurfDim[i] + j];
+                  const sctl::Long idx0 = COORD_DIM * 2 * SurfDsp[i] + (k*2+0) * SurfDim[i] + j, idx1 = idx0 + SurfDim[i];
+                  (*B)[idx0] += (Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 0 * SurfDim[i] + j])*(Real)(-0.5) - Grad_v[idx0];
+                  (*B)[idx1] += (Xn[i][k * SurfDim[i] + j] * sigma[2 * SurfDsp[i] + 1 * SurfDim[i] + j])*(Real)(-0.5) - Grad_v[idx1];
                 }
               }
             }
-            (*B) += sigma_Xn*(-0.5) - Grad_v;
           }
         }
       };
@@ -1307,7 +1335,8 @@ namespace detail_bie_solvers {
         sctl::GMRES<Real> solver(comm, true);
         typename sctl::GMRES<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
           SCTL_ASSERT(BdotXn);
-          sctl::Vector<Real> m, B;
+          sctl::ScratchBuf<Real> m_buf(COORD_DIM * sigma.Dim()), B_buf(COORD_DIM * sigma.Dim()); // see SurfaceOp::SurfGrad
+          sctl::Vector<Real> m(m_buf), B(B_buf);
           sctl::Profile::Tic("Compute_B", &comm);
           Compute_m(m, sigma, gmres_tol / lambda * LB_tol, gmres_iter);
           Compute_B(&B, nullptr, sigma, m, sctl::Vector<Real>());

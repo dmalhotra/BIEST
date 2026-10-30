@@ -33,6 +33,25 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
   public:
 
     /**
+     * An object of this class keeps the boundary integral operators of Compute() from one call to the next: a later
+     * call sets them up again, for the surfaces it is given, in the memory of the earlier one when the surfaces have
+     * no more grid points, rather than allocating and page faulting that memory again. That memory, the singular
+     * corrections of the operators, is 13 (2 PATCH_DIM0 + 1)^2 values for each grid point, held until the object is
+     * destroyed.
+     *
+     * @param[in] comm the communicator when running in parallel.
+     */
+    explicit VacuumField(const sctl::Comm& comm = sctl::Comm::Self());
+
+    VacuumField(const VacuumField&) = delete;
+    VacuumField& operator=(const VacuumField&) = delete;
+
+    /**
+     * As the static Compute() below, with the communicator and the operators of the object.
+     */
+    void Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter);
+
+    /**
      * Compute the vacuum magnetic field (curl B = 0, div B = 0, B.n = 0) in the
      * region enclosed by the surfaces, on the surface grid points, and the
      * surface current which produces this field.
@@ -98,7 +117,12 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
 
     static Real max_norm(const sctl::Vector<Real>& x);
 
-    static void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter);
+    void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter);
+
+    sctl::Comm comm_;
+    BoundaryIntegralOp<Real,3,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_biot_savart_;
+    BoundaryIntegralOp<Real,1,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_lap_grad_;
+    BoundaryIntegralOp<Real,1,1,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_laplace_;
 };
 
 /**
@@ -120,6 +144,25 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     static constexpr sctl::Integer COORD_DIM = 3;
 
   public:
+
+    /**
+     * An object of this class keeps the boundary integral operators of Compute() from one call to the next: a later
+     * call sets them up again, for the surfaces it is given, in the memory of the earlier one when the surfaces have
+     * no more grid points, rather than allocating and page faulting that memory again. That memory, the singular
+     * corrections of the operators, is 28 (2 PATCH_DIM0 + 1)^2 values for each grid point, held until the object is
+     * destroyed.
+     *
+     * @param[in] comm the communicator when running in parallel.
+     */
+    explicit TaylorState(const sctl::Comm& comm = sctl::Comm::Self());
+
+    TaylorState(const TaylorState&) = delete;
+    TaylorState& operator=(const TaylorState&) = delete;
+
+    /**
+     * As the static Compute() below, with the communicator and the operators of the object.
+     */
+    void Compute(sctl::Vector<Real>& B, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1, sctl::Vector<sctl::Vector<Real>>* m = nullptr, sctl::Vector<sctl::Vector<Real>>* sigma = nullptr);
 
     /**
      * Compute the Taylor state (curl B = lambda B, B.n = 0) in the region
@@ -210,7 +253,12 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     static void Compute_iQ(sctl::Vector<Real>& iQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_potn, const KernelFunction<Real,COORD_DIM,2,2>& ker_potn, Real lambda); // iQ <-- i g[m]
     static void Compute_iCurlQ(sctl::Vector<Real>& iCurlQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // iCurlQ <-- i Curl(g[m])
 
-    static void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1);
+    void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1);
+
+    sctl::Comm comm_;
+    BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_diff_;
+    BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_;
+    BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_potn_;
 };
 
 }

@@ -253,7 +253,7 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] max_iter the maximum number of GMRES iterations.
      */
-    void InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> LeftPrecond, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1) const;
+    void InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& LeftPrecond, const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1) const;
 
     /**
      * Evaluate the potential from a given surface density at target point by
@@ -399,10 +399,20 @@ template <class Real> class SurfaceOp {
     static Real max_norm(const sctl::Vector<Real>& x);
 
     /**
-     * Returns the preconditioner of InvSurfLap() and GradInvSurfLap() on an Nt_ x Np_ grid with derivatives dX: the
-     * inverse of the Laplacian in the grid parameters, scaled by the mean lengths of the grid lines, in Fourier space.
+     * The preconditioner of InvSurfLap() and GradInvSurfLap() on an Nt x Np grid: the inverse of the Laplacian in the
+     * grid parameters, scaled by the mean lengths of the grid lines (1 / invLt2 and 1 / invLp2 their squares, in grid
+     * spacings), in Fourier space.
      */
-    static std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_);
+    struct SpectralInvLapOp {
+      sctl::Long Nt, Np;
+      Real invLt2, invLp2;
+      void operator()(sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) const;
+    };
+
+    /**
+     * Returns SpectralInvLapOp on an Nt_ x Np_ grid with derivatives dX.
+     */
+    static SpectralInvLapOp SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_);
 
     void LaplaceBeltramiReference(sctl::Vector<Real>& f0, sctl::Vector<Real>& u0, const sctl::Vector<Real>& X, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X) const;
 

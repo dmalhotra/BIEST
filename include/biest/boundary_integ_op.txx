@@ -45,7 +45,7 @@ namespace biest {
       for (sctl::Long i = 0; i < Nsurf; i++) {
         const auto& S = Svec[i];
         const sctl::Long Nsrc0 = S.NTor() * S.NPol();
-        const sctl::Vector<Real> Xsrc0 = S.Coord();
+        const sctl::Vector<Real>& Xsrc0 = S.Coord();
 
         { // Set Xtrg
           const sctl::Long Ntrg = trg_idx[i].Dim();
@@ -89,12 +89,18 @@ namespace biest {
         U = 0;
       }
 
-      sctl::Vector<Real> Fsrc;
       sctl::Long SrcOffset = 0, SingularTrgOffset = 0;
       for (sctl::Long s = 0; s < Xsrc.Dim(); s++) {
         const sctl::Vector<Real> F_(dof * ker_ptr->Dim(0) * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + dof * ker_ptr->Dim(0) * SrcOffset, false);
-        if (UPSAMPLE == 1) Fsrc.ReInit(F_.Dim(), (sctl::Iterator<Real>)F_.begin(), false); // the same grid: F_ itself
-        else Upsample(F_, Fsrc, Nt0[s], Np0[s]);
+        // Fsrc: on the same grid F_ itself, else F_ upsampled, in scratch memory as the solvers call this at every
+        // iteration (see SurfaceOp::SurfGrad)
+        sctl::ScratchBuf<Real> Fsrc_buf(UPSAMPLE == 1 ? 0 : F_.Dim() * UPSAMPLE * UPSAMPLE);
+        sctl::Vector<Real> Fsrc;
+        if (UPSAMPLE == 1) Fsrc.ReInit(F_.Dim(), (sctl::Iterator<Real>)F_.begin(), false);
+        else {
+          Fsrc.ReInit(Fsrc_buf.size(), Fsrc_buf.begin(), false);
+          Upsample(F_, Fsrc, Nt0[s], Np0[s]);
+        }
 
         sctl::Long TrgOffset = 0;
         for (sctl::Long t = 0; t < Xtrg.Dim(); t++) {

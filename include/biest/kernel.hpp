@@ -117,12 +117,7 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
       if (matfn) {
         matfn(r_src, n_src, r_trg, M, ctx);
       } else { // one kerfn call per (source, source-DOF) pair
-        sctl::Integer omp_p = omp_get_max_threads();
-        #pragma omp parallel for schedule(static)
-        for (sctl::Integer tid = 0; tid < omp_p; tid++) {
-          sctl::Long s0 = (tid + 0) * Ns / omp_p;
-          sctl::Long s1 = (tid + 1) * Ns / omp_p;
-
+        auto src_range = [&](const sctl::Long s0, const sctl::Long s1) {
           sctl::StaticArray<Real,COORD_DIM> r_src0_;
           sctl::StaticArray<Real,COORD_DIM> n_src0_;
           sctl::StaticArray<Real,   Dim(0)> f_src0_;
@@ -144,6 +139,13 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
               f_src0[k] = 0;
             }
           }
+        };
+        if (SCTL_IN_PARALLEL()) { // serial: a nested parallel region allocates its team (see SctlKernelFunction::BuildMatrix)
+          src_range(0, Ns);
+        } else {
+          const sctl::Integer omp_p = omp_get_max_threads();
+          #pragma omp parallel for schedule(static)
+          for (sctl::Integer tid = 0; tid < omp_p; tid++) src_range((tid + 0) * Ns / omp_p, (tid + 1) * Ns / omp_p);
         }
       }
       sctl::Profile::IncrementCounter(sctl::ProfileCounter::FLOP, Ns * Nt * cost);
@@ -241,8 +243,7 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
         for (sctl::Long i = Ns; i < NNs; i++) Xn[k][i] = 0;
       }
 
-      #pragma omp parallel for schedule(static)
-      for (sctl::Long s = 0; s < NNs; s += Nv) {
+      auto src_blk = [&](sctl::Long s) {
         RealVec xs[COORD_DIM], ns[NDIM_], dX[COORD_DIM], U[KDIM0][KDIM1];
         for (sctl::Integer k = 0; k < COORD_DIM; k++) xs[k] = RealVec::LoadAligned(&Xs[k][s]);
         for (sctl::Integer k = 0; k < NDIM; k++) ns[k] = RealVec::LoadAligned(&Xn[k][s]);
@@ -259,6 +260,15 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
             }
           }
         }
+      };
+
+      // Serial inside a parallel region: a nested one, even of one thread, allocates its team (libgomp), and
+      // SingularCorrection::Setup calls this twice for each target from a parallel loop
+      if (SCTL_IN_PARALLEL()) {
+        for (sctl::Long s = 0; s < NNs; s += Nv) src_blk(s);
+      } else {
+        #pragma omp parallel for schedule(static)
+        for (sctl::Long s = 0; s < NNs; s += Nv) src_blk(s);
       }
     }
 

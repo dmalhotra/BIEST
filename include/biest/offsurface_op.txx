@@ -107,13 +107,15 @@ namespace detail_offsurf {
    */
   template <class Real> const sctl::Vector<Real>& ModeErrors(const sctl::Integer p, const sctl::Long n, const sctl::Long Nk) {
     using Key = std::tuple<sctl::Integer, sctl::Long, sctl::Long>;
-    static auto* cache = new std::map<Key, std::unique_ptr<sctl::Vector<Real>>>(); // never freed, like the FFT plans
+    // Destroyed at exit before the memory manager of SCTL, which is constructed first: LocalUpsample, the caller, has
+    // allocated (the matrix of values it estimates from)
+    static std::map<Key, std::unique_ptr<sctl::Vector<Real>>> cache;
     const Key key(p, n, Nk);
     const sctl::Vector<Real>* err = nullptr;
     #pragma omp critical(BIEST_ModeErrors)
     {
-      const auto it = cache->find(key);
-      if (it != cache->end()) err = it->second.get();
+      const auto it = cache.find(key);
+      if (it != cache.end()) err = it->second.get();
     }
     if (err) return *err;
     std::unique_ptr<sctl::Vector<Real>> err_(new sctl::Vector<Real>(Nk));
@@ -121,7 +123,7 @@ namespace detail_offsurf {
     for (sctl::Long k = 0; k < Nk; k++) (*err_)[k] = LocalModeError<Real>(p, 2 * sctl::const_pi<Real>() * k / n);
     #pragma omp critical(BIEST_ModeErrors)
     {
-      auto& entry = (*cache)[key];
+      auto& entry = cache[key];
       if (!entry) entry = std::move(err_);
       err = entry.get();
     }

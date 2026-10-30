@@ -130,6 +130,32 @@ int main(int argc, char** argv) {
     res.Check("TaylorState object over 3 surfaces: B = static Compute()", err_taylor, 1e-8);
   }
 
+  { // Field periods: the tori have 5 (delta cos(theta - 5 phi)); declared, the solve is on one of them, and the fields
+    // are those of the solve on the full tori, for one surface and for a shell
+    const sctl::Long Nt5 = 80; // a multiple of 5
+    for (const sctl::Long Nsurf : {1, 2}) {
+      sctl::Vector<biest::Surface<Real>> Svec(Nsurf), Svec5(Nsurf);
+      Svec[0] = torus(Nt5, Np, outer);
+      if (Nsurf == 2) Svec[1] = torus(Nt5, Np, inner);
+      for (sctl::Long i = 0; i < Nsurf; i++) {
+        Svec5[i] = Svec[i];
+        Svec5[i].SetNFP(5);
+      }
+      sctl::Vector<Real> B, J, B5, J5;
+      VacuumField::Compute(B, J, 1.0, 0.5, Svec, comm, gmres_tol, gmres_iter);
+      VacuumField::Compute(B5, J5, 1.0, 0.5, Svec5, comm, gmres_tol, gmres_iter);
+      const Real err_vacuum = std::max(MaxRelDiff(B5, B), MaxRelDiff(J5, J));
+      sctl::Vector<sctl::Vector<Real>> m, sigma, m5, sigma5;
+      TaylorState::Compute(B, 1.0, 0.5, 1.0, Svec, comm, gmres_tol, gmres_iter, 0.1, &m, &sigma);
+      TaylorState::Compute(B5, 1.0, 0.5, 1.0, Svec5, comm, gmres_tol, gmres_iter, 0.1, &m5, &sigma5);
+      Real err_taylor = MaxRelDiff(B5, B);
+      for (sctl::Long i = 0; i < m.Dim(); i++) err_taylor = std::max(err_taylor, std::max(MaxRelDiff(m5[i], m[i]), MaxRelDiff(sigma5[i], sigma[i])));
+      const std::string name = (Nsurf == 1 ? "one surface" : "shell");
+      res.Check(("VacuumField on one of 5 field periods, " + name + ": B, J = those on the full torus").c_str(), err_vacuum, 1e-8);
+      res.Check(("TaylorState on one of 5 field periods, " + name + ": B, m, sigma = those on the full torus").c_str(), err_taylor, 1e-8);
+    }
+  }
+
   { // Shell: VacuumField(tor_flux, pol_flux) is the limit lambda -> 0 of TaylorState(-tor_flux, -pol_flux)
     sctl::Vector<biest::Surface<Real>> Svec(2);
     Svec[0] = torus(Nt, Np, outer);

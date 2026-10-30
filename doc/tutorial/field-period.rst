@@ -83,7 +83,7 @@ The targets are the points of a grid on one field period of each surface, and th
 
 Each surface gets its own quadrature grid (``QuadNt(s) x QuadNp(s)``), and ``biop(U, F)`` takes densities on these grids without resampling them.
 The potential of a surface at the targets of another is computed as in ``BoundaryIntegralOp`` (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`), to the requested digits.
-The variant ``SetupSingular<UPSAMPLE,PDIM,RDIM>(Svec, ker, tol)`` takes the quadrature of ``BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PDIM,RDIM>`` instead of choosing it, with the targets at the grid points of one field period.
+The variant ``SetupSingular<UPSAMPLE,PDIM,RDIM>(Svec, ker, tol)`` takes the quadrature of ``BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PDIM,RDIM>`` instead of choosing it, with the targets at the grid points of one field period; ``VacuumField`` and ``TaylorState`` use it.
 
 Complete Example Code
 ---------------------

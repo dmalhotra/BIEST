@@ -76,6 +76,11 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      *
      * @param[in] Svec one toroidal surface, or two nested toroidal surfaces in
      * either order (the outer one is the one enclosing the larger volume).
+     * When the surfaces declare field periods (Surface::NFP()), the solve is
+     * on one of those common to all of them, with the targets of the
+     * operators and the unknowns on that period: the setup and the memory of
+     * the singular quadrature, and its cost at each iteration, are divided by
+     * their number. The results are on the full tori.
      * @see biest::Surface
      * @see sctl::Vector
      *
@@ -124,15 +129,17 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter);
 
     sctl::Comm comm_;
-    BoundaryIntegralOp<Real,3,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_biot_savart_;
-    BoundaryIntegralOp<Real,1,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_lap_grad_;
-    BoundaryIntegralOp<Real,1,1,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_laplace_;
+    FieldPeriodBIOp<Real,COORD_DIM,3,3> BI_biot_savart_;
+    FieldPeriodBIOp<Real,COORD_DIM,1,3> BI_lap_grad_;
+    FieldPeriodBIOp<Real,COORD_DIM,1,1> BI_laplace_;
 
     // The vectors of Compute(), kept from one call to the next with their storage, as the operators: for each surface,
-    // its number of grid points and their offset in the vectors of all the surfaces, the derivatives of its
+    // its grid points on one field period (SurfDim_) and their offset in the vectors of all the surfaces (SurfDsp_), and
+    // the same for the full torus (SurfDimF_, SurfDspF_), and the dimensions of its grid; the derivatives of its
     // coordinates, its normal and area element; for each solution, J0 and B0, and the fields B and J with their fluxes
     // (the results of ComputeHelper); the solution of GMRES
-    sctl::Vector<sctl::Long> SurfDim_, SurfDsp_;
+    sctl::Vector<sctl::Long> SurfDim_, SurfDsp_, SurfDimF_, SurfDspF_, SurfNt_, SurfNp_;
+    sctl::Vector<sctl::Integer> SurfOrient_;
     sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, J0_, B0_, B_, J_;
     sctl::Vector<Real> tor_flux_, pol_flux_, F_;
 };
@@ -198,6 +205,11 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      *
      * @param[in] Svec one toroidal surface, or two nested toroidal surfaces in
      * either order (the outer one is the one enclosing the larger volume).
+     * When the surfaces declare field periods (Surface::NFP()), the solve is
+     * on one of those common to all of them, with the targets of the
+     * operators and the unknowns on that period: the setup and the memory of
+     * the singular quadrature, and its cost at each iteration, are divided by
+     * their number. The results are on the full tori.
      * @see biest::Surface
      * @see sctl::Vector
      *
@@ -265,22 +277,26 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     static void ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m, Real lambda, const sctl::Comm& comm, const Real tol);
 
     static void Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter);
-    static void Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // grad_v <-- Grad(g[sigma])
-    static void Compute_iQ(sctl::Vector<Real>& iQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_potn, const KernelFunction<Real,COORD_DIM,2,2>& ker_potn, Real lambda); // iQ <-- i g[m]
-    static void Compute_iCurlQ(sctl::Vector<Real>& iCurlQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM>& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // iCurlQ <-- i Curl(g[m])
+    // The potentials at the targets, of SurfDim[i] points of surface i at SurfDsp[i], of densities sigma and m on the
+    // grids of the operators (BI_grad(U, F), a BoundaryIntegralOp or a solver's FieldPeriodBIOp on the surface grids)
+    template <class Op> static void Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // grad_v <-- Grad(g[sigma])
+    template <class Op> static void Compute_iQ(sctl::Vector<Real>& iQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const Op& BI_potn, const KernelFunction<Real,COORD_DIM,2,2>& ker_potn, Real lambda); // iQ <-- i g[m]
+    template <class Op> static void Compute_iCurlQ(sctl::Vector<Real>& iCurlQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // iCurlQ <-- i Curl(g[m])
 
     void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1);
 
     sctl::Comm comm_;
-    BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_diff_;
-    BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_;
-    BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_potn_;
+    FieldPeriodBIOp<Real,COORD_DIM,2,6> BI_grad_diff_;
+    FieldPeriodBIOp<Real,COORD_DIM,2,6> BI_grad_;
+    FieldPeriodBIOp<Real,COORD_DIM,2,2> BI_potn_;
 
     // The vectors of Compute(), kept from one call to the next with their storage, as the operators: for each surface,
-    // its number of grid points and their offset in the vectors of all the surfaces, the derivatives of its
-    // coordinates, its normal and area element; for each solution, mH, B0, sigma, m, B and B_flux, and B in the basis
-    // of the fluxes (with two surfaces); and the results of ComputeHelper
-    sctl::Vector<sctl::Long> SurfDim_, SurfDsp_;
+    // its grid points on one field period (SurfDim_) and their offset in the vectors of all the surfaces (SurfDsp_), and
+    // the same for the full torus (SurfDimF_, SurfDspF_), and the dimensions of its grid; the derivatives of its
+    // coordinates, its normal and area element; for each solution, mH, B0, sigma, m, B and B_flux, and B in the basis of
+    // the fluxes (with two surfaces); and the results of ComputeHelper
+    sctl::Vector<sctl::Long> SurfDim_, SurfDsp_, SurfDimF_, SurfDspF_, SurfNt_, SurfNp_;
+    sctl::Vector<sctl::Integer> SurfOrient_;
     sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, mH_, B0_, sigma_, m_, B_, B_flux_, B2_;
     sctl::Vector<sctl::Vector<Real>> B_out_, m_out_, sigma_out_;
 };

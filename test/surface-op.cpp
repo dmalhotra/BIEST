@@ -118,5 +118,29 @@ int main(int argc, char** argv) {
     }
   }
 
+  { // Field periods: W7-X has 5, found with the toroidal index in either direction; a surface built from one period
+    const sctl::Long Nt = 70, Np = 14, N = Nt * Np, M = N / 5;
+    const biest::Surface<Real> S(Nt, Np, biest::SurfType::W7X_);
+    biest::Surface<Real> S_rev(Nt, Np, biest::SurfType::None); // the toroidal index reversed
+    for (sctl::Long t = 0; t < Nt; t++) {
+      for (sctl::Long p = 0; p < Np; p++) {
+        for (sctl::Integer k = 0; k < COORD_DIM; k++) S_rev.Coord(t, p, k) = S.Coord((Nt - t) % Nt, p, k);
+      }
+    }
+    const bool found = S.HasSymmetry(5) && S_rev.HasSymmetry(5) && S.HasSymmetry(1);
+    const bool not_found = S.HasSymmetry(7) || S.HasSymmetry(3) || S.HasSymmetry(10);
+    res.Check("Surface::HasSymmetry: W7-X has 5 field periods (either direction), not 7, 3 or 10", (found && !not_found ? 0 : 1), 0);
+
+    sctl::Vector<Real> X(COORD_DIM * M); // the first field period
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+      for (sctl::Long i = 0; i < M; i++) X[k * M + i] = S.Coord()[k * N + i];
+    }
+    const biest::Surface<Real> S5(5, Nt / 5, Np, X);
+    res.Check("Surface from one field period: the coordinates of the torus", MaxRelDiff(S5.Coord(), S.Coord()), 1e-14);
+    biest::Surface<Real> S_ = S;
+    S_.SetNFP(5);
+    res.Check("Surface::NFP: from the constructor and SetNFP", (S5.NFP() == 5 && S_.NFP() == 5 && S.NFP() == 1 ? 0 : 1), 0);
+  }
+
   return res.ExitCode();
 }

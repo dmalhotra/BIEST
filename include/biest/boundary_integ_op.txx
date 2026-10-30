@@ -368,9 +368,7 @@ namespace biest {
 
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> biest::Surface<Real> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::BuildSurface(const sctl::Vector<Real>& X, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np) {
       SCTL_ASSERT(surf_Nt*surf_Np*COORD_DIM == X.Dim());
-      biest::Surface<Real> S0(NFP*surf_Nt, surf_Np, biest::SurfType::None);
-      biest::SurfaceOp<Real>::CompleteVecField(S0.Coord(), true, false, NFP, surf_Nt, surf_Np, X, (Real)0);
-      return S0;
+      return biest::Surface<Real>(NFP, surf_Nt, surf_Np, X);
     }
 
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::FieldPeriodBIOp(const sctl::Comm& comm) : biop(nullptr), comm_(comm) {

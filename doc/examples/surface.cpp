@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
       S1.Coord(t, p, 2) = Z;
     }
   }
+  S1.SetNFP(NFP); // declares its field periods, which it checks (Nt is a multiple of NFP)
 
   // Normals, area elements and the surface area
   biest::SurfaceOp<Real> surf_op(sctl::Comm::Self(), Nt, Np);

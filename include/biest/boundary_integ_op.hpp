@@ -210,7 +210,8 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
 
     /**
      * Build the full-torus surface object (NFP*surf_Nt x surf_Np grid) from
-     * the surface coordinates on one field period.
+     * the surface coordinates on one field period: the surface of
+     * Surface(NFP, surf_Nt, surf_Np, X), which has NFP field periods.
      *
      * @param[in] X the surface coordinates (in one field period) in the order
      * {x11, x12, ..., x1Np, x21, x22, ... , xNtNp, y11, ... , z11, ...}. The

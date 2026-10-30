@@ -68,6 +68,8 @@ The solvers also need a minimum number of points for their quadrature (see :ref:
 Either orientation of the grid is allowed: the solvers orient the normals to point out of each surface.
 For data given on one field period (``FieldPeriodBIOp``, ``ExtVacuumField``, ``IntVacuumField`` and the field-period ``WriteVTK``), the other periods are placed in the direction in which the toroidal index increases, which is detected from the surface coordinates.
 
+.. _tutorial-surface-nfp:
+
 Field periods
 -------------
 

@@ -249,5 +249,83 @@ int main(int argc, char** argv) {
     }
   }
 
+  { // FieldPeriodBIOp on two nested tori with 3 field periods 0.1 apart: on one field period, the potential of
+    // BoundaryIntegralOp on the full tori, with the density given on the full tori or on one field period; and the
+    // double-layer identity with the quadrature from digits
+    const sctl::Integer NFP = 3;
+    const auto torus = [pi,NFP](const sctl::Long Nt, const sctl::Long Np, const Real r) {
+      biest::Surface<Real> S(Nt, Np, biest::SurfType::None);
+      for (sctl::Long t = 0; t < Nt; t++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          const Real phi = 2 * pi * t / Nt, theta = 2 * pi * p / Np;
+          const Real R = 1 + r * sctl::cos<Real>(theta) + 0.02 * sctl::cos<Real>(theta - NFP * phi);
+          S.Coord(t, p, 0) = R * sctl::cos<Real>(phi);
+          S.Coord(t, p, 1) = R * sctl::sin<Real>(phi);
+          S.Coord(t, p, 2) = r * sctl::sin<Real>(theta) - 0.02 * sctl::sin<Real>(theta - NFP * phi);
+        }
+      }
+      S.SetNFP(NFP);
+      return S;
+    };
+    sctl::Vector<biest::Surface<Real>> Svec(2);
+    Svec[0] = torus(60, 30, 0.3);
+    Svec[1] = torus(48, 24, 0.2);
+
+    { // the quadrature given, against BoundaryIntegralOp
+      const auto& ker = biest::Laplace3D<Real>::FxdU();
+      sctl::Vector<Real> F, F1; // 1 + z + x^2 + y^2 (invariant under the rotations) on the full tori, and on one period
+      for (const auto& S : Svec) {
+        const sctl::Long N = S.NTor() * S.NPol();
+        for (sctl::Long i = 0; i < N; i++) {
+          const Real x = S.Coord()[0 * N + i], y = S.Coord()[1 * N + i], z = S.Coord()[2 * N + i];
+          F.PushBack(1 + z + x * x + y * y);
+          if (i < N / NFP) F1.PushBack(1 + z + x * x + y * y);
+        }
+      }
+      biest::BoundaryIntegralOp<Real,1,3,1,6,10> op(comm);
+      op.SetupSingular(Svec, ker);
+      sctl::Vector<Real> U, Uref; // Uref: U on one field period
+      op(U, F);
+      sctl::Long offset = 0;
+      for (const auto& S : Svec) {
+        const sctl::Long N = S.NTor() * S.NPol();
+        for (sctl::Integer k = 0; k < 3; k++) {
+          for (sctl::Long i = 0; i < N / NFP; i++) Uref.PushBack(U[offset + k * N + i]);
+        }
+        offset += 3 * N;
+      }
+
+      biest::FieldPeriodBIOp<Real,COORD_DIM,1,3> fp_op(comm);
+      fp_op.SetupSingular<1,6,10>(Svec, ker, 1e-10);
+      sctl::Vector<Real> Ufp, Ufp1;
+      fp_op(Ufp, F);
+      sctl::Vector<sctl::Long> Nt1(2), Np1(2);
+      for (sctl::Long s = 0; s < 2; s++) {
+        Nt1[s] = Svec[s].NTor() / NFP;
+        Np1[s] = Svec[s].NPol();
+      }
+      fp_op.Eval(Ufp1, F1, NFP, Nt1, Np1);
+      res.Check("FieldPeriodBIOp, two tori with 3 field periods: = BoundaryIntegralOp on one period", MaxRelDiff(Ufp, Uref), 1e-13);
+      res.Check("FieldPeriodBIOp, two tori with 3 field periods: the density on one period", MaxRelDiff(Ufp1, Uref), 1e-13);
+    }
+    { // the quadrature from digits: D[1] of both = -1/2 + 0 on the outer torus and -1/2 - 1 on the inner one
+      const sctl::Integer digits = 8;
+      sctl::Vector<sctl::Long> trg_Nt(2), trg_Np(2);
+      for (sctl::Long s = 0; s < 2; s++) {
+        trg_Nt[s] = Svec[s].NTor() / NFP;
+        trg_Np[s] = Svec[s].NPol();
+      }
+      biest::FieldPeriodBIOp<Real,COORD_DIM,1,1> fp_op(comm);
+      fp_op.SetupSingular(Svec, ker, digits, trg_Nt, trg_Np);
+      sctl::Vector<Real> F(fp_op.Dim(0)), U;
+      F = 1;
+      fp_op(U, F);
+      Real err = 0;
+      const sctl::Long M0 = trg_Nt[0] * trg_Np[0];
+      for (sctl::Long i = 0; i < U.Dim(); i++) err = std::max<Real>(err, sctl::fabs<Real>(U[i] - (i < M0 ? -0.5 : -1.5)));
+      res.Check("FieldPeriodBIOp from digits (8), two tori with 3 field periods: D[1] = -1/2, -3/2", err, 1e-7);
+    }
+  }
+
   return res.ExitCode();
 }

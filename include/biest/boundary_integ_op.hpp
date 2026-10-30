@@ -180,11 +180,11 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 };
 
 /**
- * Compute layer-potentials on toroidal surfaces with field-period symmetry.
- * The density is given on one field period, and the potential is computed on
- * one field period. The quadrature parameters are chosen at run time from the
- * number of requested digits. An object must not be copied after
- * SetupSingular().
+ * Compute layer-potentials on toroidal surfaces with field-period symmetry:
+ * the densities on the full tori, given on one field period or on the full
+ * tori, and the potential on one field period of each surface. The
+ * quadrature parameters are chosen at run time from the number of requested
+ * digits, or given. An object must not be copied after SetupSingular().
  *
  * @tparam Real datatype for reals can be float, double or sctl::QuadReal.
  *
@@ -229,7 +229,7 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
     /**
      * Setup layer potential operator.
      *
-     * @param[in] Svec vector of surface objects (currently, only one surface is supported)
+     * @param[in] Svec a vector of one surface (for several, see below).
      *
      * @param[in] ker kernel function object.
      *
@@ -255,6 +255,53 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
     void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt = 0, const sctl::Long qNp = 0);
 
     /**
+     * Setup the layer potential operator of several surfaces, with the field
+     * periods common to all (the greatest common divisor of their
+     * Surface::NFP()): the potential is computed on one field period of each surface, at the points
+     * of a grid of trg_Nt[i] x trg_Np[i] points on that period. Each surface
+     * is resampled to its quadrature grid, chosen from digits as by the
+     * single-surface SetupSingular() for the surface alone, with the patch
+     * size from the largest anisotropy of the surfaces, or given.
+     *
+     * The potential of a surface at the targets of another is that of
+     * BoundaryIntegralOp::SetupSingular() to the tolerance 10^-digits: by
+     * quadrature on panels at the targets near the surface, with a kernel that
+     * is an SctlKernelFunction.
+     *
+     * @param[in] Svec the surfaces.
+     *
+     * @param[in] ker the kernel function; it must outlive the operator.
+     *
+     * @param[in] digits number of decimal digits of accuracy.
+     *
+     * @param[in] trg_Nt, trg_Np for each surface, the dimensions of the grid of
+     * the targets on one field period.
+     *
+     * @param[in] qNt, qNp (optional) for each surface, the dimensions of the
+     * quadrature grid on the full torus: multiples of NFP*trg_Nt[i] and of
+     * trg_Np[i], at least the dimensions of the surface grid.
+     */
+    template <class Kernel> void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const sctl::Integer digits, const sctl::Vector<sctl::Long>& trg_Nt, const sctl::Vector<sctl::Long>& trg_Np, const sctl::Vector<sctl::Long>& qNt = sctl::Vector<sctl::Long>(), const sctl::Vector<sctl::Long>& qNp = sctl::Vector<sctl::Long>());
+
+    /**
+     * As the SetupSingular() of several surfaces above, with the quadrature
+     * given: that of BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PDIM,RDIM>
+     * (the patch size PDIM and the radial order RDIM) on the grid of each
+     * surface upsampled UPSAMPLE times in each direction, with the potential
+     * computed at the grid points of one field period of each surface. A later
+     * call sets up the operator in the memory of the earlier one when the
+     * surfaces have no more grid points.
+     *
+     * @param[in] Svec the surfaces.
+     *
+     * @param[in] ker the kernel function; it must outlive the operator.
+     *
+     * @param[in] tol the accuracy of the potential of a surface at the
+     * targets of another.
+     */
+    template <sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM, class Kernel> void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol);
+
+    /**
      * Evaluate the potential from given density.
      *
      * @param[in,out] U output potential computed on surface nodes in one
@@ -276,14 +323,40 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
     void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP=1, const sctl::Integer src_Nt=-1, const sctl::Integer src_Np=-1) const;
 
     /**
-     * Returns the toroidal resolution of the source data for quadrature evaluation.
+     * As Eval() above, for several surfaces: F holds the densities of the
+     * surfaces one after the other, on a grid of src_Nt[i] x src_Np[i] points
+     * of each, on one field period if NFP > 1, completed by symmetry (a
+     * density of 3 components is rotated as a Cartesian vector), and on the
+     * full torus if NFP = 1. Several densities can be stored one after the
+     * other on each surface, as for BoundaryIntegralOp; the potential holds,
+     * for each surface, the potentials of the densities one after the other.
      */
-    sctl::Long QuadNt() const { return quad_Nt_; }
+    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np) const;
 
     /**
-     * Returns the poloidal resolution of the source data for quadrature evaluation.
+     * Evaluate the potential of densities F on the quadrature grids of the
+     * surfaces (the full tori), without resampling them: as the Eval() above
+     * with NFP = 1 and src_Nt[i] = QuadNt(i), src_Np[i] = QuadNp(i).
      */
-    sctl::Long QuadNp() const { return quad_Np_; }
+    void operator()(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) const;
+
+    /**
+     * Returns the size of a density on the quadrature grids (i = 0) and of the
+     * potential (i = 1).
+     */
+    sctl::Long Dim(sctl::Integer i) const;
+
+    /**
+     * Returns the toroidal resolution of the source data for quadrature
+     * evaluation, of surface i.
+     */
+    sctl::Long QuadNt(sctl::Long i = 0) const { return quad_Nt_[i]; }
+
+    /**
+     * Returns the poloidal resolution of the source data for quadrature
+     * evaluation, of surface i.
+     */
+    sctl::Long QuadNp(sctl::Long i = 0) const { return quad_Np_[i]; }
 
     static void test() {
       constexpr int DIM = 3; // dimensions of coordinate space
@@ -327,21 +400,43 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
 
   private:
 
-    template <sctl::Integer PDIM, sctl::Integer RDIM> static void* BIOpBuild(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
+    /**
+     * SetupSingular() from digits: the quadrature grids and the patch size,
+     * then Setup(). The grids are at least src_Nt[i] x src_Np[i] (on the full
+     * torus) unless given.
+     */
+    template <class Kernel> void SetupDigits(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const sctl::Vector<sctl::Long>& trg_Nt, const sctl::Vector<sctl::Long>& trg_Np, const sctl::Vector<sctl::Long>& qNt, const sctl::Vector<sctl::Long>& qNp);
+
+    /**
+     * Resample the surfaces to the quadrature grids quad_Nt_ x quad_Np_ and set the targets, the points of the trg_Nt_ x
+     * trg_Np_ grids on one field period.
+     */
+    void SetGrids(const sctl::Vector<biest::Surface<Real>>& Svec, const sctl::Integer NFP);
+
     template <sctl::Integer PDIM, sctl::Integer RDIM> static void BIOpDelete(void** self);
     template <sctl::Integer PDIM, sctl::Integer RDIM> static void BIOpEval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self);
 
-    template <sctl::Integer PDIM, sctl::Integer RDIM> void SetupSingular0(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
-    void SetupSingular_(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer PDIM_, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
+    /**
+     * Set up the operator BoundaryIntegralOp<Real,KDIM0,KDIM1,1,PDIM,RDIM> on the surfaces and the targets of SetGrids(),
+     * the one of the earlier setup if it is of these parameters.
+     */
+    template <sctl::Integer PDIM, sctl::Integer RDIM, class Kernel> void SetupSingular0(const Kernel& ker, const Real tol);
+    /**
+     * SetupSingular0() with the patch size the largest of 6, 8, 12, ..., 64 that is at most PDIM_ (6 below), and RDIM =
+     * 1.6 times it.
+     */
+    template <class Kernel> void SetupSingular_(const Kernel& ker, const sctl::Integer PDIM_, const Real tol);
+
+    template <class, sctl::Integer, sctl::Integer, sctl::Integer, sctl::Integer> friend class FieldPeriodBIOp;
 
     void* biop;
-    void* (*biop_build)(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Comm& comm, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx);
     void (*biop_delete)(void** self);
     void (*biop_eval)(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self);
-    sctl::Integer NFP_, tor_orient_;
-    sctl::Long trg_Nt_, trg_Np_;
-    sctl::Long quad_Nt_, quad_Np_;
-    sctl::Vector<biest::Surface<Real>> Svec_;
+    sctl::Integer NFP_;
+    sctl::Vector<sctl::Integer> tor_orient_; // for each surface
+    sctl::Vector<sctl::Long> trg_Nt_, trg_Np_, quad_Nt_, quad_Np_; // for each surface
+    sctl::Vector<sctl::Vector<sctl::Long>> trg_idx_; // for each surface, the targets: indices of quadrature grid points
+    sctl::Vector<biest::Surface<Real>> Svec_; // the surfaces on the quadrature grids
     sctl::Comm comm_;
 };
 

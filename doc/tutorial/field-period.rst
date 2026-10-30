@@ -64,6 +64,27 @@ This version of ``WriteVTK`` takes the surface and the data on one field period,
    :end-at: biest::WriteVTK("U"
    :dedent: 2
 
+5. Several surfaces
+-------------------
+
+``FieldPeriodBIOp`` also takes several surfaces, such as the two surfaces of a toroidal shell, that declare their field periods (``Surface::SetNFP``, see :ref:`Field periods <tutorial-surface-nfp>`); it uses those common to all.
+The targets are the points of a grid on one field period of each surface, and the densities of the surfaces are stored one after the other, as for ``BoundaryIntegralOp``:
+
+.. code-block:: c++
+
+   sctl::Vector<sctl::Long> trg_Nt(2), trg_Np(2); // the targets: the grid points of one field period of each surface
+   for (int s = 0; s < 2; s++) {
+     trg_Nt[s] = Svec[s].NTor() / Svec[s].NFP();
+     trg_Np[s] = Svec[s].NPol();
+   }
+   biest::FieldPeriodBIOp<Real,3,1,1> biop;
+   biop.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, trg_Nt, trg_Np);
+   biop.Eval(U, F, NFP, trg_Nt, trg_Np); // F on the same grids, on one field period of each surface
+
+Each surface gets its own quadrature grid (``QuadNt(s) x QuadNp(s)``), and ``biop(U, F)`` takes densities on these grids without resampling them.
+The potential of a surface at the targets of another is computed as in ``BoundaryIntegralOp`` (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`), to the requested digits.
+The variant ``SetupSingular<UPSAMPLE,PDIM,RDIM>(Svec, ker, tol)`` takes the quadrature of ``BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PDIM,RDIM>`` instead of choosing it, with the targets at the grid points of one field period.
+
 Complete Example Code
 ---------------------
 
@@ -71,8 +92,8 @@ The program ``doc/examples/field-period.cpp`` prints
 
 .. code-block:: text
 
-   quadrature grid: 300 x 90
-   max |U + 1/2| = 3.01326e-12
+   quadrature grid: 300 x 60
+   max |U + 1/2| = 3.35704e-12
 
 .. raw:: html
 

@@ -4,6 +4,7 @@
 
 #include <complex>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <biest/surface_op.hpp>
 #include <biest/kernel.hpp>
@@ -21,7 +22,7 @@ namespace detail_bie_solvers {
   template <class Real> std::pair<sctl::Long, sctl::Long> OuterInnerSurfIdx(const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<sctl::Vector<Real>>& Xn, const sctl::Vector<sctl::Vector<Real>>& Xa) {
     constexpr sctl::Integer COORD_DIM = 3;
     const sctl::Long Nsurf = Svec.Dim();
-    sctl::Vector<Real> Volume(Nsurf);
+    sctl::ScratchBuf<Real> Volume(Nsurf);
     for (sctl::Long i = 0; i < Nsurf; i++) {
       const sctl::Long N = Xa[i].Dim();
       Real V = 0;
@@ -50,17 +51,22 @@ namespace detail_bie_solvers {
     }
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter) {
-      sctl::Vector<sctl::Vector<Real>> B_, J_;
-      sctl::Vector<Real> tor_flux_, pol_flux_;
-      ComputeHelper(B_, J_, tor_flux_, pol_flux_, Svec, comm_, gmres_tol, gmres_iter);
-      if (Svec.Dim() == 1) {
-        B = B_[0] * tor_flux / tor_flux_[0];
-        J = J_[0] * tor_flux / tor_flux_[0];
+      ComputeHelper(B_, J_, tor_flux_, pol_flux_, Svec, comm_, gmres_tol, gmres_iter); // in the vectors of the object
+      // B and J: the solutions combined for the fluxes, in the storage of B and J when it has the size
+      const auto combine = [&Svec](sctl::Vector<Real>& V, const sctl::Vector<sctl::Vector<Real>>& V_, const Real alpha, const Real beta) {
+        const sctl::Long N = V_[0].Dim();
+        if (V.Dim() != N) V.ReInit(N);
+        if (Svec.Dim() == 1) for (sctl::Long i = 0; i < N; i++) V[i] = V_[0][i] * alpha / beta;
+        else for (sctl::Long i = 0; i < N; i++) V[i] = V_[0][i] * alpha + V_[1][i] * beta;
+      };
+      if (Svec.Dim() == 1) { // alpha / beta: tor_flux / tor_flux_[0]
+        combine(B, B_, tor_flux, tor_flux_[0]);
+        combine(J, J_, tor_flux, tor_flux_[0]);
       } else if (Svec.Dim() == 2) {
         Real alpha = (tor_flux * pol_flux_[1] - pol_flux * tor_flux_[1]) / (tor_flux_[0] * pol_flux_[1] - tor_flux_[1] * pol_flux_[0]);
         Real beta  = (pol_flux * tor_flux_[0] - tor_flux * pol_flux_[0]) / (tor_flux_[0] * pol_flux_[1] - tor_flux_[1] * pol_flux_[0]);
-        B = B_[0] * alpha + B_[1] * beta;
-        J = J_[0] * alpha + J_[1] * beta;
+        combine(B, B_, alpha, beta);
+        combine(J, J_, alpha, beta);
       }
     }
 
@@ -99,15 +105,25 @@ namespace detail_bie_solvers {
     }
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
+      // The vectors of the solve are those of the object, which keeps them with their storage from one call to the next
+      // (see VacuumField()); the temporaries are in scratch memory (see SurfaceOp::SurfGrad)
       sctl::Long Nsurf = Svec.Dim();
-      sctl::Vector<sctl::Long> SurfDim(Nsurf), SurfDsp(Nsurf);
+      auto& SurfDim = SurfDim_;
+      auto& SurfDsp = SurfDsp_;
+      SurfDim.ReInit(Nsurf);
+      SurfDsp.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Set SurfDim, SurfDsp
         SurfDim[i] = Svec[i].NTor() * Svec[i].NPol();
         if (i) SurfDsp[i] = SurfDsp[i-1] + SurfDim[i-1];
         else SurfDsp[i] = 0;
       }
 
-      sctl::Vector<sctl::Vector<Real>> dX(Svec.Dim()), Xn(Svec.Dim()), Xa(Svec.Dim());
+      auto& dX = dX_;
+      auto& Xn = Xn_;
+      auto& Xa = Xa_;
+      dX.ReInit(Nsurf);
+      Xn.ReInit(Nsurf);
+      Xa.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Svec.Dim(); i++) { // Set dX, Xn, Xa
         const auto& S = Svec[i];
         sctl::Long Nt = S.NTor();
@@ -139,7 +155,8 @@ namespace detail_bie_solvers {
       sctl::Profile::Toc();
 
       sctl::Profile::Tic("ComputeJ", &comm);
-      sctl::Vector<sctl::Vector<Real>> J0(Nsurf);
+      auto& J0 = J0_;
+      J0.ReInit(Nsurf);
       auto ComputeJ = [&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& J, sctl::Integer Sidx, Real gmres_tol, sctl::Long max_iter) { // Set Jp
         const auto& S = Svec[Sidx];
         sctl::Long Nt = S.NTor();
@@ -147,7 +164,8 @@ namespace detail_bie_solvers {
         sctl::Long N = Nt * Np;
 
         std::cout << "\033[1;31m";
-        sctl::Vector<Real> V(COORD_DIM * N), DivV, InvLapDivV, GradInvLapDivV;
+        sctl::ScratchBuf<Real> V_buf(COORD_DIM * N), DivV_buf(N), GradInvLapDivV_buf(COORD_DIM * N);
+        sctl::Vector<Real> V(V_buf), DivV(DivV_buf), GradInvLapDivV(GradInvLapDivV_buf);
         for (sctl::Long i = 0; i < N; i++) { // Set V
           for (sctl::Long k =0; k < COORD_DIM; k++) {
             V[k * N + i] = dX[Sidx][(k*2+0) * N + i] + dX[Sidx][(k*2+1) * N + i];
@@ -156,7 +174,7 @@ namespace detail_bie_solvers {
         SurfaceOp<Real> surf_op(comm, Nt, Np);
         surf_op.SurfDiv(DivV, dX[Sidx], V);
         surf_op.GradInvSurfLap(GradInvLapDivV, dX[Sidx], DivV, gmres_tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
-        V = V - GradInvLapDivV;
+        for (sctl::Long i = 0; i < COORD_DIM * N; i++) V[i] -= GradInvLapDivV[i];
         if (0) { // Print err
           surf_op.SurfDiv(DivV, dX[Sidx], V);
           Real err = 0;
@@ -177,10 +195,12 @@ namespace detail_bie_solvers {
       sctl::Profile::Toc();
 
       sctl::Profile::Tic("ComputeB0", &comm);
-      sctl::Vector<sctl::Vector<Real>> B0(Nsurf);
+      auto& B0 = B0_;
+      B0.ReInit(Nsurf);
       auto eval_B0 = [Nsurf,&SurfDim,&SurfDsp,&Xn,&BI_biot_savart](sctl::Vector<Real>& B, const sctl::Vector<Real>& J) { // B <-- BiotSavart[J] + 0.5 * Xn x J
         sctl::Long N = J.Dim();
-        sctl::Vector<Real> NcrossJ(N);
+        sctl::ScratchBuf<Real> NcrossJ_buf(N);
+        sctl::Vector<Real> NcrossJ(NcrossJ_buf);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Set NcrossJ
           sctl::Long N = SurfDim[i];
           const sctl::Vector<Real> J_(COORD_DIM * N, (sctl::Iterator<Real>)J.begin() + COORD_DIM  * SurfDsp[i], false);
@@ -201,13 +221,15 @@ namespace detail_bie_solvers {
             }
           }
         }
+        if (B.Dim() != BI_biot_savart.Dim(1)) B.ReInit(BI_biot_savart.Dim(1));
+        B = 0; // BI_biot_savart adds to a B of its size
         BI_biot_savart(B, J);
-        B += NcrossJ * 0.5;
+        for (sctl::Long i = 0; i < N; i++) B[i] += NcrossJ[i] * 0.5;
       };
       for (sctl::Long i = 0; i < Nsurf; i++) eval_B0(B0[i], J0[i]);
       sctl::Profile::Toc();
 
-      auto eval_B = [Nsurf,&SurfDim,SurfDsp,&Xn,&BI_lap_grad](sctl::Vector<Real>& B, const sctl::Vector<Real>& F) { // B <-- dG[F] + 0.5 * Xn * F
+      auto eval_B = [Nsurf,&SurfDim,&SurfDsp,&Xn,&BI_lap_grad](sctl::Vector<Real>& B, const sctl::Vector<Real>& F) { // B <-- dG[F] + 0.5 * Xn * F
         if (B.Dim() != BI_lap_grad.Dim(1)) {
           B.ReInit(BI_lap_grad.Dim(1));
           B = 0;
@@ -223,7 +245,7 @@ namespace detail_bie_solvers {
           }
         }
       };
-      auto eval_BdotXn = [Nsurf,&SurfDim,SurfDsp,&Xn](sctl::Vector<Real>& BdotXn, const sctl::Vector<Real>& B) { // BdotXn <-- B . Xn
+      auto eval_BdotXn = [Nsurf,&SurfDim,&SurfDsp,&Xn](sctl::Vector<Real>& BdotXn, const sctl::Vector<Real>& B) { // BdotXn <-- B . Xn
         sctl::Long N = SurfDsp[Nsurf-1] + SurfDim[Nsurf-1];
         if (BdotXn.Dim() != N) BdotXn.ReInit(N);
         for (sctl::Long j = 0; j < Nsurf; j++) {
@@ -237,13 +259,23 @@ namespace detail_bie_solvers {
           }
         }
       };
-      typename sctl::GMRES<Real>::ParallelOp fn = [&eval_B,&eval_BdotXn,&BI_lap_grad](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& F) {
+      // What the operator uses, behind one reference: a std::function holds a lambda of one pointer itself, where it
+      // would allocate one of three
+      using EvalB = decltype(eval_B);
+      using EvalBdotXn = decltype(eval_BdotXn);
+      using BILapGrad = std::remove_reference_t<decltype(BI_lap_grad)>;
+      const struct {
+        EvalB& eval_B;
+        EvalBdotXn& eval_BdotXn;
+        BILapGrad& BI_lap_grad;
+      } fn_args{eval_B, eval_BdotXn, BI_lap_grad};
+      typename sctl::GMRES<Real>::ParallelOp fn = [&fn_args](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& F) {
         SCTL_ASSERT(BdotXn);
-        sctl::ScratchBuf<Real> B_buf(BI_lap_grad.Dim(1)); // in scratch memory: see SurfaceOp::SurfGrad
+        sctl::ScratchBuf<Real> B_buf(fn_args.BI_lap_grad.Dim(1)); // in scratch memory: see SurfaceOp::SurfGrad
         sctl::Vector<Real> B(B_buf);
         B = 0; // eval_B adds to a B of this size
-        eval_B(B, F);
-        eval_BdotXn(*BdotXn, B);
+        fn_args.eval_B(B, F);
+        fn_args.eval_BdotXn(*BdotXn, B);
       };
       auto compute_J = [&Nsurf,&SurfDim,&SurfDsp,&Xn](sctl::Vector<Real>& J, const sctl::Vector<Real>& B) { // J <-- B x Xn
         J.ReInit(B.Dim());
@@ -270,12 +302,19 @@ namespace detail_bie_solvers {
       { // Compute B, J
         B.ReInit(Nsurf);
         J.ReInit(Nsurf);
-        sctl::Vector<Real> u0dotXn, F;
+        // u0dotXn, negated for the right-hand side; and F, the solution of GMRES, given to it empty for the first solve
+        // (a zero initial guess), which GMRES then sizes, and the initial guess of the next
+        const sctl::Long Ntot = SurfDsp[Nsurf-1] + SurfDim[Nsurf-1];
+        sctl::ScratchBuf<Real> u0dotXn_buf(Ntot);
+        sctl::Vector<Real> u0dotXn(u0dotXn_buf);
+        auto& F = F_;
+        F.ReInit(0);
         sctl::GMRES<Real> solver(comm, true);
         for (sctl::Long i = 0; i < Nsurf; i++) { // Compute B[i], J[i]
           B[i] = B0[i];
           eval_BdotXn(u0dotXn, B[i]);
-          solver(&F, fn, u0dotXn*(-1), gmres_tol, gmres_iter);
+          for (sctl::Long j = 0; j < Ntot; j++) u0dotXn[j] = -u0dotXn[j];
+          solver(&F, fn, u0dotXn, gmres_tol, gmres_iter);
           eval_B(B[i], F);
           compute_J(J[i], B[i]);
         }
@@ -373,7 +412,8 @@ namespace detail_bie_solvers {
 
       sctl::Profile::Tic("CompFlux", &comm);
       { // Compute flux
-        sctl::Vector<Real> A;
+        sctl::ScratchBuf<Real> A_buf(COORD_DIM * BI_laplace.Dim(1)); // the potential of each component of J
+        sctl::Vector<Real> A(A_buf);
         tor_flux.ReInit(Nsurf);
         pol_flux.ReInit(Nsurf);
         for (sctl::Long i = 0; i < Nsurf; i++) {
@@ -402,10 +442,16 @@ namespace detail_bie_solvers {
     }
 
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
-      sctl::Vector<sctl::Vector<Real>> B, m_, sigma_;
+      auto& B = B_out_; // in the vectors of the object
+      auto& m_ = m_out_;
+      auto& sigma_ = sigma_out_;
       ComputeHelper(B, m_, sigma_, lambda, Svec, comm_, gmres_tol, gmres_iter, LB_tol);
-      if (B.Dim() > 0) B_out = B[0] * tor_flux;
-      if (B.Dim() > 1) B_out += B[1] * pol_flux;
+      if (B.Dim() > 0) { // B_out <-- B[0] * tor_flux + B[1] * pol_flux, in the storage of B_out when it has the size
+        const sctl::Long N = B[0].Dim();
+        if (B_out.Dim() != N) B_out.ReInit(N);
+        for (sctl::Long i = 0; i < N; i++) B_out[i] = B[0][i] * tor_flux;
+        if (B.Dim() > 1) for (sctl::Long i = 0; i < N; i++) B_out[i] += B[1][i] * pol_flux;
+      }
       if (m && sigma) {
         *m = m_;
         *sigma = sigma_;
@@ -973,7 +1019,9 @@ namespace detail_bie_solvers {
       sctl::Long Np = S.NPol();
       sctl::Long N= Nt * Np;
 
-      sctl::Vector<Real> V(COORD_DIM * N);
+      // In scratch memory: see SurfaceOp::SurfGrad
+      sctl::ScratchBuf<Real> V_buf(COORD_DIM * N), Vn_buf(COORD_DIM * N), Vd_buf(COORD_DIM * N), Vc_buf(COORD_DIM * N), Vh_buf(COORD_DIM * N);
+      sctl::Vector<Real> V(V_buf);
       #pragma omp parallel for schedule(static)
       for (sctl::Long i = 0; i < N; i++) { // Set V
         for (sctl::Long k =0; k < COORD_DIM; k++) {
@@ -981,7 +1029,7 @@ namespace detail_bie_solvers {
         }
       }
 
-      sctl::Vector<Real> Vn, Vd, Vc, Vh;
+      sctl::Vector<Real> Vn(Vn_buf), Vd(Vd_buf), Vc(Vc_buf), Vh(Vh_buf);
       SurfaceOp<Real> surf_op(comm, Nt, Np);
       surf_op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, Xn, tol, max_iter);
 
@@ -1063,14 +1111,24 @@ namespace detail_bie_solvers {
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol) {
       sctl::Long Nsurf = Svec.Dim();
       if (Nsurf != 1 && Nsurf != 2) return;
-      sctl::Vector<sctl::Long> SurfDim(Nsurf), SurfDsp(Nsurf);
+      // The vectors of the solve are those of the object, which keeps them with their storage from one call to the next
+      // (see TaylorState()); the temporaries are in scratch memory (see SurfaceOp::SurfGrad)
+      auto& SurfDim = SurfDim_;
+      auto& SurfDsp = SurfDsp_;
+      SurfDim.ReInit(Nsurf);
+      SurfDsp.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Set SurfDim, SurfDsp
         SurfDim[i] = Svec[i].NTor() * Svec[i].NPol();
         if (i) SurfDsp[i] = SurfDsp[i-1] + SurfDim[i-1];
         else SurfDsp[i] = 0;
       }
 
-      sctl::Vector<sctl::Vector<Real>> dX(Nsurf), Xn(Nsurf), Xa(Nsurf);
+      auto& dX = dX_;
+      auto& Xn = Xn_;
+      auto& Xa = Xa_;
+      dX.ReInit(Nsurf);
+      Xn.ReInit(Nsurf);
+      Xa.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Set dX, Xn, Xa
         const auto& S = Svec[i];
         sctl::Long Nt = S.NTor();
@@ -1333,36 +1391,66 @@ namespace detail_bie_solvers {
       auto solve_taylor = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn] (sctl::Vector<Real>& sigma, const sctl::Vector<Real>& rhs, Real gmres_tol, sctl::Long gmres_iter) {
         sctl::Profile::Tic("Solve", &comm);
         sctl::GMRES<Real> solver(comm, true);
-        typename sctl::GMRES<Real>::ParallelOp fn = [lambda,LB_tol,&comm,&Compute_m,&Compute_B,&Compute_BdotXn,&gmres_tol,&gmres_iter](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
+        // What the operator uses, behind one reference: a std::function holds a lambda of one pointer itself, where it
+        // would allocate one of eight
+        using ComputeM = decltype(Compute_m);
+        using ComputeB = decltype(Compute_B);
+        using ComputeBdotXn = decltype(Compute_BdotXn);
+        const struct {
+          Real lambda, LB_tol;
+          const sctl::Comm& comm;
+          ComputeM& Compute_m;
+          ComputeB& Compute_B;
+          ComputeBdotXn& Compute_BdotXn;
+          Real gmres_tol;
+          sctl::Long gmres_iter;
+        } args{lambda, LB_tol, comm, Compute_m, Compute_B, Compute_BdotXn, gmres_tol, gmres_iter};
+        typename sctl::GMRES<Real>::ParallelOp fn = [&args](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
           SCTL_ASSERT(BdotXn);
           sctl::ScratchBuf<Real> m_buf(COORD_DIM * sigma.Dim()), B_buf(COORD_DIM * sigma.Dim()); // see SurfaceOp::SurfGrad
           sctl::Vector<Real> m(m_buf), B(B_buf);
-          sctl::Profile::Tic("Compute_B", &comm);
-          Compute_m(m, sigma, gmres_tol / lambda * LB_tol, gmres_iter);
-          Compute_B(&B, nullptr, sigma, m, sctl::Vector<Real>());
-          Compute_BdotXn(*BdotXn, B);
+          sctl::Profile::Tic("Compute_B", &args.comm);
+          args.Compute_m(m, sigma, args.gmres_tol / args.lambda * args.LB_tol, args.gmres_iter);
+          args.Compute_B(&B, nullptr, sigma, m, sctl::Vector<Real>());
+          args.Compute_BdotXn(*BdotXn, B);
           { // Project to space of mean-zero functions : BdotXn <-- P BdotXn
             // TODO
           }
           sctl::Profile::Toc();
         };
+        sigma.ReInit(0); // a zero initial guess, in the storage that the object keeps: GMRES sizes it
         solver(&sigma, fn, rhs, gmres_tol, gmres_iter);
         sctl::Profile::Toc();
       };
 
-      sctl::Vector<sctl::Vector<Real>> mH(Nsurf), B0(Nsurf);
+      const sctl::Long Ntot = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
+      auto& mH = mH_;
+      auto& B0 = B0_;
+      mH.ReInit(Nsurf);
+      B0.ReInit(Nsurf);
       sctl::Profile::Tic("Compute_B0", &comm);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Compute mH, B0
-        mH[i].ReInit(COORD_DIM * 2 * (SurfDim[Nsurf-1] + SurfDsp[Nsurf-1])); mH[i] = 0;
-        sctl::Vector<Real> mH_(COORD_DIM * 2 * SurfDim[i], mH[i].begin() + COORD_DIM * 2 * SurfDsp[i], false);
-        Compute_mH(mH_, Svec[i], dX[i], Xn[i], comm, gmres_tol * LB_tol, gmres_iter);
-        Compute_B(&B0[i], nullptr, sctl::Vector<Real>(), sctl::Vector<Real>(), mH[i]*(-1));
+        mH[i].ReInit(COORD_DIM * 2 * Ntot); mH[i] = 0;
+        sctl::Vector<Real> mH_i(COORD_DIM * 2 * SurfDim[i], mH[i].begin() + COORD_DIM * 2 * SurfDsp[i], false);
+        Compute_mH(mH_i, Svec[i], dX[i], Xn[i], comm, gmres_tol * LB_tol, gmres_iter);
+        sctl::ScratchBuf<Real> neg_mH_buf(mH[i].Dim());
+        sctl::Vector<Real> neg_mH(neg_mH_buf);
+        for (sctl::Long j = 0; j < neg_mH.Dim(); j++) neg_mH[j] = -mH[i][j];
+        Compute_B(&B0[i], nullptr, sctl::Vector<Real>(), sctl::Vector<Real>(), neg_mH);
       }
       sctl::Profile::Toc();
 
-      sctl::Vector<sctl::Vector<Real>> sigma(Nsurf), m(Nsurf), B(Nsurf), B_flux(Nsurf);
+      auto& sigma = sigma_;
+      auto& m = m_;
+      auto& B = B_;
+      auto& B_flux = B_flux_;
+      sigma.ReInit(Nsurf);
+      m.ReInit(Nsurf);
+      B.ReInit(Nsurf);
+      B_flux.ReInit(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Solve
-        sctl::Vector<Real> rhs;
+        sctl::ScratchBuf<Real> rhs_buf(2 * Ntot);
+        sctl::Vector<Real> rhs(rhs_buf);
         Compute_BdotXn(rhs, B0[i]);
         solve_taylor(sigma[i], rhs, gmres_tol, gmres_iter);
         Compute_m(m[i], sigma[i], gmres_tol * LB_tol, gmres_iter);
@@ -1372,7 +1460,7 @@ namespace detail_bie_solvers {
 
       sctl::Profile::Tic("CompFlux", &comm);
       { // Compute flux
-        auto compute_tor_circ = [&Svec,&SurfDim,&SurfDsp,dX](sctl::Vector<Real>* circ, const sctl::Vector<Real>& A, sctl::Long surf_id) {
+        auto compute_tor_circ = [&Svec,&SurfDim,&SurfDsp,&dX](sctl::Vector<Real>* circ, const sctl::Vector<Real>& A, sctl::Long surf_id) {
           sctl::Long Nsurf = Svec.Dim();
           SCTL_ASSERT(surf_id < Nsurf);
           const auto& S = Svec[surf_id];
@@ -1385,7 +1473,8 @@ namespace detail_bie_solvers {
           sctl::Long offset = SurfDsp[surf_id] * COORD_DIM * dof;
 
           std::complex<Real> circ_ = 0;
-          sctl::Vector<Real> circ_vec(dof*Np);
+          sctl::ScratchBuf<Real> circ_vec_buf(dof*Np);
+          sctl::Vector<Real> circ_vec(circ_vec_buf);
           for (sctl::Long d = 0; d < dof; d++) {
             for (sctl::Long p = 0; p < Np; p++) {
               Real integ0 = 0;
@@ -1410,7 +1499,7 @@ namespace detail_bie_solvers {
           }
           return circ_;
         };
-        auto compute_pol_circ = [&Svec,&SurfDim,&SurfDsp,dX](sctl::Vector<Real>* circ, const sctl::Vector<Real>& A, sctl::Long surf_id) {
+        auto compute_pol_circ = [&Svec,&SurfDim,&SurfDsp,&dX](sctl::Vector<Real>* circ, const sctl::Vector<Real>& A, sctl::Long surf_id) {
           sctl::Long Nsurf = Svec.Dim();
           SCTL_ASSERT(surf_id < Nsurf);
           const auto& S = Svec[surf_id];
@@ -1423,7 +1512,8 @@ namespace detail_bie_solvers {
           sctl::Long offset = SurfDsp[surf_id] * COORD_DIM * dof;
 
           std::complex<Real> circ_ = 0;
-          sctl::Vector<Real> circ_vec(dof*Nt);
+          sctl::ScratchBuf<Real> circ_vec_buf(dof*Nt);
+          sctl::Vector<Real> circ_vec(circ_vec_buf);
           for (sctl::Long d = 0; d < dof; d++) {
             for (sctl::Long t = 0; t < Nt; t++) {
               Real integ0 = 0;
@@ -1495,9 +1585,9 @@ namespace detail_bie_solvers {
         };
 
         if (Nsurf == 1) {
-          if (B_out.Dim() < 1) B_out.ReInit(1);
-          if (m_out.Dim() < 1) m_out.ReInit(1);
-          if (sigma_out.Dim() < 1) sigma_out.ReInit(1);
+          if (B_out.Dim() != 1) B_out.ReInit(1);
+          if (m_out.Dim() != 1) m_out.ReInit(1);
+          if (sigma_out.Dim() != 1) sigma_out.ReInit(1);
 
           // TODO: change flux evaluation only on curve
           std::complex<Real> tor_flux = compute_pol_circ(nullptr, B_flux[0], 0) / lambda;
@@ -1511,48 +1601,58 @@ namespace detail_bie_solvers {
 
           print_imag_norm(B[0]);
         } else if (Nsurf == 2) {
-          if (B_out.Dim() < 2) B_out.ReInit(2);
-          if (m_out.Dim() < 2) m_out.ReInit(2);
-          if (sigma_out.Dim() < 2) sigma_out.ReInit(2);
+          if (B_out.Dim() != 2) B_out.ReInit(2);
+          if (m_out.Dim() != 2) m_out.ReInit(2);
+          if (sigma_out.Dim() != 2) sigma_out.ReInit(2);
 
           std::complex<Real> tor_flux0 = (compute_pol_circ(nullptr, B_flux[0], OuterSurfIdx) - compute_pol_circ(nullptr, B_flux[0], InnerSurfIdx)) / lambda;
           std::complex<Real> tor_flux1 = (compute_pol_circ(nullptr, B_flux[1], OuterSurfIdx) - compute_pol_circ(nullptr, B_flux[1], InnerSurfIdx)) / lambda;
           std::complex<Real> pol_flux0 = (compute_tor_circ(nullptr, B_flux[0], OuterSurfIdx) - compute_tor_circ(nullptr, B_flux[0], InnerSurfIdx)) / lambda;
           std::complex<Real> pol_flux1 = (compute_tor_circ(nullptr, B_flux[1], OuterSurfIdx) - compute_tor_circ(nullptr, B_flux[1], InnerSurfIdx)) / lambda;
 
-          sctl::Matrix<std::complex<Real>> M(2,2);
+          std::complex<Real> M[2][2];
           M[0][0] = tor_flux0; M[0][1] = tor_flux1;
           M[1][0] = pol_flux0; M[1][1] = pol_flux1;
 
-          sctl::Matrix<std::complex<Real>> M_inv(2,2);
+          std::complex<Real> M_inv[2][2];
           std::complex<Real> det = M[0][0]*M[1][1] - M[0][1]*M[1][0];
           M_inv[0][0] = M[1][1]/det; M_inv[0][1] =-M[0][1]/det;
           M_inv[1][0] =-M[1][0]/det; M_inv[1][1] = M[0][0]/det;
 
-          auto ComplexMatVec2x2 = [&complex_vec_prod](sctl::Vector<sctl::Vector<Real>>& Vout, const sctl::Vector<sctl::Vector<Real>>& Vin, const sctl::Matrix<std::complex<Real>>& M) {
+          // Vout[j] <-- Vin[0] M[0][j] + Vin[1] M[1][j], products of complex numbers as complex_vec_prod, in the storage of
+          // Vout when it has the size
+          auto ComplexMatVec2x2 = [&SurfDim,&SurfDsp](sctl::Vector<sctl::Vector<Real>>& Vout, const sctl::Vector<sctl::Vector<Real>>& Vin, const std::complex<Real> (&M)[2][2]) {
             SCTL_ASSERT(Vin.Dim() == 2 && Vout.Dim() == 2);
-            SCTL_ASSERT(M.Dim(0) == 2 && M.Dim(1) == 2);
-            sctl::Vector<Real> V0, V1;
-
-            V0 = Vin[0]; V1 = Vin[1];
-            complex_vec_prod(V0, M[0][0].real(), M[0][0].imag());
-            complex_vec_prod(V1, M[1][0].real(), M[1][0].imag());
-            Vout[0] = V0 + V1;
-
-            V0 = Vin[0]; V1 = Vin[1];
-            complex_vec_prod(V0, M[0][1].real(), M[0][1].imag());
-            complex_vec_prod(V1, M[1][1].real(), M[1][1].imag());
-            Vout[1] = V0 + V1;
+            const sctl::Long Nsurf = SurfDim.Dim();
+            const sctl::Long N = SurfDsp[Nsurf-1]+SurfDim[Nsurf-1];
+            const sctl::Long dof = Vin[0].Dim() / (N * 2);
+            SCTL_ASSERT(Vin[0].Dim() == N * dof * 2 && Vin[1].Dim() == N * dof * 2);
+            for (sctl::Integer l = 0; l < 2; l++) {
+              const Real a0 = M[0][l].real(), a1 = M[0][l].imag(), b0 = M[1][l].real(), b1 = M[1][l].imag();
+              if (Vout[l].Dim() != Vin[0].Dim()) Vout[l].ReInit(Vin[0].Dim());
+              for (sctl::Long i = 0; i < Nsurf; i++) {
+                for (sctl::Long k = 0; k < dof; k++) {
+                  sctl::Long offset = SurfDsp[i]*dof*2 + k*2*SurfDim[i];
+                  for (sctl::Long j = 0; j < SurfDim[i]; j++) {
+                    const Real x0 = Vin[0][offset + 0*SurfDim[i] + j], x1 = Vin[0][offset + 1*SurfDim[i] + j];
+                    const Real y0 = Vin[1][offset + 0*SurfDim[i] + j], y1 = Vin[1][offset + 1*SurfDim[i] + j];
+                    Vout[l][offset + 0*SurfDim[i] + j] = (x0 * a0 - x1 * a1) + (y0 * b0 - y1 * b1);
+                    Vout[l][offset + 1*SurfDim[i] + j] = (x0 * a1 + x1 * a0) + (y0 * b1 + y1 * b0);
+                  }
+                }
+              }
+            }
           };
 
-          sctl::Vector<sctl::Vector<Real>> B_(2);
-          ComplexMatVec2x2(B_, B, M_inv);
+          auto& B2 = B2_;
+          B2.ReInit(2);
+          ComplexMatVec2x2(B2, B, M_inv);
           ComplexMatVec2x2(m_out, m, M_inv);
           ComplexMatVec2x2(sigma_out, sigma, M_inv);
-          real_imag_part(B_out[0], B_[0], true);
-          real_imag_part(B_out[1], B_[1], true);
-          print_imag_norm(B_[0]);
-          print_imag_norm(B_[1]);
+          real_imag_part(B_out[0], B2[0], true);
+          real_imag_part(B_out[1], B2[1], true);
+          print_imag_norm(B2[0]);
+          print_imag_norm(B2[1]);
         } else {
           SCTL_ASSERT(false);
         }

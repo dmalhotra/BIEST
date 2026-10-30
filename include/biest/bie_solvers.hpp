@@ -37,7 +37,8 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * call sets them up again, for the surfaces it is given, in the memory of the earlier one when the surfaces have
      * no more grid points, rather than allocating and page faulting that memory again. That memory, the singular
      * corrections of the operators, is 13 (2 PATCH_DIM0 + 1)^2 values for each grid point, held until the object is
-     * destroyed.
+     * destroyed. The vectors of the solve are kept in the same way, a few tens of values for each grid point and each
+     * surface.
      *
      * @param[in] comm the communicator when running in parallel.
      */
@@ -126,6 +127,14 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     BoundaryIntegralOp<Real,3,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_biot_savart_;
     BoundaryIntegralOp<Real,1,3,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_lap_grad_;
     BoundaryIntegralOp<Real,1,1,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_laplace_;
+
+    // The vectors of Compute(), kept from one call to the next with their storage, as the operators: for each surface,
+    // its number of grid points and their offset in the vectors of all the surfaces, the derivatives of its
+    // coordinates, its normal and area element; for each solution, J0 and B0, and the fields B and J with their fluxes
+    // (the results of ComputeHelper); the solution of GMRES
+    sctl::Vector<sctl::Long> SurfDim_, SurfDsp_;
+    sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, J0_, B0_, B_, J_;
+    sctl::Vector<Real> tor_flux_, pol_flux_, F_;
 };
 
 /**
@@ -153,7 +162,8 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * call sets them up again, for the surfaces it is given, in the memory of the earlier one when the surfaces have
      * no more grid points, rather than allocating and page faulting that memory again. That memory, the singular
      * corrections of the operators, is 28 (2 PATCH_DIM0 + 1)^2 values for each grid point, held until the object is
-     * destroyed.
+     * destroyed. The vectors of the solve are kept in the same way, a few tens of values for each grid point and each
+     * surface.
      *
      * @param[in] comm the communicator when running in parallel.
      */
@@ -265,6 +275,14 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_diff_;
     BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_;
     BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_potn_;
+
+    // The vectors of Compute(), kept from one call to the next with their storage, as the operators: for each surface,
+    // its number of grid points and their offset in the vectors of all the surfaces, the derivatives of its
+    // coordinates, its normal and area element; for each solution, mH, B0, sigma, m, B and B_flux, and B in the basis
+    // of the fluxes (with two surfaces); and the results of ComputeHelper
+    sctl::Vector<sctl::Long> SurfDim_, SurfDsp_;
+    sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, mH_, B0_, sigma_, m_, B_, B_flux_, B2_;
+    sctl::Vector<sctl::Vector<Real>> B_out_, m_out_, sigma_out_;
 };
 
 }

@@ -761,8 +761,8 @@ template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, 
   if (Vd.Dim() != COORD_DIM * N) Vd.ReInit(COORD_DIM * N);
   if (Vc.Dim() != COORD_DIM * N) Vc.ReInit(COORD_DIM * N);
   if (Vh.Dim() != COORD_DIM * N) Vh.ReInit(COORD_DIM * N);
+  // The temporaries in scratch memory: see SurfGrad
   { // Set Vn
-    Vn.ReInit(V.Dim());
     for (sctl::Long i = 0; i < N; i++) {
       Real VdotN = 0;
       for (sctl::Long k = 0; k < COORD_DIM; k++) VdotN += V[k * N + i] * normal[k * N + i];
@@ -770,7 +770,8 @@ template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, 
     }
   }
   { // Set Vd = Grad(InvLap(Div(V)))
-    sctl::Vector<Real> DivV, GradInvLapDivV;
+    sctl::ScratchBuf<Real> DivV_buf(N);
+    sctl::Vector<Real> DivV(DivV_buf);
     SurfDiv(DivV, dX, V);
     GradInvSurfLap(Vd, dX, DivV, tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
   }
@@ -786,13 +787,14 @@ template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, 
         axb[2 * N + i] = a[0 * N + i] * b[1 * N + i] - a[1 * N + i] * b[0 * N + i];
       }
     };
-    sctl::Vector<Real> Vxn, DivVxn, GradInvLapDivVxn;
+    sctl::ScratchBuf<Real> Vxn_buf(COORD_DIM * N), DivVxn_buf(N), GradInvLapDivVxn_buf(COORD_DIM * N);
+    sctl::Vector<Real> Vxn(Vxn_buf), DivVxn(DivVxn_buf), GradInvLapDivVxn(GradInvLapDivVxn_buf);
     cross_prod(Vxn, V, normal);
     SurfDiv(DivVxn, dX, Vxn);
     GradInvSurfLap(GradInvLapDivVxn, dX, DivVxn, tol * max_norm(V) / max_norm(DivVxn), max_iter, 1.5);
     cross_prod(Vc, normal, GradInvLapDivVxn);
   }
-  Vh = V - Vn - Vd - Vc;
+  for (sctl::Long i = 0; i < COORD_DIM * N; i++) Vh[i] = V[i] - Vn[i] - Vd[i] - Vc[i];
 }
 
 

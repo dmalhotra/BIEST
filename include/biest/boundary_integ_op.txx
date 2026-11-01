@@ -111,8 +111,7 @@ namespace biest {
         const sctl::Vector<Real>& X = Xsrc[s];
         const sctl::Vector<Real>& dX = dXsrc[s];
         sctl::Vector<Real> R2(N), tile(Bt * Bp * (COORD_DIM + 1)); // R_j^2; and for each tile, the center and the reach
-        #pragma omp parallel for schedule(static)
-        for (sctl::Long j = 0; j < N; j++) {
+        sctl::omp_par::parallel_for(N, [&](const sctl::Long j) {
           Real ht2 = 0, hp2 = 0;
           for (sctl::Integer k = 0; k < COORD_DIM; k++) {
             ht2 += dX[(k * 2 + 0) * N + j] * dX[(k * 2 + 0) * N + j];
@@ -120,9 +119,8 @@ namespace biest {
           }
           const Real h = std::max<Real>(sctl::sqrt<Real>(ht2) / Nt, sctl::sqrt<Real>(hp2) / Np);
           R2[j] = c * c * h * h;
-        }
-        #pragma omp parallel for schedule(static)
-        for (sctl::Long b = 0; b < Bt * Bp; b++) {
+        });
+        sctl::omp_par::parallel_for(Bt * Bp, [&](const sctl::Long b) {
           const sctl::Long t0 = (b / Bp) * B, t1 = std::min(Nt, t0 + B), p0 = (b % Bp) * B, p1 = std::min(Np, p0 + B);
           Real x0[COORD_DIM] = {0, 0, 0}, rad2 = 0, R2max = 0;
           for (sctl::Long t = t0; t < t1; t++) {
@@ -140,15 +138,14 @@ namespace biest {
           }
           for (sctl::Integer k = 0; k < COORD_DIM; k++) tile[b * (COORD_DIM + 1) + k] = x0[k];
           tile[b * (COORD_DIM + 1) + COORD_DIM] = sctl::sqrt<Real>(rad2) + sctl::sqrt<Real>(R2max);
-        }
+        });
 
         for (sctl::Long t = 0; t < Nsurf; t++) {
           if (t == s) continue;
           const sctl::Long Ntrg = trg_idx[t].Dim();
           const sctl::Vector<Real>& Xt = Xtrg[t];
           sctl::Vector<char> is_near(Ntrg);
-          #pragma omp parallel for schedule(dynamic, 64)
-          for (sctl::Long i = 0; i < Ntrg; i++) {
+          sctl::omp_par::parallel_for(Ntrg, [&](const sctl::Long i) {
             const Real x[COORD_DIM] = {Xt[0 * Ntrg + i], Xt[1 * Ntrg + i], Xt[2 * Ntrg + i]};
             const auto dist2 = [&x](const Real* y) {
               Real r2 = 0;
@@ -169,7 +166,7 @@ namespace biest {
               }
             }
             is_near[i] = near;
-          }
+          }, true);
 
           CrossInterac& ci = cross[s * Nsurf + t];
           for (sctl::Long i = 0; i < Ntrg; i++) (is_near[i] ? ci.near_idx : ci.far_idx).PushBack(i);

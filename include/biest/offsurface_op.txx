@@ -122,8 +122,7 @@ namespace detail_offsurf {
     }
     if (err) return *err;
     std::unique_ptr<sctl::Vector<Real>> err_(new sctl::Vector<Real>(Nk));
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long k = 0; k < Nk; k++) (*err_)[k] = LocalModeError<Real>(p, 2 * sctl::const_pi<Real>() * k / n);
+    sctl::omp_par::parallel_for(Nk, [&](const sctl::Long k) { (*err_)[k] = LocalModeError<Real>(p, 2 * sctl::const_pi<Real>() * k / n); });
     #pragma omp critical(BIEST_ModeErrors)
     {
       auto& entry = cache[key];
@@ -687,9 +686,10 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(sctl::
       Xlev.emplace_back(COORD_DIM * Nnds * P);
       sctl::Vector<Real>& Xl = Xlev.back();
       sctl::Vector<Real> xm(P), nm(P); // of each panel, the largest x at its nodes, and there the x component of X_t x X_p
-      bool resolved_ = true;
-      #pragma omp parallel for schedule(dynamic) reduction(&&:resolved_)
-      for (sctl::Long g = 0; g < (sctl::Long)grp.size() - 1; g++) {
+      const sctl::Long Ng = (sctl::Long)grp.size() - 1;
+      sctl::ScratchBuf<char> group_resolved(Ng); // whether the panels of each group are resolved or split
+      sctl::omp_par::parallel_for(Ng, [&](const sctl::Long g) {
+        bool resolved_ = true;
         // T: Yf at the toroidal nodes of the interval, and Th: dXf at those of its two halves, on every poloidal grid
         // line; V: Yf at the nodes of a panel, and Vh: dXf at the nodes of its halves
         const detail_offsurf::Panel& q0 = todo[idx[grp[g]]];
@@ -734,8 +734,9 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(sctl::
           xm[e] = Vm(0);
           nm[e] = Vm(COORD_DIM + 1) * Vm(2 * COORD_DIM + 2) - Vm(COORD_DIM + 2) * Vm(2 * COORD_DIM + 1);
         }
-      }
-      resolved = resolved && resolved_;
+        group_resolved[g] = resolved_;
+      }, true);
+      for (sctl::Long g = 0; g < Ng; g++) resolved = resolved && group_resolved[g];
 
       kept.emplace_back();
       sctl::Vector<detail_offsurf::Panel> next;
@@ -772,8 +773,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(sctl::
   for (sctl::Long l = 0; l < (sctl::Long)kept.size(); l++) {
     const std::vector<sctl::Long>& K = kept[l];
     const sctl::Vector<Real>& Xl = Xlev[l];
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long a = 0; a < (sctl::Long)K.size(); a++) {
+    sctl::omp_par::parallel_for((sctl::Long)K.size(), [&](const sctl::Long a) {
       const sctl::ConstIterator<Real> src = Xl.begin() + K[a] * COORD_DIM * Nnds;
       const sctl::Iterator<Real> dst = coord.begin() + (offset + a) * COORD_DIM * Nnds;
       for (sctl::Long i = 0; i < ORDER; i++) {
@@ -782,7 +782,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(sctl::
           for (sctl::Integer k = 0; k < COORD_DIM; k++) dst[(i * ORDER + j) * COORD_DIM + k] = src[(i * ORDER + j_) * COORD_DIM + k];
         }
       }
-    }
+    });
     offset += (sctl::Long)K.size();
   }
 }

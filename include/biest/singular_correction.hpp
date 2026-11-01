@@ -350,9 +350,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   const sctl::Long N = Nt * Np;
   const Real gNt = (gNt_ > 0 ? gNt_ : (Real)Nt), gNp = (gNp_ > 0 ? gNp_ : (Real)Np);
   SCTL_ASSERT(dX.Dim() == COORD_DIM * 2 * N);
-  Real cond = 1;
-  #pragma omp parallel for schedule(static) reduction(max:cond)
-  for (sctl::Long i = 0; i < N; i++) { // the metric per grid spacing, [a c; c b], and the square root of the ratio of its eigenvalues
+  return sctl::omp_par::parallel_reduce(N, (Real)1, [&](const sctl::Long i) { // the metric per grid spacing, [a c; c b], and the square root of the ratio of its eigenvalues (at least 1)
     Real a = 0, b = 0, c = 0;
     for (sctl::Integer k = 0; k < COORD_DIM; k++) {
       const Real xt = dX[(k * 2 + 0) * N + i] / gNt, xp = dX[(k * 2 + 1) * N + i] / gNp;
@@ -361,9 +359,8 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
       c += xt * xp;
     }
     const Real m = (a + b) / 2, d = sctl::sqrt<Real>((a - b) * (a - b) / 4 + c * c);
-    cond = std::max<Real>(cond, sctl::sqrt<Real>((m + d) / (m - d)));
-  }
-  return cond;
+    return sctl::sqrt<Real>((m + d) / (m - d));
+  }, [](const Real x, const Real y) { return std::max<Real>(x, y); });
 }
 
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::Setup(const SingularQuadParams& params, sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) {
@@ -401,8 +398,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   MGrid_.ReInit(Nloc * KDIM1 * T.Kp);
 
   const sctl::Integer Nthread = omp_get_max_threads();
-  #pragma omp parallel for schedule(static)
-  for (sctl::Integer tid = 0; tid < Nthread; tid++) {
+  sctl::omp_par::parallel_for(Nthread, [&](const sctl::Long tid) {
     // The work buffer of the thread, in its scratch memory, which the next setup uses again (see SurfaceOp::SurfGrad)
     sctl::ScratchBuf<Real> work_buff_buf(T.WorkBuffSize);
     sctl::Vector<Real> work_buff(work_buff_buf, false);
@@ -412,7 +408,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
       if (T.INTERP_ORDER == MAX_INTERP_ORDER) SetupTarget<MAX_INTERP_ORDER>(i, Xsrc, dXsrc, ker, normal_orient, work_buff);
       else SetupTarget<0>(i, Xsrc, dXsrc, ker, normal_orient, work_buff);
     }
-  }
+  });
 }
 
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> template <sctl::Integer IORD> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::SetupTarget(sctl::Long trg, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, sctl::Vector<Real>& work_buff) {
@@ -725,16 +721,16 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   if (Nloc) {
     const Precomp& T = *tables_[0];
     const sctl::Long N = KDIM0 * T.Ngrid, Kp = T.Kp;
-    #pragma omp parallel
-    {
+    const sctl::Integer Nthread = omp_get_max_threads();
+    sctl::omp_par::parallel_for(Nthread, [&](const sctl::Long tid) { // the targets i0 to i1
       // The density on the patch of a target, padded with zeros to Kp values; its dot with each row of the corrections
       sctl::ScratchBuf<Real> GF_buf(Kp);
       sctl::Vector<Real> GF(N, GF_buf.begin(), false);
       for (sctl::Long l = N; l < Kp; l++) GF_buf.begin()[l] = 0;
+      const sctl::Long i0 = Nloc * (tid + 0) / Nthread, i1 = Nloc * (tid + 1) / Nthread;
       for (sctl::Long k = 0; k < dof; k++) {
         const sctl::Vector<Real> F_(KDIM0 * Nt_ * Np_, (sctl::Iterator<Real>)F.begin() + k * KDIM0 * Nt_ * Np_, false);
-        #pragma omp for schedule(static)
-        for (sctl::Long i = 0; i < Nloc; i++) {
+        for (sctl::Long i = i0; i < i1; i++) {
           SetPatch(GF, trg_t_[i], trg_p_[i], F_, Nt_, Np_, T.PATCH_DIM);
           const sctl::ConstIterator<Real> M = MGrid_.begin() + i * KDIM1 * Kp;
           Vec acc[KDIM1];
@@ -746,7 +742,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
           for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) Uloc[(k * KDIM1 + k1) * Ntrg_ + trg_dsp_ + i] = sctl::reduce(acc[k1]);
         }
       }
-    }
+    });
   }
   comm_.Allreduce(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::CommOp::SUM);
   if (U.Dim() != dof * KDIM1 * Ntrg_) { // Init U

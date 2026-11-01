@@ -140,7 +140,7 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
             }
           }
         };
-        if (SCTL_IN_PARALLEL()) { // serial: a nested parallel region allocates its team (see SctlKernelFunction::BuildMatrix)
+        if (SCTL_IN_PARALLEL() || sctl::omp_par::one_thread()) { // serial: a nested parallel region, or one of one thread, allocates its team (see SctlKernelFunction::BuildMatrix)
           src_range(0, Ns);
         } else {
           const sctl::Integer omp_p = omp_get_max_threads();
@@ -262,9 +262,10 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
         }
       };
 
-      // Serial inside a parallel region: a nested one, even of one thread, allocates its team (libgomp), and
-      // SingularCorrection::Setup calls this twice for each target from a parallel loop
-      if (SCTL_IN_PARALLEL()) {
+      // Serial inside a parallel region, and where a region would have one thread (sctl::omp_par::one_thread): a
+      // nested one, even of one thread, allocates its team (libgomp), and SingularCorrection::Setup calls this twice for
+      // each target from a parallel loop
+      if (SCTL_IN_PARALLEL() || sctl::omp_par::one_thread()) {
         for (sctl::Long s = 0; s < NNs; s += Nv) src_blk(s);
       } else {
         #pragma omp parallel for schedule(static)
@@ -306,7 +307,7 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
         }
       };
 
-      if (Nthread == 1) {
+      if (Nthread == 1 || sctl::omp_par::one_thread()) { // without a parallel region of one thread: see BuildMatrix
         for (sctl::Long t = 0; t < NNt; t += Nv) trg_blk(t);
       } else {
         #pragma omp parallel for schedule(static)

@@ -96,20 +96,18 @@ namespace detail_bie_solvers {
       for (sctl::Integer j = 0; j < NFP; j++) {
         if (!vec) {
           for (sctl::Integer q = 0; q < dof; q++) {
-            #pragma omp parallel for schedule(static)
-            for (sctl::Long n = 0; n < M; n++) Y_[q * MF + j * M + n] = X_[q * M + n];
+            sctl::omp_par::parallel_for(M, [&](const sctl::Long n) { Y_[q * MF + j * M + n] = X_[q * M + n]; });
           }
           continue;
         }
         const Real c = sctl::cos<Real>(2 * sctl::const_pi<Real>() * j / NFP), s = sctl::sin<Real>(2 * sctl::const_pi<Real>() * j / NFP) * SurfOrient[i];
         for (sctl::Integer cc = 0; cc < cdim; cc++) {
-          #pragma omp parallel for schedule(static)
-          for (sctl::Long n = 0; n < M; n++) {
+          sctl::omp_par::parallel_for(M, [&](const sctl::Long n) {
             const Real x = X_[(0 * cdim + cc) * M + n], y = X_[(1 * cdim + cc) * M + n], z = X_[(2 * cdim + cc) * M + n];
             Y_[(0 * cdim + cc) * MF + j * M + n] = x * c - y * s;
             Y_[(1 * cdim + cc) * MF + j * M + n] = x * s + y * c;
             Y_[(2 * cdim + cc) * MF + j * M + n] = z;
-          }
+          });
         }
       }
     }
@@ -1119,20 +1117,18 @@ namespace detail_bie_solvers {
       // In scratch memory: see SurfaceOp::SurfGrad
       sctl::ScratchBuf<Real> V_buf(COORD_DIM * N), Vn_buf(COORD_DIM * N), Vd_buf(COORD_DIM * N), Vc_buf(COORD_DIM * N), Vh_buf(COORD_DIM * N);
       sctl::Vector<Real> V(V_buf);
-      #pragma omp parallel for schedule(static)
-      for (sctl::Long i = 0; i < N; i++) { // Set V
+      sctl::omp_par::parallel_for(N, [&](const sctl::Long i) { // Set V
         for (sctl::Long k =0; k < COORD_DIM; k++) {
           V[k * N + i] = dX[(k*2+0) * N + i];
         }
-      }
+      });
 
       sctl::Vector<Real> Vn(Vn_buf), Vd(Vd_buf), Vc(Vc_buf), Vh(Vh_buf);
       SurfaceOp<Real> surf_op(comm, Nt, Np, NFP, tor_orient);
       surf_op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, Xn, tol, max_iter);
 
       if (mH.Dim() != COORD_DIM * 2 * N) mH.ReInit(COORD_DIM * 2 * N);
-      #pragma omp parallel for schedule(static)
-      for (sctl::Long i = 0; i < N; i++) { // Set mH
+      sctl::omp_par::parallel_for(N, [&](const sctl::Long i) { // Set mH
         sctl::StaticArray<Real, COORD_DIM> Xn_, Vh_, nxVh_;
         for (sctl::Long k = 0; k < COORD_DIM; k++) {
           Xn_[k] = Xn[k * N + i];
@@ -1147,7 +1143,7 @@ namespace detail_bie_solvers {
           mH[(k*2+0) * N + i] =   Vh_[k];
           mH[(k*2+1) * N + i] = nxVh_[k];
         }
-      }
+      });
     }
     template <class Real, sctl::Integer UPSAMPLE> template <class Op> void TaylorState<Real,UPSAMPLE>::Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad) { // grad_v <-- Grad(g[sigma])
       Grad_v = 0;
@@ -1168,13 +1164,12 @@ namespace detail_bie_solvers {
 
       for (sctl::Long k = 0; k < COORD_DIM; k++) {
         for (sctl::Long i = 0; i < Nsurf; i++) {
-          #pragma omp parallel for schedule(static)
-          for (sctl::Long j = 0; j < SurfDim[i]; j++) {
+          sctl::omp_par::parallel_for(SurfDim[i], [&](const sctl::Long j) {
             Real real_Q = iQ[COORD_DIM * 2 * SurfDsp[i] + (k*2+0) * SurfDim[i] + j];
             Real imag_Q = iQ[COORD_DIM * 2 * SurfDsp[i] + (k*2+1) * SurfDim[i] + j];
             iQ[COORD_DIM * 2 * SurfDsp[i] + (k*2+0) * SurfDim[i] + j] = -imag_Q;
             iQ[COORD_DIM * 2 * SurfDsp[i] + (k*2+1) * SurfDim[i] + j] =  real_Q;
-          }
+          });
         }
       }
     }
@@ -1194,13 +1189,12 @@ namespace detail_bie_solvers {
         sctl::Long k0 = (k + 2) % COORD_DIM;
         sctl::Long k1 = (k + 1) % COORD_DIM;
         for (sctl::Long i = 0; i < Nsurf; i++) {
-          #pragma omp parallel for schedule(static)
-          for (sctl::Long j = 0; j < SurfDim[i]; j++) {
+          sctl::omp_par::parallel_for(SurfDim[i], [&](const sctl::Long j) {
             iCurlQ[COORD_DIM * 2 * SurfDsp[i] + (k1*2+0) * SurfDim[i] + j] += -GradQ_[COORD_DIM * COORD_DIM * 2 * SurfDsp[i] + ((k*COORD_DIM+k0)*2+1) * SurfDim[i] + j];
             iCurlQ[COORD_DIM * 2 * SurfDsp[i] + (k1*2+1) * SurfDim[i] + j] +=  GradQ_[COORD_DIM * COORD_DIM * 2 * SurfDsp[i] + ((k*COORD_DIM+k0)*2+0) * SurfDim[i] + j];
             iCurlQ[COORD_DIM * 2 * SurfDsp[i] + (k0*2+0) * SurfDim[i] + j] -= -GradQ_[COORD_DIM * COORD_DIM * 2 * SurfDsp[i] + ((k*COORD_DIM+k1)*2+1) * SurfDim[i] + j];
             iCurlQ[COORD_DIM * 2 * SurfDsp[i] + (k0*2+1) * SurfDim[i] + j] -=  GradQ_[COORD_DIM * COORD_DIM * 2 * SurfDsp[i] + ((k*COORD_DIM+k1)*2+0) * SurfDim[i] + j];
-          }
+          });
         }
       }
     }

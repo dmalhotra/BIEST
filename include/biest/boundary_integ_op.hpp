@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <biest/offsurface_op.hpp>
+#include <biest/singular_correction.hpp>
 #include <biest/surface.hpp>
 #include <sctl.hpp>
 
@@ -25,20 +26,12 @@ namespace biest {
  *
  * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures.
  *
- * @tparam PATCH_DIM0 radius, in grid spacings of the upsampled source grid, of
- * the partition of unity around each target point. The patch has
- * (2*PATCH_DIM0+1) x (2*PATCH_DIM0+1) grid points.
- *
- * @tparam RAD_DIM the order of the polar quadrature rule. Radial dimension is
- * RAD_DIM (3*RAD_DIM when HedgehogOrder > 1) and angular dimension is
- * 2*RAD_DIM.
- *
  * @tparam HedgehogOrder 0 or 1 gives the principal value on the surface. A
  * value in [2, 16] gives the one-sided limit from the side opposite to the
  * normal (the interior for outward normals), by extrapolation from points
  * off the surface.
  */
-template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 25, sctl::Integer RAD_DIM = 18, sctl::Integer HedgehogOrder = 1> class BoundaryIntegralOp {
+template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE = 1, sctl::Integer HedgehogOrder = 1> class BoundaryIntegralOp {
     static constexpr sctl::Integer COORD_DIM = 3;
 
   public:
@@ -63,6 +56,10 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
      * Setup the layer-potential operator and precompute the singular
      * corrections. The target points are the grid points of the surfaces.
      *
+     * The singular quadrature of each surface (see SingularQuadParams) is that
+     * given, with the values not given chosen for the tolerance tol and the
+     * anisotropy of the grid of the surface, upsampled UPSAMPLE times.
+     *
      * With several surfaces, the potential of a surface at the targets of
      * another one is the trapezoidal rule on the grid upsampled UPSAMPLE times,
      * except at the targets too close to the surface for it to be accurate to
@@ -79,10 +76,13 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
      * @param[in] trg_idx_ (optional) for each surface, the indices of the grid
      * points which will be the target points.
      *
-     * @param[in] tol the accuracy of the potential of a surface at the targets
-     * of another one.
+     * @param[in] tol the accuracy of the singular quadrature, and of the
+     * potential of a surface at the targets of another one.
+     *
+     * @param[in] quad (optional) the singular quadrature, its zero values
+     * chosen from tol.
      */
-    template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>(), const Real tol = (Real)1e-10);
+    template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>(), const Real tol = (Real)1e-10, const SingularQuadParams& quad = SingularQuadParams());
 
     /**
      * Evaluate the layer-potential operator. The potential of a surface at
@@ -117,11 +117,11 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
      */
     template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol = (Real)1e-10) const;
 
-    template <class Kernel> static sctl::Vector<Real> test(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& ker, const sctl::Comm& comm);
+    template <class Kernel> static sctl::Vector<Real> test(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& ker, const sctl::Comm& comm, const SingularQuadParams& quad = SingularQuadParams());
 
-    template <class Kernel, class DLKernel, class GradKernel> static void test_GreensIdentity(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& sl_ker, const DLKernel& dl_ker, const GradKernel& sl_grad_ker, const sctl::Comm& comm);
+    template <class Kernel, class DLKernel, class GradKernel> static void test_GreensIdentity(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& sl_ker, const DLKernel& dl_ker, const GradKernel& sl_grad_ker, const sctl::Comm& comm, const SingularQuadParams& quad = SingularQuadParams());
 
-    static void test_Precond(sctl::Long Nt, sctl::Long Np, SurfType surf_type, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm);
+    static void test_Precond(sctl::Long Nt, sctl::Long Np, SurfType surf_type, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, const SingularQuadParams& quad = SingularQuadParams());
 
   private:
 
@@ -166,7 +166,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     sctl::StaticArray<sctl::Long,2> dim;
     sctl::Vector<Real> normal_orient;
     sctl::Vector<sctl::Vector<Real>> Xtrg, Xsrc, dXsrc, Xn_src, Xa_src;
-    sctl::Vector<sctl::Vector<SingularCorrection<Real,PATCH_DIM0,RAD_DIM,KDIM0,KDIM1,HedgehogOrder>>> singular_correction;
+    std::vector<SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>> singular_correction; // of each surface
     sctl::Vector<sctl::Vector<sctl::Long>> trg_idx;
 
     // The targets of surface t for the potential of a surface s != t, at cross[s * Nsurf + t]: those far from s, for
@@ -285,21 +285,23 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
 
     /**
      * As the SetupSingular() of several surfaces above, with the quadrature
-     * given: that of BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PDIM,RDIM>
-     * (the patch size PDIM and the radial order RDIM) on the grid of each
-     * surface upsampled UPSAMPLE times in each direction, with the potential
-     * computed at the grid points of one field period of each surface. A later
-     * call sets up the operator in the memory of the earlier one when the
-     * surfaces have no more grid points.
+     * grids given: that of BoundaryIntegralOp::SetupSingular() for tol and
+     * quad on the grid of each surface upsampled UPSAMPLE times in each
+     * direction, with the potential computed at the grid points of one field
+     * period of each surface. A later call sets up the operator in the memory
+     * of the earlier one when the surfaces have no more grid points.
      *
      * @param[in] Svec the surfaces.
      *
      * @param[in] ker the kernel function; it must outlive the operator.
      *
-     * @param[in] tol the accuracy of the potential of a surface at the
-     * targets of another.
+     * @param[in] tol the accuracy of the singular quadrature, and of the
+     * potential of a surface at the targets of another.
+     *
+     * @param[in] quad (optional) the singular quadrature, its zero values
+     * chosen from tol.
      */
-    template <sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer RDIM, class Kernel> void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol);
+    template <sctl::Integer UPSAMPLE = 1, class Kernel> void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol, const SingularQuadParams& quad = SingularQuadParams());
 
     /**
      * Evaluate the potential from given density.
@@ -413,25 +415,16 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
      */
     void SetGrids(const sctl::Vector<biest::Surface<Real>>& Svec, const sctl::Integer NFP);
 
-    template <sctl::Integer PDIM, sctl::Integer RDIM> static void BIOpDelete(void** self);
-    template <sctl::Integer PDIM, sctl::Integer RDIM> static void BIOpEval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self);
+    using BIOp = BoundaryIntegralOp<Real,KDIM0,KDIM1,1,HedgehogOrder>;
 
     /**
-     * Set up the operator BoundaryIntegralOp<Real,KDIM0,KDIM1,1,PDIM,RDIM> on the surfaces and the targets of SetGrids(),
-     * the one of the earlier setup if it is of these parameters.
+     * Set up the operator on the surfaces and the targets of SetGrids(), in the memory of the earlier setup.
      */
-    template <sctl::Integer PDIM, sctl::Integer RDIM, class Kernel> void SetupSingular0(const Kernel& ker, const Real tol);
-    /**
-     * SetupSingular0() with the patch size the largest of 6, 8, 12, ..., 64 that is at most PDIM_ (6 below), and RDIM =
-     * 1.6 times it.
-     */
-    template <class Kernel> void SetupSingular_(const Kernel& ker, const sctl::Integer PDIM_, const Real tol);
+    template <class Kernel> void SetupSingular0(const Kernel& ker, const Real tol, const SingularQuadParams& quad);
 
     template <class, sctl::Integer, sctl::Integer, sctl::Integer, sctl::Integer> friend class FieldPeriodBIOp;
 
-    void* biop;
-    void (*biop_delete)(void** self);
-    void (*biop_eval)(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, void* self);
+    BIOp* biop;
     sctl::Integer NFP_;
     sctl::Vector<sctl::Integer> tor_orient_; // for each surface
     sctl::Vector<sctl::Long> trg_Nt_, trg_Np_, quad_Nt_, quad_Np_; // for each surface

@@ -21,9 +21,10 @@ For the method see :ref:`Singular quadrature <algorithms-singular-quadrature>`, 
 1. Set up the operator
 ----------------------
 
-The template parameters are the number of components of the density and of the potential (which must match the kernel), and the quadrature parameters (see :ref:`choosing the quadrature parameters <tutorial-quadrature-params>`).
-``SetupSingular`` takes the vector of surfaces and the kernel, and precomputes the singular corrections.
-With several surfaces, the potential of each surface at the grid points of the others is the trapezoidal rule, except at the grid points too close to the surface for it, where it is computed as by ``EvalOffSurface``, to the tolerance given as the last argument of ``SetupSingular`` (``1e-10`` by default; see :ref:`Interactions between surfaces <algorithms-between-surfaces>`).
+The template parameters are the number of components of the density and of the potential (which must match the kernel), and the upsampling of the grid for the quadrature.
+``SetupSingular`` takes the vector of surfaces, the kernel, the targets (all the grid points when empty) and a tolerance (``1e-10`` by default), and precomputes the singular corrections.
+The tolerance sets the singular quadrature, with the anisotropy of the grid (see :ref:`Choosing the parameters <algorithms-quadrature-params>`); a ``SingularQuadParams`` after it gives the quadrature instead.
+With several surfaces, the potential of each surface at the grid points of the others is the trapezoidal rule, except at the grid points too close to the surface for it, where it is computed as by ``EvalOffSurface``, to the same tolerance (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`).
 The code on this page is from the :ref:`virtual casing example <tutorial-virtual-casing>` below, which uses the layer potentials of the Biot--Savart kernel (3 density components, 3 potential components) and of the gradient of the Laplace single layer (1 density component, 3 potential components):
 
 .. literalinclude:: ../examples/layer-potentials.cpp
@@ -95,8 +96,8 @@ In the complete program ``doc/examples/layer-potentials.cpp`` below, :math:`\mat
 
 .. code-block:: text
 
-   on the surface:  relative error = 1.88761e-09
-   off the surface: relative error = 6.31314e-10
+   on the surface:  relative error = 1.95176e-10
+   off the surface: relative error = 4.77692e-10
 
 The `virtual-casing <https://github.com/hiddenSymmetries/virtual-casing>`_ library, which is built on BIEST, implements the same formulas with field-period and stellarator symmetry, and has Python bindings.
 

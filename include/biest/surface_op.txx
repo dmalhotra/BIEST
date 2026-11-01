@@ -814,60 +814,6 @@ template <class Real> template <sctl::Integer KDIM0, sctl::Integer KDIM1> void S
   }
 }
 
-template <class Real> template <class SingularCorrection, class Kernel> void SurfaceOp<Real>::SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, const Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) const {
-  const sctl::Long np = comm_.Size();
-  const sctl::Long rank = comm_.Rank();
-  const sctl::Long Ntrg = trg_idx.Dim();
-  //const sctl::Long Nt0 = Nt_ / TRG_SKIP;
-  const sctl::Long Np0 = Np_ / TRG_SKIP;
-  const sctl::Long a = (rank + 0) * Ntrg / np;
-  const sctl::Long b = (rank + 1) * Ntrg / np;
-  const sctl::Long Nloc = b-a;
-  singular_correction.ReInit(Nloc);
-
-  const sctl::Integer Nthread = omp_get_max_threads();
-  #pragma omp parallel for schedule(static)
-  for (sctl::Integer tid = 0; tid < Nthread; tid++) {
-    // The work buffer of the thread, in its scratch memory, which the next setup uses again (see SurfGrad)
-    sctl::ScratchBuf<Real> work_buff_buf(SingularCorrection::WorkBuffSize);
-    sctl::Vector<Real> work_buff(work_buff_buf, false);
-    const sctl::Long a_ = a + Nloc*(tid+0)/Nthread;
-    const sctl::Long b_ = a + Nloc*(tid+1)/Nthread;
-    for (sctl::Long i = a_; i < b_; i++) {
-      const sctl::Long t = (trg_idx[i] / Np0) * TRG_SKIP;
-      const sctl::Long p = (trg_idx[i] % Np0) * TRG_SKIP;
-      singular_correction[i - a].Setup(TRG_SKIP, Nt_, Np_, Xsrc, dXsrc, t, p, i, trg_idx.Dim(), ker, normal_orient, work_buff);
-    }
-  }
-}
-
-template <class Real> template <class SingularCorrection> void SurfaceOp<Real>::EvalSingularCorrection(sctl::Vector<Real>& U, const sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer kdim0, sctl::Integer kdim1, const sctl::Vector<Real>& F) const {
-  sctl::Long Ntrg;
-  { // Set N
-    sctl::Long Nloc = singular_correction.Dim();
-    comm_.Allreduce(sctl::Ptr2ConstItr<sctl::Long>(&Nloc,1), sctl::Ptr2Itr<sctl::Long>(&Ntrg,1), 1, sctl::CommOp::SUM);
-  }
-  sctl::Long dof = F.Dim() / (kdim0 * Nt_ * Np_);
-  SCTL_ASSERT(F.Dim() == dof * kdim0 * Nt_ * Np_);
-  sctl::ScratchBuf<Real> Uloc_buf(dof * kdim1 * Ntrg), Uglb_buf(dof * kdim1 * Ntrg); // see EvalSurfInteg
-  sctl::Vector<Real> Uloc(Uloc_buf), Uglb(Uglb_buf);
-  for (sctl::Long k = 0; k < dof; k++) { // Set Uloc
-    const sctl::Vector<Real> F_(kdim0 * Nt_ * Np_, (sctl::Iterator<Real>)F.begin() + k * kdim0 * Nt_ * Np_, false);
-    sctl::Vector<Real> U_(kdim1 * Ntrg, Uloc.begin() + k * kdim1 * Ntrg, false);
-    U_ = 0;
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long i = 0; i < singular_correction.Dim(); i++) {
-      singular_correction[i](F_, U_);
-    }
-  }
-  comm_.Allreduce(Uloc.begin(), Uglb.begin(), Uglb.Dim(), sctl::CommOp::SUM);
-  if (U.Dim() != dof * kdim1 * Ntrg) { // Init U
-    U.ReInit(dof * kdim1 * Ntrg);
-    U = 0;
-  }
-  U += Uglb;
-}
-
 template <class Real> void SurfaceOp<Real>::HodgeDecomp(sctl::Vector<Real>& Vn, sctl::Vector<Real>& Vd, sctl::Vector<Real>& Vc, sctl::Vector<Real>& Vh, const sctl::Vector<Real>& V, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, Real tol, sctl::Long max_iter) const {
   sctl::Long N = Nt_ * Np_;
   SCTL_ASSERT(V.Dim() == COORD_DIM * N);

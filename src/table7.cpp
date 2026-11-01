@@ -49,8 +49,8 @@ template <class Real, long M, long q> sctl::Vector<Real> test_W7X(long up, Real 
   sctl::Vector<biest::Surface<Real>> Svec(1);
   Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::W7X_);
   sctl::Profile:: Tic("TaylorSolve", &comm);
-  if (lambda > 1e-12) biest::TaylorState<Real,1,M,q>::Compute(B, -tor_flux, -pol_flux, lambda, Svec, comm, gmres_tol, 100);
-  else biest::VacuumField<Real,1,M,q>::Compute(B, J, tor_flux, pol_flux, Svec, comm, gmres_tol, 100);
+  if (lambda > 1e-12) biest::TaylorState<Real,1>(comm, {M, q, 2*q}).Compute(B, -tor_flux, -pol_flux, lambda, Svec, gmres_tol, 100);
+  else biest::VacuumField<Real,1>(comm, {M, q, 2*q}).Compute(B, J, tor_flux, pol_flux, Svec, gmres_tol, 100);
   sctl::Profile:: Toc();
   B = Resample(B, Nt, Np, Nt0, Np0);
   print_error(gmres_tol, B0, B);

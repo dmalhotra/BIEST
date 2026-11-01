@@ -21,8 +21,9 @@ int main(int argc, char** argv) {
   const Real pi = sctl::const_pi<Real>();
   const Real gmres_tol = 1e-10;
   const sctl::Long gmres_iter = 200;
-  using VacuumField = biest::VacuumField<Real,1,6,10>;
-  using TaylorState = biest::TaylorState<Real,1,6,10>;
+  using VacuumField = biest::VacuumField<Real>;
+  using TaylorState = biest::TaylorState<Real>;
+  const biest::SingularQuadParams quad{6, 10, 20}; // a cheap singular quadrature: the patch radius, the radial and angular nodes
   Results res;
 
   const auto torus = [pi](const sctl::Long Nt, const sctl::Long Np, const TorusShape& T) {
@@ -89,7 +90,7 @@ int main(int argc, char** argv) {
     cross_section(Xtrg, W, nullptr, outer);
 
     sctl::Vector<Real> B, J, Btrg;
-    VacuumField::Compute(B, J, 1.0, 0.0, Svec, comm, gmres_tol, gmres_iter);
+    VacuumField(comm, quad).Compute(B, J, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
     VacuumField::EvalOffSurface(Btrg, Xtrg, Svec, J, comm);
     res.Check("VacuumField, one surface: toroidal flux = -tor_flux", sctl::fabs<Real>(toroidal_flux(Btrg, W) + 1), 1e-3);
 
@@ -104,30 +105,30 @@ int main(int argc, char** argv) {
     res.Check("VacuumField, one surface: B.n = 0", MaxAbs(BdotN) / MaxAbs(B), 1e-8);
 
     sctl::Vector<sctl::Vector<Real>> m, sigma;
-    TaylorState::Compute(B, 1.0, 0.0, 1.0, Svec, comm, gmres_tol, gmres_iter, 0.1, &m, &sigma);
+    TaylorState(comm, quad).Compute(B, 1.0, 0.0, 1.0, Svec, gmres_tol, gmres_iter, 0.1, &m, &sigma);
     TaylorState::EvalOffSurface(Btrg, Xtrg, Svec, 1.0, 0.0, 1.0, m, sigma, comm);
     res.Check("TaylorState (lambda = 1), one surface: toroidal flux = tor_flux", sctl::fabs<Real>(toroidal_flux(Btrg, W) - 1), 1e-3);
   }
 
-  { // An object keeps its operators from one call to the next, also when the surface changes: the fields of the static
-    // Compute(), for a surface, then a smaller one (set up in the memory of the first), then the first again
-    VacuumField vacuum_field(comm);
-    TaylorState taylor_state(comm);
+  { // An object keeps its operators from one call to the next, also when the surface changes: the fields of a new
+    // object, for a surface, then a smaller one (set up in the memory of the first), then the first again
+    VacuumField vacuum_field(comm, quad);
+    TaylorState taylor_state(comm, quad);
     const biest::Surface<Real> S[3] = {torus(Nt, Np, outer), torus(48, 24, inner), torus(Nt, Np, outer)};
     Real err_vacuum = 0, err_taylor = 0;
     for (const auto& S_ : S) {
       sctl::Vector<biest::Surface<Real>> Svec(1);
       Svec[0] = S_;
       sctl::Vector<Real> B0, J0, B1, J1;
-      VacuumField::Compute(B0, J0, 1.0, 0.0, Svec, comm, gmres_tol, gmres_iter);
+      VacuumField(comm, quad).Compute(B0, J0, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
       vacuum_field.Compute(B1, J1, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
       err_vacuum = std::max(err_vacuum, MaxRelDiff(B1, B0));
-      TaylorState::Compute(B0, 1.0, 0.0, 1.0, Svec, comm, gmres_tol, gmres_iter);
+      TaylorState(comm, quad).Compute(B0, 1.0, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
       taylor_state.Compute(B1, 1.0, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
       err_taylor = std::max(err_taylor, MaxRelDiff(B1, B0));
     }
-    res.Check("VacuumField object over 3 surfaces: B = static Compute()", err_vacuum, 1e-8);
-    res.Check("TaylorState object over 3 surfaces: B = static Compute()", err_taylor, 1e-8);
+    res.Check("VacuumField object over 3 surfaces: B = that of a new object", err_vacuum, 1e-8);
+    res.Check("TaylorState object over 3 surfaces: B = that of a new object", err_taylor, 1e-8);
   }
 
   { // Field periods: the tori have 5 (delta cos(theta - 5 phi)); declared, the solve is on one of them, and the fields
@@ -142,12 +143,12 @@ int main(int argc, char** argv) {
         Svec5[i].SetNFP(5);
       }
       sctl::Vector<Real> B, J, B5, J5;
-      VacuumField::Compute(B, J, 1.0, 0.5, Svec, comm, gmres_tol, gmres_iter);
-      VacuumField::Compute(B5, J5, 1.0, 0.5, Svec5, comm, gmres_tol, gmres_iter);
+      VacuumField(comm, quad).Compute(B, J, 1.0, 0.5, Svec, gmres_tol, gmres_iter);
+      VacuumField(comm, quad).Compute(B5, J5, 1.0, 0.5, Svec5, gmres_tol, gmres_iter);
       const Real err_vacuum = std::max(MaxRelDiff(B5, B), MaxRelDiff(J5, J));
       sctl::Vector<sctl::Vector<Real>> m, sigma, m5, sigma5;
-      TaylorState::Compute(B, 1.0, 0.5, 1.0, Svec, comm, gmres_tol, gmres_iter, 0.1, &m, &sigma);
-      TaylorState::Compute(B5, 1.0, 0.5, 1.0, Svec5, comm, gmres_tol, gmres_iter, 0.1, &m5, &sigma5);
+      TaylorState(comm, quad).Compute(B, 1.0, 0.5, 1.0, Svec, gmres_tol, gmres_iter, 0.1, &m, &sigma);
+      TaylorState(comm, quad).Compute(B5, 1.0, 0.5, 1.0, Svec5, gmres_tol, gmres_iter, 0.1, &m5, &sigma5);
       Real err_taylor = MaxRelDiff(B5, B);
       for (sctl::Long i = 0; i < m.Dim(); i++) err_taylor = std::max(err_taylor, std::max(MaxRelDiff(m5[i], m[i]), MaxRelDiff(sigma5[i], sigma[i])));
       const std::string name = (Nsurf == 1 ? "one surface" : "shell");
@@ -161,8 +162,8 @@ int main(int argc, char** argv) {
     Svec[0] = torus(Nt, Np, outer);
     Svec[1] = torus(Nt, Np, inner);
     sctl::Vector<Real> Bv, J, Bt;
-    VacuumField::Compute(Bv, J, 1.0, 0.5, Svec, comm, gmres_tol, gmres_iter);
-    TaylorState::Compute(Bt, -1.0, -0.5, 1e-10, Svec, comm, gmres_tol, gmres_iter);
+    VacuumField(comm, quad).Compute(Bv, J, 1.0, 0.5, Svec, gmres_tol, gmres_iter);
+    TaylorState(comm, quad).Compute(Bt, -1.0, -0.5, 1e-10, Svec, gmres_tol, gmres_iter);
     res.Check("Shell: VacuumField(1, 0.5) = TaylorState(lambda = 1e-10; -1, -0.5)", MaxRelDiff(Bt, Bv), 1e-2);
   }
 
@@ -191,9 +192,9 @@ int main(int argc, char** argv) {
       Svec[1] = (inner_first ? S_outer : S_inner);
 
       sctl::Vector<Real> B, J, Btrg0, Btrg1;
-      VacuumField::Compute(B, J, 1.0, 0.0, Svec, comm, gmres_tol, gmres_iter);
+      VacuumField(comm, quad).Compute(B, J, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
       VacuumField::EvalOffSurface(Btrg0, Xtrg, Svec, J, comm);
-      VacuumField::Compute(B, J, 0.0, 1.0, Svec, comm, gmres_tol, gmres_iter);
+      VacuumField(comm, quad).Compute(B, J, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
       VacuumField::EvalOffSurface(Btrg1, Xtrg, Svec, J, comm);
       const std::string name = (inner_first ? "Shell (inner surface first): " : "Shell (outer surface first): ");
       res.Check((name + "toroidal flux for (tor_flux, pol_flux) = (1, 0)").c_str(), sctl::fabs<Real>(toroidal_flux(Btrg0, W) + 1), 1e-2);

@@ -10,10 +10,8 @@ bie_solvers.hpp
 
 This header file provides solvers for vacuum fields and Taylor states (force-free fields) inside a toroidal surface, or in a toroidal shell between two nested toroidal surfaces.
 
-Both classes have only static member functions. The template parameters ``UPSAMPLE``, ``PATCH_DIM0`` and ``RAD_DIM`` select the singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`); ``PATCH_DIM0`` is half of the patch width :math:`M` and ``RAD_DIM`` the order :math:`q` in the papers.
-Larger ``PATCH_DIM0`` and ``RAD_DIM`` give more accurate quadratures at a higher cost, and should grow with the grid resolution.
-Each grid direction of each surface needs at least ``2*PATCH_DIM0+1`` points after upsampling (49 with the defaults).
-The example codes use the defaults with a :math:`200 \times 50` grid; the :ref:`tutorial <tutorial-quadrature-params>` lists the values used in the papers for other resolutions.
+The template parameter ``UPSAMPLE`` upsamples the grids for the quadrature, and the singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`) is chosen for the accuracy ``0.1*gmres_tol`` and the anisotropy of the grid of each surface (see :ref:`Choosing the parameters <algorithms-quadrature-params>`).
+An object can be given the quadrature instead (``SingularQuadParams``), and keeps its operators from one call of ``Compute`` to the next; the static ``Compute`` uses a new object.
 
 Classes and Types
 -----------------

@@ -89,7 +89,7 @@ This is from ``doc/examples/taylor-state-shell.cpp``:
 .. literalinclude:: ../examples/taylor-state-shell.cpp
    :language: c++
    :start-at: sctl::Vector<biest::Surface<Real>> Svec(2);
-   :end-at: biest::TaylorState<Real,1,12,24>::Compute(
+   :end-at: biest::TaylorState<Real>::Compute(
    :dedent: 2
 
 The program also evaluates the field at a point inside the shell, and prints (the last digits may differ between runs; :math:`B_x` vanishes by symmetry and is at the level of rounding errors)
@@ -97,7 +97,7 @@ The program also evaluates the field at a point inside the shell, and prints (th
 .. code-block:: text
 
    B.Dim() = 24336 = 3 * (104 * 52 + 104 * 26)
-   B(2.5, 0, 0) = -3.13866e-13 0.474928 -0.110743
+   B(2.5, 0, 0) = 2.89902e-13 0.474928 -0.110743
 
 .. _tutorial-solver-field-periods:
 
@@ -127,7 +127,7 @@ This is from ``doc/examples/repeated-solves.cpp``:
 
 .. literalinclude:: ../examples/repeated-solves.cpp
    :language: c++
-   :start-at: biest::VacuumField<Real,1,10,20> vacuum_field(comm);
+   :start-at: biest::VacuumField<Real> vacuum_field(comm);
    :end-at: taylor_state.Compute(B1,
    :dedent: 2
 
@@ -135,11 +135,11 @@ which prints
 
 .. code-block:: text
 
-   a = 0.25: max |B| = 7.6027 (vacuum field), 7.55885 (Taylor state)
-   a = 0.3: max |B| = 5.74349 (vacuum field), 5.70378 (Taylor state)
-   a = 0.35: max |B| = 4.62369 (vacuum field), 4.58679 (Taylor state)
+   a = 0.25: max |B| = 7.60279 (vacuum field), 7.55886 (Taylor state)
+   a = 0.3: max |B| = 5.74353 (vacuum field), 5.70378 (Taylor state)
+   a = 0.35: max |B| = 4.62371 (vacuum field), 4.58679 (Taylor state)
 
-The memory held by an object is mostly that of the singular corrections: 13 and 28 times :math:`(2\,\mathtt{PATCH\_DIM0}+1)^2` values for each grid point for ``VacuumField`` and ``TaylorState``.
+The memory held by an object is mostly that of the singular corrections: 13 and 28 times :math:`(2R+1)^2` values for each grid point for ``VacuumField`` and ``TaylorState``, with :math:`R` the radius of the patch of the singular quadrature.
 An object must not be shared by threads that call ``Compute`` at the same time.
 
 .. _tutorial-quadrature-params:
@@ -147,17 +147,17 @@ An object must not be shared by threads that call ``Compute`` at the same time.
 8. Choosing the quadrature parameters
 -------------------------------------
 
-The template parameters ``<Real, UPSAMPLE, PATCH_DIM0, RAD_DIM>`` set the singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`).
-``PATCH_DIM0`` and ``RAD_DIM`` must increase with the grid resolution for the quadrature error to decrease, and each direction of the (upsampled) grid needs at least ``2*PATCH_DIM0+1`` points.
-The following values were used in the Taylor states paper for a toroidal domain (QAS3, ``src/table5.cpp``), with the GMRES tolerance and the resulting error of the Taylor state for :math:`\lambda = 1`:
+The singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`) is chosen for the accuracy ``0.1*gmres_tol`` and the anisotropy of the grid of each surface (see :ref:`Choosing the parameters <algorithms-quadrature-params>`), on the grids upsampled ``UPSAMPLE`` times (the template parameter ``<Real, UPSAMPLE>``).
+An object can be given the quadrature instead, the radius :math:`R` of the patch and the radial and angular nodes of the polar grid: ``biest::TaylorState<Real> taylor_state(comm, {R, q, 2*q})``. Each direction of the (upsampled) grid then needs at least :math:`2R+1` points.
+The following values were used in the Taylor states paper for a toroidal domain (QAS3, ``src/table5.cpp``), with :math:`q` radial and :math:`2q` angular nodes, the GMRES tolerance and the resulting error of the Taylor state for :math:`\lambda = 1`:
 
 .. list-table::
    :header-rows: 1
    :widths: 20 15 15 15 15 20
 
    * - Grid
-     - ``PATCH_DIM0``
-     - ``RAD_DIM``
+     - :math:`R`
+     - :math:`q`
      - ``gmres_tol``
      - GMRES iterations
      - Error
@@ -193,7 +193,7 @@ The following values were used in the Taylor states paper for a toroidal domain 
      - 6.5e-9
 
 The programs ``src/table6.cpp`` (toroidal shell) and ``src/table7.cpp`` (W7-X) list the values for other cases.
-The setup time and memory grow with ``PATCH_DIM0`` and ``RAD_DIM``, and the time of each GMRES iteration grows with the number of grid points squared.
+The setup time and memory grow with :math:`R` and the polar grid, and the time of each GMRES iteration grows with the number of grid points squared.
 
 Compiling and Running the Code
 ------------------------------

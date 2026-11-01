@@ -13,8 +13,8 @@ int main(int argc, char** argv) {
   const Real pi = sctl::const_pi<Real>();
   const sctl::Long Nt = 70, Np = 28;
 
-  biest::VacuumField<Real,1,10,20> vacuum_field(comm);
-  biest::TaylorState<Real,1,10,20> taylor_state(comm);
+  biest::VacuumField<Real> vacuum_field(comm);
+  biest::TaylorState<Real> taylor_state(comm);
   for (const Real a : {0.25, 0.30, 0.35}) { // the minor radius of a torus with 5 field periods
     sctl::Vector<biest::Surface<Real>> Svec(1);
     Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::None);

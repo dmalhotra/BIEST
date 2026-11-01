@@ -83,7 +83,7 @@ The targets are the points of a grid on one field period of each surface, and th
 
 Each surface gets its own quadrature grid (``QuadNt(s) x QuadNp(s)``), and ``biop(U, F)`` takes densities on these grids without resampling them.
 The potential of a surface at the targets of another is computed as in ``BoundaryIntegralOp`` (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`), to the requested digits.
-The variant ``SetupSingular<UPSAMPLE,PDIM,RDIM>(Svec, ker, tol)`` takes the quadrature of ``BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,PDIM,RDIM>`` instead of choosing it, with the targets at the grid points of one field period; ``VacuumField`` and ``TaylorState`` use it.
+The variant ``SetupSingular<UPSAMPLE>(Svec, ker, tol, quad)`` takes the quadrature grids instead of choosing them, the surface grids upsampled ``UPSAMPLE`` times, with the singular quadrature of ``BoundaryIntegralOp`` for ``tol`` (or ``quad``, a ``SingularQuadParams``) and the targets at the grid points of one field period; ``VacuumField`` and ``TaylorState`` use it.
 
 Complete Example Code
 ---------------------
@@ -93,7 +93,7 @@ The program ``doc/examples/field-period.cpp`` prints
 .. code-block:: text
 
    quadrature grid: 300 x 60
-   max |U + 1/2| = 3.35704e-12
+   max |U + 1/2| = 4.06635e-11
 
 .. raw:: html
 

@@ -18,16 +18,11 @@ namespace biest {
  *
  * @tparam Real datatype for reals can be float, double or sctl::QuadReal.
  *
- * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures.
- *
- * @tparam PATCH_DIM0 radius, in grid spacings of the upsampled source grid, of
- * the partition of unity around each target point. The patch has
- * (2*PATCH_DIM0+1) x (2*PATCH_DIM0+1) grid points.
- *
- * @tparam RAD_DIM the order of the polar quadrature rule. Radial dimension is
- * RAD_DIM and angular dimension is 2*RAD_DIM.
+ * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures. The
+ * singular quadrature is chosen for the accuracy 0.1 gmres_tol on the grids
+ * upsampled UPSAMPLE times (see BoundaryIntegralOp::SetupSingular()).
  */
-template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24, sctl::Integer RAD_DIM = 35> class VacuumField {
+template <class Real, sctl::Integer UPSAMPLE = 1> class VacuumField {
     static constexpr sctl::Integer COORD_DIM = 3;
 
   public:
@@ -36,13 +31,16 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * An object of this class keeps the boundary integral operators of Compute() from one call to the next: a later
      * call sets them up again, for the surfaces it is given, in the memory of the earlier one when the surfaces have
      * no more grid points, rather than allocating and page faulting that memory again. That memory, the singular
-     * corrections of the operators, is 13 (2 PATCH_DIM0 + 1)^2 values for each grid point, held until the object is
-     * destroyed. The vectors of the solve are kept in the same way, a few tens of values for each grid point and each
-     * surface.
+     * corrections of the operators, is 13 (2 P + 1)^2 values for each grid point, with P the radius of the patch of
+     * the singular quadrature, held until the object is destroyed. The vectors of the solve are kept in the same way,
+     * a few tens of values for each grid point and each surface.
      *
      * @param[in] comm the communicator when running in parallel.
+     *
+     * @param[in] quad (optional) the singular quadrature of the operators, its zero values chosen for the accuracy
+     * 0.1 gmres_tol (see BoundaryIntegralOp::SetupSingular()); those of the static Compute().
      */
-    explicit VacuumField(const sctl::Comm& comm = sctl::Comm::Self());
+    explicit VacuumField(const sctl::Comm& comm = sctl::Comm::Self(), const SingularQuadParams& quad = SingularQuadParams());
 
     VacuumField(const VacuumField&) = delete;
     VacuumField& operator=(const VacuumField&) = delete;
@@ -129,6 +127,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter);
 
     sctl::Comm comm_;
+    SingularQuadParams quad_;
     FieldPeriodBIOp<Real,COORD_DIM,3,3> BI_biot_savart_;
     FieldPeriodBIOp<Real,COORD_DIM,1,3> BI_lap_grad_;
     FieldPeriodBIOp<Real,COORD_DIM,1,1> BI_laplace_;
@@ -150,16 +149,11 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
  *
  * @tparam Real datatype for reals can be float, double or sctl::QuadReal.
  *
- * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures.
- *
- * @tparam PATCH_DIM0 radius, in grid spacings of the upsampled source grid, of
- * the partition of unity around each target point. The patch has
- * (2*PATCH_DIM0+1) x (2*PATCH_DIM0+1) grid points.
- *
- * @tparam RAD_DIM the order of the polar quadrature rule. Radial dimension is
- * RAD_DIM and angular dimension is 2*RAD_DIM.
+ * @tparam UPSAMPLE source mesh upsample factor for boundary quadratures. The
+ * singular quadrature is chosen for the accuracy 0.1 gmres_tol on the grids
+ * upsampled UPSAMPLE times (see BoundaryIntegralOp::SetupSingular()).
  */
-template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24, sctl::Integer RAD_DIM = 35> class TaylorState {
+template <class Real, sctl::Integer UPSAMPLE = 1> class TaylorState {
     static constexpr sctl::Integer COORD_DIM = 3;
 
   public:
@@ -168,13 +162,16 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * An object of this class keeps the boundary integral operators of Compute() from one call to the next: a later
      * call sets them up again, for the surfaces it is given, in the memory of the earlier one when the surfaces have
      * no more grid points, rather than allocating and page faulting that memory again. That memory, the singular
-     * corrections of the operators, is 28 (2 PATCH_DIM0 + 1)^2 values for each grid point, held until the object is
-     * destroyed. The vectors of the solve are kept in the same way, a few tens of values for each grid point and each
-     * surface.
+     * corrections of the operators, is 28 (2 P + 1)^2 values for each grid point, with P the radius of the patch of
+     * the singular quadrature, held until the object is destroyed. The vectors of the solve are kept in the same way,
+     * a few tens of values for each grid point and each surface.
      *
      * @param[in] comm the communicator when running in parallel.
+     *
+     * @param[in] quad (optional) the singular quadrature of the operators, its zero values chosen for the accuracy
+     * 0.1 gmres_tol (see BoundaryIntegralOp::SetupSingular()); those of the static Compute().
      */
-    explicit TaylorState(const sctl::Comm& comm = sctl::Comm::Self());
+    explicit TaylorState(const sctl::Comm& comm = sctl::Comm::Self(), const SingularQuadParams& quad = SingularQuadParams());
 
     TaylorState(const TaylorState&) = delete;
     TaylorState& operator=(const TaylorState&) = delete;
@@ -266,7 +263,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     /**
      * Test this class.
      */
-    static void test_conv(Real lambda, const sctl::Vector<Surface<Real>>& Svec_, sctl::Long upsample, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, Real LB_tol = 0.1);
+    static void test_conv(Real lambda, const sctl::Vector<Surface<Real>>& Svec_, sctl::Long upsample, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, Real LB_tol = 0.1, const SingularQuadParams& quad = SingularQuadParams());
 
   private:
 
@@ -290,6 +287,7 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     void ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol = 0.1);
 
     sctl::Comm comm_;
+    SingularQuadParams quad_;
     FieldPeriodBIOp<Real,COORD_DIM,2,6> BI_grad_diff_;
     FieldPeriodBIOp<Real,COORD_DIM,2,6> BI_grad_;
     FieldPeriodBIOp<Real,COORD_DIM,2,2> BI_potn_;

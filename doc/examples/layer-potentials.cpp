@@ -55,12 +55,12 @@ int main(int argc, char** argv) {
 
   // Layer-potential operators: Biot-Savart (3 -> 3 components) and Laplace gradient (1 -> 3 components)
   constexpr int UPSAMPLE = 1; // upsampling factor for the quadrature
-  constexpr int PDIM = 20; // radius of the patch for the singular quadrature (PATCH_DIM0)
-  constexpr int RDIM = 32; // order of the polar quadrature (RAD_DIM)
-  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE, PDIM, RDIM> BiotSavart;
-  biest::BoundaryIntegralOp<Real, 1, 3, UPSAMPLE, PDIM, RDIM> LaplaceGrad;
-  BiotSavart.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU());
-  LaplaceGrad.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU());
+  const Real tol = 1e-12; // the accuracy of the singular quadrature, which sets its patch and polar grid
+  const sctl::Vector<sctl::Vector<sctl::Long>> all; // the targets: all the grid points
+  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE> BiotSavart;
+  biest::BoundaryIntegralOp<Real, 1, 3, UPSAMPLE> LaplaceGrad;
+  BiotSavart.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU(), all, tol);
+  LaplaceGrad.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU(), all, tol);
 
   { // Plasma field on the surface: B/2 + curl S[n x B] - grad S[n.B]
     sctl::Vector<Real> curlS, gradS;

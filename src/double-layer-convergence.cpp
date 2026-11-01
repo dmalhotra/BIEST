@@ -24,8 +24,8 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
     }
   }
 
-  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE, PDIM, RDIM> BIOp(comm);
-  BIOp.SetupSingular(Svec, biest::Laplace3D<Real>::DxU());
+  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE> BIOp(comm);
+  BIOp.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
   sctl::Vector<Real> U, F(Svec[0].NTor()*Svec[0].NPol());
   F = 1;
@@ -43,8 +43,8 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   sctl::Vector<biest::Surface<Real>> Svec(1);
   Svec[0] = biest::Surface<Real>(Nt,Np, biest::SurfType::W7X_);
 
-  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE, PDIM, RDIM> BIOp(comm);
-  BIOp.SetupSingular(Svec, biest::Laplace3D<Real>::DxU());
+  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE> BIOp(comm);
+  BIOp.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
   sctl::Vector<Real> U, F(Svec[0].NTor()*Svec[0].NPol());
   F = 1;

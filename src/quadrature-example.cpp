@@ -37,10 +37,9 @@ int main(int argc, char** argv) {
     constexpr int DENSITY_DOF = 1; // degree-of-freedom of density function at each grid point
     constexpr int POTENTIAL_DOF = 1; // degree-of-freedom of the potential at each grid point
     constexpr int UPSAMPLE = 1; // upsample factor for the quadrature
-    constexpr int PDIM = 24; // dimension of the square patch for singular integration
-    constexpr int QDIM = 24; // order of the polar-coordinate quadrature
-    biest::BoundaryIntegralOp<Real, DENSITY_DOF, POTENTIAL_DOF, UPSAMPLE, PDIM, QDIM> LaplaceSingleLayer;
-    LaplaceSingleLayer.SetupSingular(Svec, biest::Laplace3D<Real>::FxU());
+    const Real tol = 1e-10; // accuracy of the singular quadrature, which sets its patch and polar grid
+    biest::BoundaryIntegralOp<Real, DENSITY_DOF, POTENTIAL_DOF, UPSAMPLE> LaplaceSingleLayer;
+    LaplaceSingleLayer.SetupSingular(Svec, biest::Laplace3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), tol);
 
     // Evaluate boundary integral operator
     sctl::Vector<Real> u;

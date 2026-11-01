@@ -29,16 +29,16 @@ int main(int argc, char** argv) {
       biest::SurfaceOp<Real>::test_InvSurfLap(630, 126, biest::SurfType::Quas3, 3.0e-08, 100, nullptr, nullptr, comm);
       biest::SurfaceOp<Real>::test_InvSurfLap(700, 140, biest::SurfType::Quas3, 9.8e-09, 100, nullptr, nullptr, comm);
 
-      biest::BoundaryIntegralOp<Real, 1, 1, 1,  6, 15>::test_Precond( 70,  14, biest::SurfType::Quas3, 1.0e+00, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 12, 24>::test_Precond(140,  28, biest::SurfType::Quas3, 8.8e-02, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 15, 27>::test_Precond(210,  42, biest::SurfType::Quas3, 1.3e-02, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 15, 30>::test_Precond(280,  56, biest::SurfType::Quas3, 1.5e-03, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 20, 33>::test_Precond(350,  70, biest::SurfType::Quas3, 1.9e-04, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 20, 36>::test_Precond(420,  84, biest::SurfType::Quas3, 5.1e-05, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 20, 36>::test_Precond(490,  98, biest::SurfType::Quas3, 1.1e-05, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 25, 39>::test_Precond(560, 112, biest::SurfType::Quas3, 2.1e-06, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 25, 39>::test_Precond(630, 126, biest::SurfType::Quas3, 7.5e-07, 100, comm);
-      biest::BoundaryIntegralOp<Real, 1, 1, 1, 25, 42>::test_Precond(700, 140, biest::SurfType::Quas3, 2.4e-07, 100, comm);
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond( 70,  14, biest::SurfType::Quas3, 1.0e+00, 100, comm, {6, 15, 30});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(140,  28, biest::SurfType::Quas3, 8.8e-02, 100, comm, {12, 24, 48});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(210,  42, biest::SurfType::Quas3, 1.3e-02, 100, comm, {15, 27, 54});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(280,  56, biest::SurfType::Quas3, 1.5e-03, 100, comm, {15, 30, 60});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(350,  70, biest::SurfType::Quas3, 1.9e-04, 100, comm, {20, 33, 66});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(420,  84, biest::SurfType::Quas3, 5.1e-05, 100, comm, {20, 36, 72});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(490,  98, biest::SurfType::Quas3, 1.1e-05, 100, comm, {20, 36, 72});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(560, 112, biest::SurfType::Quas3, 2.1e-06, 100, comm, {25, 39, 78});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(630, 126, biest::SurfType::Quas3, 7.5e-07, 100, comm, {25, 39, 78});
+      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(700, 140, biest::SurfType::Quas3, 2.4e-07, 100, comm, {25, 42, 84});
 
       //  Nt      Np       gmres_tol   gmres_iter   Rel-InfError    Solve_1   Solve_60
       //  70      14         2.4e-01            1        3.7e-01     0.0014     0.0052

@@ -23,7 +23,10 @@ Classes and Types
 .. doxygenclass:: biest::BoundaryIntegralOp
    :members: BoundaryIntegralOp, SetupSingular, Dim, operator(), EvalOffSurface
 
-The quadrature parameters ``UPSAMPLE``, ``PATCH_DIM0`` and ``RAD_DIM`` are described in :ref:`bie_solvers.hpp <bie_solvers_hpp>`.
+``SetupSingular`` chooses the singular quadrature for its tolerance and the anisotropy of the grid of each surface (see :ref:`Choosing the parameters <algorithms-quadrature-params>`), or takes it from a ``SingularQuadParams``:
+
+.. doxygenstruct:: biest::SingularQuadParams
+   :members:
 
 **Usage guide**: :ref:`Evaluating layer potentials <tutorial-layer-potentials>`
 

@@ -8,8 +8,9 @@
 #include <map>
 #include <utility>
 
+#include <biest/kernel.hpp>
+#include <biest/mat.hpp>
 #include <biest/surface.hpp>
-#include <biest/singular_correction.hpp>
 #include <sctl.hpp>
 
 namespace biest {
@@ -314,18 +315,6 @@ template <class Real> class SurfaceOp {
      * @param[in] ker the kernel function.
      */
     template <sctl::Integer KDIM0, sctl::Integer KDIM1> void EvalSurfInteg(sctl::Vector<Real>& Utrg, const sctl::Vector<Real>& Xtrg, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& Xn_src, const sctl::Vector<Real>& Xa_src, const sctl::Vector<Real>& Fsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker) const;
-
-    /**
-     * Computes the singular-quadrature corrections for the target grid points
-     * trg_idx.
-     */
-    template <class SingularCorrection, class Kernel> void SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, const Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) const;
-
-    /**
-     * Adds the singular-quadrature corrections for the density F to the
-     * potential U at the target points.
-     */
-    template <class SingularCorrection> void EvalSingularCorrection(sctl::Vector<Real>& U, const sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer kdim0, sctl::Integer kdim1, const sctl::Vector<Real>& F) const;
 
     /**
      * Computes the Hodge decomposition of the given vector field on a surface,

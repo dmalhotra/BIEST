@@ -11,8 +11,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-R = 6  # patch radius in grid spacings (PATCH_DIM0, M/2 in the paper)
-q = 8  # polar quadrature order (RAD_DIM)
+R = 6  # patch radius in grid spacings (SingularQuadParams::patch_rad, M/2 in the paper)
+q = 8  # radial nodes of the polar grid (SingularQuadParams::rad_nodes), and 2q angular nodes
 INTERP = min(16, 2 * R + 1)  # interpolation stencil width (INTERP_ORDER: 16, at most the patch width)
 chi = lambda r: np.exp(-36 * r**6)  # exponent 6 for PATCH_DIM = 2R+1 <= 20 (singular_correction.hpp)
 

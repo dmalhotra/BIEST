@@ -14,14 +14,16 @@ int main(int argc, char** argv) {
   const sctl::Comm comm = sctl::Comm::Self();
   const Real pi = sctl::const_pi<Real>();
   const auto& ker = biest::Laplace3D<Real>::DxU();
+  const biest::SingularQuadParams quad{6, 10, 20}; // the patch radius, and the radial and angular nodes
+  const sctl::Vector<sctl::Vector<sctl::Long>> all; // the targets: all the grid points
   Results res;
 
   { // BoundaryIntegralOp on one surface
     const sctl::Long Nt = 60, Np = 30, N = Nt * Np;
     sctl::Vector<biest::Surface<Real>> Svec(1);
     Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::RotatingEllipseWide);
-    biest::BoundaryIntegralOp<Real,1,1,1,6,10> op(comm);
-    op.SetupSingular(Svec, ker);
+    biest::BoundaryIntegralOp<Real,1,1,1> op(comm);
+    op.SetupSingular(Svec, ker, all, 1e-10, quad);
 
     sctl::Vector<Real> F(N), U;
     F = 1;
@@ -66,8 +68,8 @@ int main(int argc, char** argv) {
       sctl::Vector<biest::Surface<Real>> Svec(2);
       Svec[0] = (B_first ? B : A);
       Svec[1] = (B_first ? A : B);
-      biest::BoundaryIntegralOp<Real,1,1,1,6,10> op(comm);
-      op.SetupSingular(Svec, ker);
+      biest::BoundaryIntegralOp<Real,1,1,1> op(comm);
+      op.SetupSingular(Svec, ker, all, 1e-10, quad);
       sctl::Vector<Real> F(2 * N), U;
       F = 1;
       op(U, F);
@@ -102,8 +104,8 @@ int main(int argc, char** argv) {
     Svec[1] = torus(48, 24, 0.2);
     const auto check = [&](const auto& ker, const char* name) {
       constexpr sctl::Integer KDIM1 = std::decay_t<decltype(ker)>::Dim(1);
-      biest::BoundaryIntegralOp<Real,1,KDIM1,1,6,10> op(comm);
-      op.SetupSingular(Svec, ker);
+      biest::BoundaryIntegralOp<Real,1,KDIM1,1> op(comm);
+      op.SetupSingular(Svec, ker, all, 1e-10, quad);
       sctl::Vector<Real> F, U;
       for (const auto& S : Svec) for (const auto& f : density(S)) F.PushBack(f);
       op(U, F);
@@ -114,9 +116,9 @@ int main(int argc, char** argv) {
         sctl::Vector<biest::Surface<Real>> St(1), Ss(1);
         St[0] = Svec[t];
         Ss[0] = Svec[s];
-        biest::BoundaryIntegralOp<Real,1,KDIM1,1,6,10> op_t(comm), op_s(comm);
-        op_t.SetupSingular(St, ker);
-        op_s.SetupSingular(Ss, ker);
+        biest::BoundaryIntegralOp<Real,1,KDIM1,1> op_t(comm), op_s(comm);
+        op_t.SetupSingular(St, ker, all, 1e-10, quad);
+        op_s.SetupSingular(Ss, ker, all, 1e-10, quad);
         sctl::Vector<Real> U_t;
         op_t(U_t, density(Svec[t]));
         op_s.EvalOffSurface(U_t, Svec[t].Coord(), density(Svec[s]), ker, 1e-12);
@@ -148,8 +150,8 @@ int main(int argc, char** argv) {
     const sctl::Long Nt = 120, Np = 60, N = Nt * Np;
     sctl::Vector<biest::Surface<Real>> Svec(1);
     Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::AxisymCircleWide);
-    biest::BoundaryIntegralOp<Real,1,1,1,12,20,4> op(comm);
-    op.SetupSingular(Svec, ker);
+    biest::BoundaryIntegralOp<Real,1,1,1,4> op(comm);
+    op.SetupSingular(Svec, ker, all, 1e-10, {12, 60, 40});
     sctl::Vector<Real> F(N), U;
     F = 1;
     op(U, F);
@@ -282,8 +284,8 @@ int main(int argc, char** argv) {
           if (i < N / NFP) F1.PushBack(1 + z + x * x + y * y);
         }
       }
-      biest::BoundaryIntegralOp<Real,1,3,1,6,10> op(comm);
-      op.SetupSingular(Svec, ker);
+      biest::BoundaryIntegralOp<Real,1,3,1> op(comm);
+      op.SetupSingular(Svec, ker, all, 1e-10, quad);
       sctl::Vector<Real> U, Uref; // Uref: U on one field period
       op(U, F);
       sctl::Long offset = 0;
@@ -296,7 +298,7 @@ int main(int argc, char** argv) {
       }
 
       biest::FieldPeriodBIOp<Real,COORD_DIM,1,3> fp_op(comm);
-      fp_op.SetupSingular<1,6,10>(Svec, ker, 1e-10);
+      fp_op.SetupSingular<1>(Svec, ker, 1e-10, quad);
       sctl::Vector<Real> Ufp, Ufp1;
       fp_op(Ufp, F);
       sctl::Vector<sctl::Long> Nt1(2), Np1(2);

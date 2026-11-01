@@ -128,13 +128,13 @@ namespace detail_bie_solvers {
 
 }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::VacuumField(const sctl::Comm& comm) : comm_(comm), BI_biot_savart_(comm), BI_lap_grad_(comm), BI_laplace_(comm) {}
+    template <class Real, sctl::Integer UPSAMPLE> VacuumField<Real,UPSAMPLE>::VacuumField(const sctl::Comm& comm, const SingularQuadParams& quad) : comm_(comm), quad_(quad), BI_biot_savart_(comm), BI_lap_grad_(comm), BI_laplace_(comm) {}
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
+    template <class Real, sctl::Integer UPSAMPLE> void VacuumField<Real,UPSAMPLE>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
       VacuumField(comm).Compute(B, J, tor_flux, pol_flux, Svec, gmres_tol, gmres_iter);
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter) {
+    template <class Real, sctl::Integer UPSAMPLE> void VacuumField<Real,UPSAMPLE>::Compute(sctl::Vector<Real>& B, sctl::Vector<Real>& J, Real tor_flux, Real pol_flux, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter) {
       ComputeHelper(B_, J_, tor_flux_, pol_flux_, Svec, comm_, gmres_tol, gmres_iter); // in the vectors of the object
       // B and J: the solutions combined for the fluxes, on one field period, then completed to the full tori by the
       // symmetry, in the storage of B and J when it has the size
@@ -158,7 +158,7 @@ namespace detail_bie_solvers {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm, const Real tol) {
+    template <class Real, sctl::Integer UPSAMPLE> void VacuumField<Real,UPSAMPLE>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, sctl::Vector<Real> J0, const sctl::Comm& comm, const Real tol) {
       const sctl::Long Ntrg = Xtrg.Dim() / COORD_DIM;
       sctl::Vector<Real> X = Xtrg, B(COORD_DIM * Ntrg);
       sctl::Matrix<Real>(COORD_DIM, Ntrg, X.begin(), false) = sctl::Matrix<Real>(Ntrg, COORD_DIM, X.begin(), false).Transpose();
@@ -177,7 +177,7 @@ namespace detail_bie_solvers {
       Btrg = B;
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::test(sctl::Long upsample, const sctl::Comm& comm) {
+    template <class Real, sctl::Integer UPSAMPLE> void VacuumField<Real,UPSAMPLE>::test(sctl::Long upsample, const sctl::Comm& comm) {
       sctl::Vector<Real> B, J;
       sctl::Vector<Surface<Real>> Svec;
       Svec.PushBack(Surface<Real>( 50*upsample+1, 20*upsample+1, SurfType::AxisymCircleWide));
@@ -186,13 +186,13 @@ namespace detail_bie_solvers {
       WriteVTK("B", Svec, B);
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> Real VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::max_norm(const sctl::Vector<Real>& x) {
+    template <class Real, sctl::Integer UPSAMPLE> Real VacuumField<Real,UPSAMPLE>::max_norm(const sctl::Vector<Real>& x) {
       Real err = 0;
       for (const auto& a : x) err = std::max(err, sctl::fabs<Real>(a));
       return err;
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
+    template <class Real, sctl::Integer UPSAMPLE> void VacuumField<Real,UPSAMPLE>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
       // The vectors of the solve are those of the object, which keeps them with their storage from one call to the next
       // (see VacuumField()); the temporaries are in scratch memory (see SurfaceOp::SurfGrad). The solve is on one of the
       // NFP field periods common to the surfaces: the unknown and the fields B and J, the targets of the operators, and
@@ -241,9 +241,9 @@ namespace detail_bie_solvers {
       auto& BI_biot_savart = BI_biot_savart_; // the operators of the object: see VacuumField()
       auto& BI_lap_grad = BI_lap_grad_;
       auto& BI_laplace = BI_laplace_;
-      BI_biot_savart.template SetupSingular<UPSAMPLE,PATCH_DIM0,RAD_DIM>(Svec, ker_biot_savart, gmres_tol * (Real)0.1);
-      BI_lap_grad.template SetupSingular<UPSAMPLE,PATCH_DIM0,RAD_DIM>(Svec, ker_lap_grad, gmres_tol * (Real)0.1);
-      BI_laplace.template SetupSingular<UPSAMPLE,PATCH_DIM0,RAD_DIM>(Svec, ker_laplace, gmres_tol * (Real)0.1);
+      BI_biot_savart.template SetupSingular<UPSAMPLE>(Svec, ker_biot_savart, gmres_tol * (Real)0.1, quad_);
+      BI_lap_grad.template SetupSingular<UPSAMPLE>(Svec, ker_lap_grad, gmres_tol * (Real)0.1, quad_);
+      BI_laplace.template SetupSingular<UPSAMPLE>(Svec, ker_laplace, gmres_tol * (Real)0.1, quad_);
       // the operators of densities on the surface grids
       using detail_bie_solvers::SurfGridOp;
       const SurfGridOp<std::remove_reference_t<decltype(BI_biot_savart)>> BS_op{BI_biot_savart, SurfNt_, SurfNp_};
@@ -534,13 +534,13 @@ namespace detail_bie_solvers {
 
 
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::TaylorState(const sctl::Comm& comm) : comm_(comm), BI_grad_diff_(comm), BI_grad_(comm), BI_potn_(comm) {}
+    template <class Real, sctl::Integer UPSAMPLE> TaylorState<Real,UPSAMPLE>::TaylorState(const sctl::Comm& comm, const SingularQuadParams& quad) : comm_(comm), quad_(quad), BI_grad_diff_(comm), BI_grad_(comm), BI_potn_(comm) {}
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
       TaylorState(comm).Compute(B_out, tor_flux, pol_flux, lambda, Svec, gmres_tol, gmres_iter, LB_tol, m, sigma);
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::Compute(sctl::Vector<Real>& B_out, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<Surface<Real>>& Svec, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol, sctl::Vector<sctl::Vector<Real>>* m, sctl::Vector<sctl::Vector<Real>>* sigma) {
       auto& B = B_out_; // in the vectors of the object
       auto& m_ = m_out_;
       auto& sigma_ = sigma_out_;
@@ -557,7 +557,7 @@ namespace detail_bie_solvers {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m_, const sctl::Vector<sctl::Vector<Real>>& sigma_, const sctl::Comm& comm, const Real tol) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::EvalOffSurface(sctl::Vector<Real>& Btrg, const sctl::Vector<Real>& Xtrg, sctl::Vector<Surface<Real>> Svec, Real tor_flux, Real pol_flux, Real lambda, const sctl::Vector<sctl::Vector<Real>> m_, const sctl::Vector<sctl::Vector<Real>>& sigma_, const sctl::Comm& comm, const Real tol) {
       sctl::Vector<Real> m0, sigma0;
       if (Svec.Dim() > 0) m0  = m_[0] * tor_flux;
       if (Svec.Dim() > 1) m0 += m_[1] * pol_flux;
@@ -571,7 +571,7 @@ namespace detail_bie_solvers {
       Btrg = B;
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::test_conv(Real lambda, const sctl::Vector<Surface<Real>>& Svec_, sctl::Long upsample, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, Real LB_tol) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::test_conv(Real lambda, const sctl::Vector<Surface<Real>>& Svec_, sctl::Long upsample, Real gmres_tol, sctl::Long gmres_iter, const sctl::Comm& comm, Real LB_tol, const SingularQuadParams& quad) {
       auto append_vec = [](const sctl::Vector<Real>& a, const sctl::Vector<Real>& b) {
         sctl::Vector<Real> c(a.Dim()+b.Dim());
         for (sctl::Long i = 0; i < a.Dim(); i++) c[i] = a[i];
@@ -709,12 +709,12 @@ namespace detail_bie_solvers {
         const auto& ker_potn = helm.FxU();
         const auto& ker_grad = helm.FxdU();
         const auto& ker_grad_diff = helm_diff.FxdU();
-        BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad_diff(comm);
-        BoundaryIntegralOp<Real,2,6,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_grad(comm);
-        BoundaryIntegralOp<Real,2,2,UPSAMPLE,PATCH_DIM0,RAD_DIM> BI_potn(comm);
-        BI_grad_diff.SetupSingular(Svec, ker_grad_diff, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
-        BI_grad.SetupSingular(Svec, ker_grad, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
-        BI_potn.SetupSingular(Svec, ker_potn, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1);
+        BoundaryIntegralOp<Real,2,6,UPSAMPLE> BI_grad_diff(comm);
+        BoundaryIntegralOp<Real,2,6,UPSAMPLE> BI_grad(comm);
+        BoundaryIntegralOp<Real,2,2,UPSAMPLE> BI_potn(comm);
+        BI_grad_diff.SetupSingular(Svec, ker_grad_diff, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1, quad);
+        BI_grad.SetupSingular(Svec, ker_grad, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1, quad);
+        BI_potn.SetupSingular(Svec, ker_potn, sctl::Vector<sctl::Vector<sctl::Long>>(), gmres_tol * (Real)0.1, quad);
         sctl::Profile::Toc();
 
         auto Compute_m = [lambda,&Svec,&SurfDim,&SurfDsp,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) )
@@ -1055,13 +1055,13 @@ namespace detail_bie_solvers {
       sctl::Profile::Toc();
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> Real TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::max_norm(const sctl::Vector<Real>& x) {
+    template <class Real, sctl::Integer UPSAMPLE> Real TaylorState<Real,UPSAMPLE>::max_norm(const sctl::Vector<Real>& x) {
       Real err = 0;
       for (const auto& a : x) err = std::max(err, sctl::fabs<Real>(a));
       return err;
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m, Real lambda, const sctl::Comm& comm, const Real tol) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m, Real lambda, const sctl::Comm& comm, const Real tol) {
       Helmholtz3D<Real> helm(lambda);
       const sctl::Long Nt = Xt.Dim() / COORD_DIM;
       SCTL_ASSERT(Xt.Dim() == Nt * COORD_DIM);
@@ -1113,7 +1113,7 @@ namespace detail_bie_solvers {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_mH(sctl::Vector<Real>& mH, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::Compute_mH(sctl::Vector<Real>& mH, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter) {
       sctl::Long N= Nt * Np;
 
       // In scratch memory: see SurfaceOp::SurfGrad
@@ -1149,11 +1149,11 @@ namespace detail_bie_solvers {
         }
       }
     }
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> template <class Op> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad) { // grad_v <-- Grad(g[sigma])
+    template <class Real, sctl::Integer UPSAMPLE> template <class Op> void TaylorState<Real,UPSAMPLE>::Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad) { // grad_v <-- Grad(g[sigma])
       Grad_v = 0;
       BI_grad(Grad_v, sigma);
     }
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> template <class Op> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_iQ(sctl::Vector<Real>& iQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const Op& BI_potn, const KernelFunction<Real,COORD_DIM,2,2>& ker_potn, Real lambda) { // iQ <-- i g[m]
+    template <class Real, sctl::Integer UPSAMPLE> template <class Op> void TaylorState<Real,UPSAMPLE>::Compute_iQ(sctl::Vector<Real>& iQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const Op& BI_potn, const KernelFunction<Real,COORD_DIM,2,2>& ker_potn, Real lambda) { // iQ <-- i g[m]
       sctl::Long Nsurf = SurfDim.Dim();
       sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
       if (iQ.Dim() != COORD_DIM * 2 * N) iQ.ReInit(COORD_DIM * 2 * N);
@@ -1178,7 +1178,7 @@ namespace detail_bie_solvers {
         }
       }
     }
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> template <class Op> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_iCurlQ(sctl::Vector<Real>& iCurlQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad) { // iCurlQ <-- i Curl(g[m])
+    template <class Real, sctl::Integer UPSAMPLE> template <class Op> void TaylorState<Real,UPSAMPLE>::Compute_iCurlQ(sctl::Vector<Real>& iCurlQ, const sctl::Vector<Real>& m, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDsp, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad) { // iCurlQ <-- i Curl(g[m])
       sctl::Long Nsurf = SurfDim.Dim();
       sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
       if (iCurlQ.Dim() != COORD_DIM * 2 * N) iCurlQ.ReInit(COORD_DIM * 2 * N);
@@ -1205,7 +1205,7 @@ namespace detail_bie_solvers {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol) {
+    template <class Real, sctl::Integer UPSAMPLE> void TaylorState<Real,UPSAMPLE>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B_out, sctl::Vector<sctl::Vector<Real>>& m_out, sctl::Vector<sctl::Vector<Real>>& sigma_out, Real lambda, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter, Real LB_tol) {
       sctl::Long Nsurf = Svec.Dim();
       if (Nsurf != 1 && Nsurf != 2) return;
       // The vectors of the solve are those of the object, which keeps them with their storage from one call to the next
@@ -1265,9 +1265,9 @@ namespace detail_bie_solvers {
       auto& BI_grad_diff = BI_grad_diff_; // the operators of the object: see TaylorState()
       auto& BI_grad = BI_grad_;
       auto& BI_potn = BI_potn_;
-      BI_grad_diff.template SetupSingular<UPSAMPLE,PATCH_DIM0,RAD_DIM>(Svec, ker_grad_diff, gmres_tol * (Real)0.1);
-      BI_grad.template SetupSingular<UPSAMPLE,PATCH_DIM0,RAD_DIM>(Svec, ker_grad, gmres_tol * (Real)0.1);
-      BI_potn.template SetupSingular<UPSAMPLE,PATCH_DIM0,RAD_DIM>(Svec, ker_potn, gmres_tol * (Real)0.1);
+      BI_grad_diff.template SetupSingular<UPSAMPLE>(Svec, ker_grad_diff, gmres_tol * (Real)0.1, quad_);
+      BI_grad.template SetupSingular<UPSAMPLE>(Svec, ker_grad, gmres_tol * (Real)0.1, quad_);
+      BI_potn.template SetupSingular<UPSAMPLE>(Svec, ker_potn, gmres_tol * (Real)0.1, quad_);
       // the operators of densities on the surface grids
       using detail_bie_solvers::SurfGridOp;
       const SurfGridOp<std::remove_reference_t<decltype(BI_grad_diff)>> GD_op{BI_grad_diff, SurfNt_, SurfNp_};

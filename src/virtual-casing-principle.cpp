@@ -62,11 +62,11 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   Svec[0] = S;
 
   sctl::Profile::Tic("Setup", &comm);
-  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE, PDIM, RDIM> BiotSavartFxU(comm);
-  BiotSavartFxU.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU());
+  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE> BiotSavartFxU(comm);
+  BiotSavartFxU.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
-  biest::BoundaryIntegralOp<Real, 1, 3, UPSAMPLE, PDIM, RDIM> LaplaceFxdU(comm);
-  LaplaceFxdU.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU());
+  biest::BoundaryIntegralOp<Real, 1, 3, UPSAMPLE> LaplaceFxdU(comm);
+  LaplaceFxdU.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
   sctl::Vector<Real> dX, normal;
   biest::SurfaceOp<Real> SurfOp(comm, Nt, Np);
@@ -160,14 +160,14 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   Svec[0] = S;
 
   sctl::Profile::Tic("Setup", &comm);
-  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE, PDIM, RDIM> BiotSavartFxU(comm);
-  BiotSavartFxU.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU());
+  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE> BiotSavartFxU(comm);
+  BiotSavartFxU.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
-  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE, PDIM, RDIM> LaplaceFxU(comm);
-  LaplaceFxU.SetupSingular(Svec, biest::Laplace3D<Real>::FxU());
+  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE> LaplaceFxU(comm);
+  LaplaceFxU.SetupSingular(Svec, biest::Laplace3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
-  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE, PDIM, RDIM> LaplaceDxU(comm);
-  LaplaceDxU.SetupSingular(Svec, biest::Laplace3D<Real>::DxU());
+  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE> LaplaceDxU(comm);
+  LaplaceDxU.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
   sctl::Vector<Real> dX, normal;
   biest::SurfaceOp<Real> SurfOp(comm, Nt, Np);
@@ -292,11 +292,11 @@ template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PDIM, sctl::Integer 
   Svec[0] = S;
 
   sctl::Profile::Tic("Setup", &comm);
-  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE, PDIM, RDIM> LaplaceFxU(comm);
-  LaplaceFxU.SetupSingular(Svec, biest::Laplace3D<Real>::FxU());
+  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE> LaplaceFxU(comm);
+  LaplaceFxU.SetupSingular(Svec, biest::Laplace3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
-  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE, PDIM, RDIM> LaplaceDxU(comm);
-  LaplaceDxU.SetupSingular(Svec, biest::Laplace3D<Real>::DxU());
+  biest::BoundaryIntegralOp<Real, 1, 1, UPSAMPLE> LaplaceDxU(comm);
+  LaplaceDxU.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), 1e-10, {PDIM, RDIM, 2 * RDIM});
 
   sctl::Vector<Real> dX, normal;
   biest::SurfaceOp<Real> SurfOp(comm, Nt, Np);
@@ -691,7 +691,7 @@ int main(int argc, char** argv) {
       { // set B_, Bext_
         Real tor_flux=1, pol_flux=0, lambda = 1.0;
         bool prof_state = sctl::Profile::Enable(true);
-        biest::TaylorState<Real,1,40,75>::Compute(B_, tor_flux, pol_flux, lambda, Svec, comm, gmres_tol, 100);
+        biest::TaylorState<Real,1>(comm, {40, 75, 150}).Compute(B_, tor_flux, pol_flux, lambda, Svec, gmres_tol, 100);
         VirtualCasing<Real,1,40,75>(Bext_, Svec[0], B_, 10);
         sctl::Profile::Enable(prof_state);
       }

@@ -169,12 +169,12 @@ int main(int argc, char** argv) {
     sctl::Profile::Tic("ComputeField",&comm);
     if (beltrami_param == 0.0){ // Compute vacuum field
       sctl::Vector<Real> J;
-      biest::VacuumField<Real,2,24,35>::Compute(B_bdry, J, tor_flux, pol_flux, Svec, comm, gmres_tol, gmres_iter);
-      biest::VacuumField<Real,2,24,35>::EvalOffSurface(B_off_surf, Xtrg, Svec, J, comm);
+      biest::VacuumField<Real,2>::Compute(B_bdry, J, tor_flux, pol_flux, Svec, comm, gmres_tol, gmres_iter);
+      biest::VacuumField<Real,2>::EvalOffSurface(B_off_surf, Xtrg, Svec, J, comm);
     } else { // Compute Taylor state
       sctl::Vector<sctl::Vector<Real>> m, sigma;
-      biest::TaylorState<Real,2,24,35>::Compute(B_bdry, tor_flux, pol_flux, beltrami_param, Svec, comm, gmres_tol, gmres_iter, 0.1, &m, &sigma);
-      biest::TaylorState<Real,2,24,35>::EvalOffSurface(B_off_surf, Xtrg, Svec, tor_flux, pol_flux, beltrami_param, m, sigma, comm);
+      biest::TaylorState<Real,2>::Compute(B_bdry, tor_flux, pol_flux, beltrami_param, Svec, comm, gmres_tol, gmres_iter, 0.1, &m, &sigma);
+      biest::TaylorState<Real,2>::EvalOffSurface(B_off_surf, Xtrg, Svec, tor_flux, pol_flux, beltrami_param, m, sigma, comm);
     }
     sctl::Profile::Toc();
 

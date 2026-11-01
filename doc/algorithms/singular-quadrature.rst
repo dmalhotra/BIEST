@@ -45,7 +45,7 @@ The function :math:`\eta` is defined in grid-index space,
    \qquad \chi(\rho) = \exp\left(-36\,\rho^{p}\right),
 
 where :math:`h_\theta = 2\pi/N_\theta` and :math:`h_\phi = 2\pi/N_\phi` are the grid spacings and :math:`R` is the
-radius of the patch in grid spacings: the template parameter ``PATCH_DIM0``, or :math:`M/2` in the notation of the
+radius of the patch in grid spacings: ``patch_rad`` of ``SingularQuadParams``, or :math:`M/2` in the notation of the
 papers. Since :math:`\chi(1) = e^{-36} \approx 2\times 10^{-16}`, :math:`\eta` vanishes to double-precision accuracy
 outside a disc of radius :math:`R` grid spacings, which lies inside a square patch of
 :math:`(2R+1)\times(2R+1)` grid points. The exponent is :math:`p = 8` in [MCIO2019]_; the code uses :math:`p = 6`, 8 or 10
@@ -93,12 +93,13 @@ The singular part is computed in polar coordinates :math:`(\rho,\omega)` centere
 The factor :math:`\rho` from the change of variables cancels a :math:`1/r` singularity, so for weakly singular
 kernels the integrand is bounded. For principal-value kernels, the singular part of the integrand is odd in
 :math:`\omega \mapsto \omega + \pi`, and a quadrature rule that is symmetric under this map integrates it to zero.
-BIEST uses the tensor product of the trapezoidal rule with :math:`2q` points in :math:`\omega` and the
-Gauss--Legendre rule with :math:`q` points in :math:`\rho\in[0,1]`, where :math:`q` is the template parameter
-``RAD_DIM``. Because the radial rule does not need the integrand to be smooth at :math:`\rho = 0`, kernels with a
-bounded but non-smooth part (such as :math:`\operatorname{Im} g_k`) are integrated accurately as well.
-(In the notation of [MCIO2019]_ this is a rule with :math:`q` trapezoidal points in :math:`\omega\in[0,\pi)` and :math:`q`
-Gauss--Legendre points on each half of :math:`\rho\in[-1,1]`: the same :math:`2q^2` nodes.)
+BIEST uses the tensor product of the trapezoidal rule with :math:`n_\omega` points in :math:`\omega` (an even number, so
+that the rule has this symmetry) and the Gauss--Legendre rule with :math:`n_\rho` points in :math:`\rho\in[0,1]`:
+``ang_nodes`` and ``rad_nodes`` of ``SingularQuadParams``. Because the radial rule does not need the integrand to be
+smooth at :math:`\rho = 0`, kernels with a bounded but non-smooth part (such as :math:`\operatorname{Im} g_k`) are
+integrated accurately as well. (The rule of [MCIO2019]_, with :math:`q` trapezoidal points in :math:`\omega\in[0,\pi)`
+and :math:`q` Gauss--Legendre points on each half of :math:`\rho\in[-1,1]`, is that with :math:`n_\rho = q` and
+:math:`n_\omega = 2q`.)
 
 The polar nodes are not grid points. The surface coordinates and the tangent vectors
 :math:`\mathbf{x}_\theta,\mathbf{x}_\phi` are interpolated to them with tensor-product Lagrange interpolation on a
@@ -107,16 +108,19 @@ area element are recomputed from the interpolated tangent vectors (interpolating
 The gradient and the Hessian of the single layer need this order for a density that is not constant: with a
 :math:`12\times 12` block, in the test of virtual-casing at 12 digits, they were 1.0 and 1.4 digits less accurate.
 
-The :math:`2q` angles are set by the kernel, which varies with :math:`\omega` the more the grid is anisotropic; the data
-on a circle of radius :math:`\rho R` grid spacings, as far as the grid resolves it, has angular frequencies only to
-about :math:`\pi\rho R`. So the Lagrange interpolation is to :math:`2m+1 \le 2q` equispaced angles on each circle, with
-:math:`m = \lceil \pi\rho R\rceil + 6`, and the values at the :math:`2q` angles are the trigonometric interpolant of
-those (the matrix of the Dirichlet kernel); the correction weights go back by the transpose. For :math:`R = 28` this is
-76% of the polar nodes (62% with the hedgehog of :math:`3q` radii), the interpolation being most of the setup: on an AMD
-EPYC 9474F, the setup of the gradient of the single layer takes 0.68 ms per target instead of 0.82 ms, and that of its
-Hessian 4.6 ms instead of 6.3 ms. Fewer angles, for only the lower frequencies of the grid, do as well for a smooth
-density but not inside GMRES, whose Krylov vectors reach the highest: with half of them, the solves in
-``test/bie-solvers.cpp`` take 32% more iterations.
+The :math:`n_\omega` angles are set by the kernel, which varies with :math:`\omega` the more the grid is anisotropic (see
+:ref:`Choosing the parameters <algorithms-quadrature-params>`); the data on a circle of radius :math:`\rho R` grid
+spacings, as far as the grid resolves it, has angular frequencies only to about :math:`\pi\rho R`. So the Lagrange
+interpolation is to :math:`2m+2 \le n_\omega` equispaced angles on each circle, with
+:math:`m = \lceil \pi\rho R\rceil + 6`, and the values at the :math:`n_\omega` angles are the trigonometric interpolant
+of those (the matrix of the periodic sinc kernel); the correction weights go back by the transpose. An even number of
+angles keeps them symmetric under :math:`\omega \mapsto \omega + \pi`, as the polar nodes are: with an odd number,
+the field of a surface with stellarator symmetry lost that symmetry at the level of the quadrature error. The interpolation is
+most of the setup: with :math:`R = 28`, 44 radii and 88 angles, this is 76% of the polar nodes (62% with the hedgehog
+of 132 radii), and on an AMD EPYC 9474F the setup of the gradient of the single layer takes 0.68 ms per target instead
+of 0.82 ms, and that of its Hessian 4.6 ms instead of 6.3 ms. Fewer angles, for only the lower frequencies of the grid,
+do as well for a smooth density but not inside GMRES, whose Krylov vectors reach the highest: with half of them, the
+solves in ``test/bie-solvers.cpp`` take 32% more iterations.
 
 Precomputed sparse correction
 -----------------------------
@@ -139,7 +143,7 @@ where :math:`k` runs over the polar nodes with weights :math:`\mathsf{w}_k`. The
 
 the trapezoidal rule plus a correction that acts only on the :math:`(2R+1)^2` grid points near the target.
 
-- **Setup** (``SetupSingular``): :math:`\mathcal{O}(q^2)` kernel evaluations and interpolations per target, done
+- **Setup** (``SetupSingular``): :math:`\mathcal{O}(n_\rho n_\omega)` kernel evaluations and interpolations per target, done
   once for a given surface and kernel.
 - **Evaluation** (``operator()``): the :math:`\mathcal{O}(N^2)` trapezoidal sum, plus :math:`\mathcal{O}(R^2)` operations
   per target for the correction. No kernel evaluation or interpolation of the density is needed for the correction,
@@ -161,9 +165,37 @@ Each direction of the (upsampled) grid must have at least :math:`2R+1` points.
 Choosing the parameters
 -----------------------
 
-The patch radius :math:`R` and the order :math:`q` must grow with the grid size :math:`N` for the quadrature to
-converge; [MCIO2019]_ (following Ying, Biros and Zorin) suggests :math:`R, q = \mathcal{O}(N^{1/4})`, with the
-constants found empirically. The table lists the values of [MCIO2019]_ (Table 3) for the Green's identity test on the
+The patch radius :math:`R` and the polar grid must grow with the requested accuracy for the quadrature error to
+decrease. ``BoundaryIntegralOp::SetupSingular()`` chooses them for its tolerance :math:`10^{-d}` and the anisotropy
+:math:`c` of the grid of each surface: the largest ratio, over the grid points, of the singular values of the Jacobian of
+the surface with respect to the grid indices (:math:`c = 1` for square cells; skewed cells count as well). The rules were
+fit to the error of Green's identity for the Laplace single and double layers, with a smooth density, on tori and
+rotating ellipses with :math:`c` from 1.3 to 4.4:
+
+- :math:`R = \lceil d\,(1.1 + 0.5\,c)\rceil`. A patch large enough for the polar grid is not enough: the trapezoidal
+  rule outside the patch, on :math:`(1-\eta)K`, converges more slowly on an anisotropic grid. For 10 digits,
+  :math:`R = 17` was needed for :math:`c = 1.3` and :math:`R = 34` for :math:`c = 4.4`.
+- :math:`n_\rho = \lceil 2.6\,d\rceil + 2`, the same for every :math:`c` and :math:`R`: with this many radii the error
+  reached :math:`d` digits on every surface, or the limit that :math:`R` set.
+- :math:`n_\omega = 2\,(\lceil d / \log_{10}\frac{c+1}{c-1}\rceil + 4)`, with :math:`c` at least 1.2. On a grid of
+  anisotropy :math:`c` the kernel, as a function of :math:`\omega`, behaves as
+  :math:`(\cos^2\omega + c^2\sin^2\omega)^{-1/2}`, which is analytic in a strip of half-width
+  :math:`\frac{1}{2}\ln\frac{c+1}{c-1}`, and the trapezoidal rule converges at that rate: 2.7 angles per digit were
+  needed for :math:`c = 1.3` and 10.6 for :math:`c = 4.4`, against 2.4 and 10.0 from the strip.
+- With the hedgehog (``HedgehogOrder`` > 1), :math:`R` is 1.3 times larger, :math:`n_\rho = 3\lceil 1.6R\rceil` (the
+  radial nodes set how far the points of the hedgehog are from the surface) and :math:`n_\omega` is 1.4 times larger:
+  fit to the Hessian of the single layer in the test of virtual-casing.
+
+For a density that the grid resolves only to a few digits, the polar grid of these rules differs from a much finer one
+at the same :math:`R` by less than the error of the density itself. Values given in ``SingularQuadParams`` replace the
+chosen ones, and a chosen patch is limited to the grid. Earlier versions took :math:`R` as a template parameter, with
+:math:`n_\rho = q` and :math:`n_\omega = 2q` for a template parameter :math:`q`; ``FieldPeriodBIOp`` took the largest
+:math:`R` in :math:`\{6, 8, 12, 16, \ldots, 64\}` up to :math:`1.6\,d\,c` and :math:`q = \lfloor 1.6R\rfloor`, which
+grew with :math:`c` in every direction.
+
+For a fixed tolerance, the quadrature error decreases with the grid only while the density and the surface are not
+resolved; [MCIO2019]_ (following Ying, Biros and Zorin) suggests :math:`R, q = \mathcal{O}(N^{1/4})` for convergence with
+the grid size :math:`N`. The table lists the values of [MCIO2019]_ (Table 3) for the Green's identity test on the
 QAS3 stellarator, with the relative error of the Laplace (:math:`\lambda = 0`) and Helmholtz (:math:`\lambda = 1`)
 layer potentials:
 
@@ -173,8 +205,8 @@ layer potentials:
 
    * - Grid :math:`N_\theta\times N_\phi`
      - :math:`N`
-     - ``PATCH_DIM0`` (:math:`R`)
-     - ``RAD_DIM`` (:math:`q`)
+     - :math:`R`
+     - :math:`q`
      - Error (Laplace)
      - Error (Helmholtz)
    * - :math:`70\times 14`
@@ -212,14 +244,12 @@ The programs ``src/table3.cpp``, ``src/table5.cpp``, ``src/table6.cpp`` and ``sr
 used for the other results in the paper. In the test of [MCOT2020]_ (Fig. 2), the method converges at roughly
 12th order on an axisymmetric torus and 10th order on W7-X, while singularity subtraction converges at second order.
 
-``FieldPeriodBIOp`` chooses the parameters at run time from the requested number of digits :math:`d`:
+``FieldPeriodBIOp`` chooses the quadrature grid from the requested number of digits :math:`d`:
 
 1. It measures how much the ratio of the toroidal to the poloidal grid spacing varies over the surface,
-   :math:`c = \sqrt{s_{max}/s_{min}}`, where :math:`s` is that ratio at a grid point (a warning is printed if
-   :math:`c > 4`).
-2. It sets :math:`R` to the largest value in :math:`\{6, 8, 12, 16, 20, \ldots, 64\}` that does not exceed
-   :math:`1.6\,d\,c`, and :math:`q = \lfloor 1.6 R \rfloor`.
-3. It chooses a quadrature grid with spacings of about the same size in the two directions, at least as fine as the
+   :math:`\sqrt{s_{max}/s_{min}}`, where :math:`s` is that ratio at a grid point (a warning is printed if it is above 4),
+   and the patch radius :math:`R` of the rule above on a grid of the aspect ratio it chooses.
+2. It chooses a quadrature grid with spacings of about the same size in the two directions, at least as fine as the
    surface, the density and the patch require. It then tests the grid: the Laplace double layer of a constant density
    (which equals :math:`-1/2` on the surface) at the targets. While the test is not accurate to :math:`d` digits, it
    refines the grid by the factor that the error predicts for :math:`d+1` digits, assuming geometric convergence,

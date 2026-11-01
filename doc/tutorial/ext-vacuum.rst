@@ -92,10 +92,10 @@ The program ``doc/examples/ext-vacuum.cpp`` checks the results against the exact
 
 .. code-block:: text
 
-   exterior, on the surface:  2.58571e-07
-   exterior, off the surface: 1.61674e-12
-   interior, on the surface:  9.90124e-07
-   interior, off the surface: 3.31073e-11
+   exterior, on the surface:  3.63177e-07
+   exterior, off the surface: 3.77574e-12
+   interior, on the surface:  9.91083e-07
+   interior, off the surface: 3.39044e-11
 
 The errors on the surface are limited by the resolution of the field grid (``Nt x Np``); with ``Nt = Np = 80`` they decrease to about :math:`10^{-10}`.
 

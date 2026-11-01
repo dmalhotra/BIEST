@@ -59,8 +59,8 @@ computed at each grid point,
 
 and the area element is :math:`\sqrt{\det\mathbf{G}} = \|\mathbf{x}_\theta\times\mathbf{x}_\phi\|`
 (``SurfaceOp::SurfNormalAreaElem``). The normals are flipped if needed so that they point out of the surface;
-BIEST checks the normal at the grid point with the largest :math:`x`-coordinate. So the grid may have either
-orientation. Data given on one field period is extended to the full torus by rotating it about the :math:`z`-axis
+BIEST checks the normal at the grid point farthest from the :math:`z`-axis, where the outward normal points away
+from the axis. So the grid may have either orientation. Data given on one field period is extended to the full torus by rotating it about the :math:`z`-axis
 in the direction in which its toroidal index increases (``SurfaceOp::ToroidalOrientation``).
 
 Resampling to a finer or coarser grid (``SurfaceOp::Upsample``, ``SurfaceOp::Resample``) pads or truncates the
@@ -81,6 +81,8 @@ which converges spectrally for smooth periodic integrands (``SurfaceOp::SurfInte
 far-field part of the :ref:`singular quadrature <algorithms-singular-quadrature>`. Line integrals along
 grid lines (for example, the circulations that impose the flux conditions) also use the trapezoidal rule.
 
+.. _algorithms-surface-diff-ops:
+
 Surface differential operators
 ------------------------------
 
@@ -96,8 +98,37 @@ Laplace--Beltrami operator are ([MCIO2019]_, Eq. 3.13--3.15)
    \sqrt{\det\mathbf{G}}\,\begin{bmatrix}v_1\\ v_2\end{bmatrix},\qquad
    \Delta_\Gamma f = \nabla_\Gamma\cdot\nabla_\Gamma f,
 
-where :math:`\mathbf{v} = v_1\mathbf{x}_\theta + v_2\mathbf{x}_\phi` is a tangential vector field. They are
-applied pointwise on the grid with spectral derivatives (``SurfGrad``, ``SurfDiv``, ``SurfLap``).
+where :math:`\mathbf{v} = v_1\mathbf{x}_\theta + v_2\mathbf{x}_\phi` is a tangential vector field, with
+:math:`[v_1\ v_2]^T = \mathbf{G}^{-1}\mathbf{J}^T\mathbf{v}`. So
+
+.. math::
+
+   \Delta_\Gamma f = \frac{1}{\sqrt{\det\mathbf{G}}}
+   \begin{bmatrix}\partial_\theta & \partial_\phi\end{bmatrix}
+   \sqrt{\det\mathbf{G}}\,\mathbf{G}^{-1}
+   \begin{bmatrix}\partial_\theta f\\ \partial_\phi f\end{bmatrix}.
+
+BIEST applies the operators in this intrinsic form, with spectral derivatives (``SurfGrad``, ``SurfDiv``,
+``SurfLap``): the quantities differentiated are :math:`f`, and the products of the metric with the derivatives of
+:math:`f` or with the components :math:`\mathbf{J}^T\mathbf{v}` of :math:`\mathbf{v}` along the tangent vectors.
+The Cartesian components of the tangent vectors enter only pointwise, through :math:`\mathbf{G}` and, in
+:math:`\nabla_\Gamma f`, through :math:`\mathbf{J}`. ``SurfDiv`` of a field that is not tangential gives the
+divergence of its tangential part, and ``SurfCurl`` computes :math:`-\mathbf{n}\cdot\nabla\times\mathbf{v}` as
+:math:`\nabla_\Gamma\cdot(\mathbf{n}\times\mathbf{v})`.
+
+On one field period
+~~~~~~~~~~~~~~~~~~~
+
+When the surface is invariant under the rotation :math:`\mathbf{R}` by :math:`2\pi/N_{fp}` about the
+:math:`z`-axis, with :math:`\mathbf{x}(\theta + 2\pi/N_{fp}, \phi) = \mathbf{R}\,\mathbf{x}(\theta, \phi)`, its
+tangent vectors rotate too, :math:`\mathbf{J} \to \mathbf{R}\mathbf{J}`, and the metric
+:math:`\mathbf{G} = \mathbf{J}^T\mathbf{R}^T\mathbf{R}\mathbf{J} = \mathbf{J}^T\mathbf{J}` does not change. Nor do
+the components :math:`\mathbf{J}^T\mathbf{v}` of a vector field that rotates with the surface, or a function that
+repeats from one field period to the next. Everything the intrinsic form differentiates is then periodic over
+one field period, and the operators on the grid of one field period (:math:`N_\theta/N_{fp}` points over
+:math:`2\pi/N_{fp}`) give the restrictions of those on the full torus: ``SurfaceOp`` on one field period. The
+Cartesian components of :math:`\mathbf{x}`, :math:`\mathbf{J}` or :math:`\mathbf{v}` rotate from one period to the
+next, and are not periodic over one.
 
 Laplace--Beltrami solver
 ------------------------
@@ -126,7 +157,11 @@ slowly with the resolution, from 7 to 37 as the error decreases from :math:`10^{
 preconditioner, GMRES did not converge in 300 iterations.
 
 This solver is ``SurfaceOp::InvSurfLap``; ``SurfaceOp::GradInvSurfLap`` also applies :math:`\nabla_\Gamma` to the
-solution. Both can solve on an upsampled grid and downsample the result.
+solution. Both can solve on an upsampled grid and downsample the result; ``GradInvSurfLap`` then takes the
+gradient of the downsampled solution. The metric on the upsampled grid is computed from the tangent vectors
+upsampled with the FFT. On one field period, they are upsampled in the frame that turns by :math:`-\theta` about the
+:math:`z`-axis (in the direction of the toroidal index), in which they repeat from one period to the next; the
+metric does not depend on the frame.
 ``InvSurfLapPrecond`` accepts other preconditioners; [MCIO2019]_ (Sec. 3.3.2) also tests preconditioning with the
 Laplace single-layer operator, which needs fewer iterations but costs much more per iteration.
 

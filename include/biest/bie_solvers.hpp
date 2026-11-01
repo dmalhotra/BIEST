@@ -136,11 +136,11 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     // The vectors of Compute(), kept from one call to the next with their storage, as the operators: for each surface,
     // its grid points on one field period (SurfDim_) and their offset in the vectors of all the surfaces (SurfDsp_), and
     // the same for the full torus (SurfDimF_, SurfDspF_), and the dimensions of its grid; the derivatives of its
-    // coordinates, its normal and area element; for each solution, J0 and B0, and the fields B and J with their fluxes
-    // (the results of ComputeHelper); the solution of GMRES
+    // coordinates, its normal and area element, and the derivatives on one field period; for each solution, J0 and B0,
+    // and the fields B and J with their fluxes (the results of ComputeHelper); the solution of GMRES
     sctl::Vector<sctl::Long> SurfDim_, SurfDsp_, SurfDimF_, SurfDspF_, SurfNt_, SurfNp_;
     sctl::Vector<sctl::Integer> SurfOrient_;
-    sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, J0_, B0_, B_, J_;
+    sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, dXp_, J0_, B0_, B_, J_;
     sctl::Vector<Real> tor_flux_, pol_flux_, F_;
 };
 
@@ -209,7 +209,9 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      * on one of those common to all of them, with the targets of the
      * operators and the unknowns on that period: the setup and the memory of
      * the singular quadrature, and its cost at each iteration, are divided by
-     * their number. The results are on the full tori.
+     * their number, and so is the cost of the Laplace-Beltrami solves, which
+     * are on that period too (see SurfaceOp). The results are on the full
+     * tori.
      * @see biest::Surface
      * @see sctl::Vector
      *
@@ -276,7 +278,9 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
      */
     static void ComputeFarField(sctl::Vector<Real>& Breal, const sctl::Vector<Real>& Xt, const sctl::Vector<Surface<Real>>& Svec, const sctl::Vector<Real>& sigma, const sctl::Vector<Real>& m, Real lambda, const sctl::Comm& comm, const Real tol);
 
-    static void Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter);
+    // mH, the harmonic surface currents (the harmonic part of dX/dt and n times it), on the Nt x Np grid of one of NFP
+    // field periods (see SurfaceOp)
+    static void Compute_mH(sctl::Vector<Real>& mH, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter);
     // The potentials at the targets, of SurfDim[i] points of surface i at SurfDsp[i], of densities sigma and m on the
     // grids of the operators (BI_grad(U, F), a BoundaryIntegralOp or a solver's FieldPeriodBIOp on the surface grids)
     template <class Op> static void Compute_Grad_v(sctl::Vector<Real>& Grad_v, const sctl::Vector<Real>& sigma, const Op& BI_grad, const KernelFunction<Real,COORD_DIM,2,COORD_DIM*2>& ker_grad); // grad_v <-- Grad(g[sigma])
@@ -293,11 +297,12 @@ template <class Real, sctl::Integer UPSAMPLE = 1, sctl::Integer PATCH_DIM0 = 24,
     // The vectors of Compute(), kept from one call to the next with their storage, as the operators: for each surface,
     // its grid points on one field period (SurfDim_) and their offset in the vectors of all the surfaces (SurfDsp_), and
     // the same for the full torus (SurfDimF_, SurfDspF_), and the dimensions of its grid; the derivatives of its
-    // coordinates, its normal and area element; for each solution, mH, B0, sigma, m, B and B_flux, and B in the basis of
-    // the fluxes (with two surfaces); and the results of ComputeHelper
+    // coordinates, its normal and area element, and the derivatives and normal on one field period; for each solution,
+    // mH, B0, sigma, m, B and B_flux, and B in the basis of the fluxes (with two surfaces); and the results of
+    // ComputeHelper
     sctl::Vector<sctl::Long> SurfDim_, SurfDsp_, SurfDimF_, SurfDspF_, SurfNt_, SurfNp_;
     sctl::Vector<sctl::Integer> SurfOrient_;
-    sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, mH_, B0_, sigma_, m_, B_, B_flux_, B2_;
+    sctl::Vector<sctl::Vector<Real>> dX_, Xn_, Xa_, dXp_, Xnp_, mH_, B0_, sigma_, m_, B_, B_flux_, B2_;
     sctl::Vector<sctl::Vector<Real>> B_out_, m_out_, sigma_out_;
 };
 

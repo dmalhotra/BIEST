@@ -105,7 +105,7 @@ The program also evaluates the field at a point inside the shell, and prints (th
 ----------------
 
 When the surfaces declare field periods (``Surface::SetNFP``, see :ref:`Field periods <tutorial-surface-nfp>`), the solvers solve on one of those common to all the surfaces: the unknowns of GMRES and the targets of the layer potentials are on one field period, and the densities are completed to the full tori by the symmetry.
-The setup and the memory of the singular quadrature, and its cost at each GMRES iteration, are divided by the number of field periods; the surface operators (the Laplace--Beltrami solves of ``TaylorState`` among them) still act on the full tori.
+The setup and the memory of the singular quadrature, and its cost at each GMRES iteration, are divided by the number of field periods, and so is the cost of the Laplace--Beltrami solves of ``TaylorState``, and of ``VacuumField`` for its surface current, which act on one field period too (see :ref:`One field period <tutorial-surface-op-nfp>`).
 The results, ``B``, ``J``, ``m`` and ``sigma``, are on the full tori as without the symmetry, and agree with the solve on the full tori to the GMRES tolerance.
 For example, for W7-X:
 

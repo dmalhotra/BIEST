@@ -193,16 +193,16 @@ namespace detail_surfop {
 
 }
 
-template <class Real> SurfaceOp<Real>::SurfaceOp(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np) {
-  Init(comm, Nt, Np);
+template <class Real> SurfaceOp<Real>::SurfaceOp(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient) {
+  Init(comm, Nt, Np, NFP, tor_orient);
 }
 
 template <class Real> SurfaceOp<Real>::SurfaceOp(const SurfaceOp& Op) {
-  Init(Op.comm_, Op.Nt_, Op.Np_);
+  Init(Op.comm_, Op.Nt_, Op.Np_, Op.NFP_, Op.tor_orient_);
 }
 
 template <class Real> SurfaceOp<Real>& SurfaceOp<Real>::operator=(const SurfaceOp& Op) {
-  Init(Op.comm_, Op.Nt_, Op.Np_);
+  Init(Op.comm_, Op.Nt_, Op.Np_, Op.NFP_, Op.tor_orient_);
   return *this;
 }
 
@@ -303,7 +303,7 @@ template <class Real> void SurfaceOp<Real>::Grad2D(sctl::Vector<Real>& dX, const
     for (sctl::Long j = 0; j < Np; j++) dX_[(k * 2 + 1) * N + t * Np + j] = x[j];
   });
 
-  const Real st = (2 * sctl::const_pi<Real>()) / (Real)(Nt * Np); // FFT is unnormalized
+  const Real st = (2 * sctl::const_pi<Real>()) * NFP_ / (Real)(Nt * Np); // FFT is unnormalized; t in [0,1/NFP) on one of NFP field periods
   detail_surfop::Columns<Real>(A, Nt, A, Nt, dof, ld, Q, [Nt,st](const sctl::Iterator<Real> c1, const sctl::ConstIterator<Real> c0, const sctl::Long q) {
     for (sctl::Long t = 0; t < Nt; t++) {
       const Real tt = (Real)(t - (t > Nt / 2 ? Nt : 0));
@@ -329,7 +329,7 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
   }
 
   sctl::Long N = Nt_ * Np_;
-  Real scal = 1 / (Real)N;
+  Real scal = 1 / (Real)(NFP_ * N); // the weights of the full torus, on one of NFP field periods
   if (normal != nullptr && area_elem != nullptr) {
     #pragma omp parallel for schedule(static)
     for (sctl::Long i = 0; i < N; i++) {
@@ -363,12 +363,13 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
   }
 
   Real normal_orient = 0;
-  if (X != nullptr && normal != nullptr) { // Set Orientation
+  if (X != nullptr && normal != nullptr) { // Set Orientation: at the point farthest from the z-axis the outward normal points away from it, and one of NFP field periods has such a point
+    const auto R2 = [X,N](const sctl::Long j) { return (*X)[0*N+j] * (*X)[0*N+j] + (*X)[1*N+j] * (*X)[1*N+j]; };
     sctl::Long idx = 0;
-    for (sctl::Long j = 0; j < Nt_*Np_; j++) {
-      if ((*X)[idx] < (*X)[j]) idx = j;
+    for (sctl::Long j = 0; j < N; j++) {
+      if (R2(idx) < R2(j)) idx = j;
     }
-    if ((*normal)[idx] < 0) {
+    if ((*normal)[0*N+idx] * (*X)[0*N+idx] + (*normal)[1*N+idx] * (*X)[1*N+idx] < 0) {
       normal_orient = -1;
       (*normal) *= normal_orient;
     } else {
@@ -379,29 +380,23 @@ template <class Real> Real SurfaceOp<Real>::SurfNormalAreaElem(sctl::Vector<Real
 }
 
 template <class Real> void SurfaceOp<Real>::SurfCurl(sctl::Vector<Real>& CurlF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& normal, const sctl::Vector<Real>& F) const {
-  sctl::ScratchBuf<Real> GradF_buf(COORD_DIM * F.Dim()); // in scratch memory: see SurfGrad
-  sctl::Vector<Real> GradF(GradF_buf);
-  SurfGrad(GradF, dX, F);
-  { // Compute CurlF <--curl(GradF)
-    sctl::Long N = Nt_ * Np_;
-    sctl::Long dof = F.Dim() / (COORD_DIM * Nt_ * Np_);
-    assert(F.Dim() == dof * COORD_DIM * Nt_ * Np_);
-    assert(normal.Dim() == COORD_DIM * Nt_ * Np_);
-    if (CurlF.Dim() != dof * Nt_ * Np_) {
-      CurlF.ReInit(dof * Nt_ * Np_);
-    }
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
-      for (sctl::Long k = 0; k < dof; k++) {
-        Real curl = 0;
-        sctl::Long idx = k*COORD_DIM*COORD_DIM * N + i;
-        curl += normal[0*N+i] * (GradF[(1*COORD_DIM+2) * N + idx] - GradF[(2*COORD_DIM+1) * N + idx]);
-        curl += normal[1*N+i] * (GradF[(2*COORD_DIM+0) * N + idx] - GradF[(0*COORD_DIM+2) * N + idx]);
-        curl += normal[2*N+i] * (GradF[(0*COORD_DIM+1) * N + idx] - GradF[(1*COORD_DIM+0) * N + idx]);
-        CurlF[k * N + i] = curl;
-      }
+  // -n . curl(F) = div(n x F), from the components (n x F) . dX/du_j of n x F along the tangent vectors (see SurfDiv)
+  const sctl::Long N = Nt_ * Np_, dof = F.Dim() / (COORD_DIM * N);
+  SCTL_ASSERT(F.Dim() == dof * COORD_DIM * N);
+  SCTL_ASSERT(normal.Dim() == COORD_DIM * N);
+  sctl::ScratchBuf<Real> C_buf(4 * N), A_buf(dof * 2 * N); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> C(C_buf), A(A_buf);
+  LapCoeff(C, dX);
+  #pragma omp parallel for schedule(static)
+  for (sctl::Long i = 0; i < N; i++) {
+    const Real n0 = normal[0*N+i], n1 = normal[1*N+i], n2 = normal[2*N+i];
+    for (sctl::Long k = 0; k < dof; k++) {
+      const Real f0 = F[(k*COORD_DIM+0)*N+i], f1 = F[(k*COORD_DIM+1)*N+i], f2 = F[(k*COORD_DIM+2)*N+i];
+      const Real v0 = n1 * f2 - n2 * f1, v1 = n2 * f0 - n0 * f2, v2 = n0 * f1 - n1 * f0;
+      for (sctl::Integer d = 0; d < 2; d++) A[(k*2+d)*N+i] = v0 * dX[(0*2+d)*N+i] + v1 * dX[(1*2+d)*N+i] + v2 * dX[(2*2+d)*N+i];
     }
   }
+  CovDiv(CurlF, C, A);
 }
 
 template <class Real> void SurfaceOp<Real>::SurfGrad(sctl::Vector<Real>& GradFvec, const sctl::Vector<Real>& dXvec, const sctl::Vector<Real>& Fvec) const {
@@ -442,34 +437,152 @@ template <class Real> void SurfaceOp<Real>::SurfGrad(sctl::Vector<Real>& GradFve
 }
 
 template <class Real> void SurfaceOp<Real>::SurfDiv(sctl::Vector<Real>& DivF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const {
-  sctl::ScratchBuf<Real> GradF_buf(COORD_DIM * F.Dim()); // in scratch memory: see SurfGrad
-  sctl::Vector<Real> GradF(GradF_buf);
-  SurfGrad(GradF, dX, F);
-  { // Compute DivF <-- trace(GradF)
-    sctl::Long N = Nt_ * Np_;
-    sctl::Long dof = F.Dim() / (COORD_DIM * Nt_ * Np_);
-    assert(F.Dim() == dof * COORD_DIM * Nt_ * Np_);
-    if (DivF.Dim() != dof * Nt_ * Np_) {
-      DivF.ReInit(dof * Nt_ * Np_);
-    }
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
-      for (sctl::Long k = 0; k < dof; k++) {
-        Real trace = 0;
-        for (sctl::Long l = 0; l < COORD_DIM; l++) {
-          trace += GradF[(k * COORD_DIM * COORD_DIM + (COORD_DIM + 1) * l) * N + i];
-        }
-        DivF[k * N + i] = trace;
+  // From the components F . dX/du_j of F along the tangent vectors: dot products, which repeat from one field period to
+  // the next, unlike the Cartesian components of F
+  const sctl::Long N = Nt_ * Np_, dof = F.Dim() / (COORD_DIM * N);
+  SCTL_ASSERT(F.Dim() == dof * COORD_DIM * N);
+  sctl::ScratchBuf<Real> C_buf(4 * N), A_buf(dof * 2 * N); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> C(C_buf), A(A_buf);
+  LapCoeff(C, dX);
+  #pragma omp parallel for schedule(static)
+  for (sctl::Long i = 0; i < N; i++) {
+    for (sctl::Long k = 0; k < dof; k++) {
+      for (sctl::Integer d = 0; d < 2; d++) {
+        Real a = 0;
+        for (sctl::Integer l = 0; l < COORD_DIM; l++) a += F[(k*COORD_DIM+l)*N+i] * dX[(l*2+d)*N+i];
+        A[(k*2+d)*N+i] = a;
       }
     }
   }
+  CovDiv(DivF, C, A);
 }
 
 template <class Real> void SurfaceOp<Real>::SurfLap(sctl::Vector<Real>& LapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const {
-  sctl::ScratchBuf<Real> GradF_buf(COORD_DIM * F.Dim()); // in scratch memory: see SurfGrad
-  sctl::Vector<Real> GradF(GradF_buf);
-  SurfGrad(GradF, dX, F);
-  SurfDiv(LapF, dX, GradF);
+  const sctl::Long N = Nt_ * Np_;
+  sctl::ScratchBuf<Real> C_buf(4 * N), dF_buf(2 * F.Dim()); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> C(C_buf), dF(dF_buf);
+  LapCoeff(C, dX);
+  Grad2D(dF, F);
+  CovDiv(LapF, C, dF);
+}
+
+template <class Real> void SurfaceOp<Real>::Div2D(sctl::Vector<Real>& DivA, const sctl::Vector<Real>& A) const {
+  const sctl::Long Nt = Nt_, Np = Np_, N = Nt * Np, dof = A.Dim() / (2 * N);
+  SCTL_ASSERT(A.Dim() == dof * 2 * N);
+  if (DivA.Dim() != dof * N) DivA.ReInit(dof * N);
+  if (!dof) return;
+
+  // As in Grad2D: T, the Fourier coefficients along the rows of the toroidal components, and P, the derivatives along
+  // the rows of the poloidal components; then the derivatives of T along the columns, plus P, transformed back
+  const sctl::Long Q = Np / 2 + 1, ld = detail_surfop::PaddedCols(Q);
+  sctl::ScratchBuf<Real> T_buf(dof * Nt * ld * 2), P_buf(dof * Nt * ld * 2);
+  const sctl::Iterator<Real> T = T_buf.begin(), P = P_buf.begin(), DivA_ = DivA.begin();
+  const sctl::ConstIterator<Real> A_ = A.begin();
+  const Real sp = (2 * sctl::const_pi<Real>()) / (Real)Np; // FFT is unnormalized
+  detail_surfop::RowsR2C<Real>(dof * 2 * Nt, Np, Q, [A_,Np](const sctl::Long r) { return A_ + r * Np; }, [T,P,ld,Q,Nt,sp](const sctl::Long r, const sctl::ConstIterator<Real> c) {
+    const sctl::Long k = r / (2 * Nt), d = (r / Nt) % 2, t = r % Nt;
+    const sctl::Iterator<Real> row = (d == 0 ? T : P) + (k * Nt + t) * ld * 2;
+    if (d == 0) {
+      for (sctl::Long q = 0; q < 2 * Q; q++) row[q] = c[q];
+    } else {
+      for (sctl::Long p = 0; p < Q; p++) {
+        row[p * 2 + 0] = c[p * 2 + 1] * sp * p;
+        row[p * 2 + 1] = -c[p * 2 + 0] * sp * p;
+      }
+    }
+    for (sctl::Long q = 2 * Q; q < 2 * ld; q++) row[q] = 0;
+  });
+
+  const Real st = (2 * sctl::const_pi<Real>()) * NFP_ / (Real)(Nt * Np); // FFT is unnormalized; t in [0,1/NFP) on one of NFP field periods
+  detail_surfop::Columns<Real>(T, Nt, T, Nt, dof, ld, Q, [Nt,st](const sctl::Iterator<Real> c1, const sctl::ConstIterator<Real> c0, const sctl::Long q) {
+    for (sctl::Long t = 0; t < Nt; t++) {
+      const Real tt = (Real)(t - (t > Nt / 2 ? Nt : 0));
+      const Real real = c0[t * 2 + 0] * st, imag = c0[t * 2 + 1] * st;
+      c1[t * 2 + 0] = imag * tt;
+      c1[t * 2 + 1] = -real * tt;
+    }
+  });
+  detail_surfop::RowsC2R<Real>(dof * Nt, Np, Q, [T,P,ld,Q](const sctl::Long r, const sctl::Iterator<Real> c) {
+    for (sctl::Long q = 0; q < 2 * Q; q++) c[q] = T[r * ld * 2 + q] + P[r * ld * 2 + q];
+  }, [DivA_,Np](const sctl::Long r, const sctl::ConstIterator<Real> x) {
+    for (sctl::Long j = 0; j < Np; j++) DivA_[r * Np + j] = x[j];
+  });
+}
+
+template <class Real> void SurfaceOp<Real>::LapCoeff(sctl::Vector<Real>& C, const sctl::Vector<Real>& dX) const {
+  const sctl::Long N = Nt_ * Np_;
+  SCTL_ASSERT(dX.Dim() == COORD_DIM * 2 * N);
+  if (C.Dim() != 4 * N) C.ReInit(4 * N);
+  #pragma omp parallel for schedule(static)
+  for (sctl::Long i = 0; i < N; i++) {
+    Real gtt = 0, gtp = 0, gpp = 0;
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) {
+      const Real xt = dX[(k*2+0)*N+i], xp = dX[(k*2+1)*N+i];
+      gtt += xt * xt;
+      gtp += xt * xp;
+      gpp += xp * xp;
+    }
+    const Real sqrt_g = sctl::sqrt<Real>(gtt * gpp - gtp * gtp), inv_sqrt_g = 1 / sqrt_g;
+    C[0*N+i] = gpp * inv_sqrt_g; // sqrt(g) g^tt
+    C[1*N+i] = -gtp * inv_sqrt_g; // sqrt(g) g^tp
+    C[2*N+i] = gtt * inv_sqrt_g; // sqrt(g) g^pp
+    C[3*N+i] = sqrt_g;
+  }
+}
+
+template <class Real> void SurfaceOp<Real>::CovDiv(sctl::Vector<Real>& DivA, const sctl::Vector<Real>& C, const sctl::Vector<Real>& A) const {
+  const sctl::Long N = Nt_ * Np_, dof = A.Dim() / (2 * N);
+  SCTL_ASSERT(A.Dim() == dof * 2 * N);
+  SCTL_ASSERT(C.Dim() == 4 * N);
+  sctl::ScratchBuf<Real> a_buf(dof * 2 * N); // the contravariant components times sqrt(g), in scratch memory: see SurfGrad
+  sctl::Vector<Real> a(a_buf);
+  #pragma omp parallel for schedule(static)
+  for (sctl::Long i = 0; i < N; i++) {
+    for (sctl::Long k = 0; k < dof; k++) {
+      const Real At = A[(k*2+0)*N+i], Ap = A[(k*2+1)*N+i];
+      a[(k*2+0)*N+i] = C[0*N+i] * At + C[1*N+i] * Ap;
+      a[(k*2+1)*N+i] = C[1*N+i] * At + C[2*N+i] * Ap;
+    }
+  }
+  Div2D(DivA, a); // the two negations cancel
+  #pragma omp parallel for schedule(static)
+  for (sctl::Long i = 0; i < N; i++) {
+    for (sctl::Long k = 0; k < dof; k++) DivA[k*N+i] /= C[3*N+i];
+  }
+}
+
+template <class Real> void SurfaceOp<Real>::ResampleTangents(sctl::Vector<Real>& dX1, sctl::Long Nt1, sctl::Long Np1, const sctl::Vector<Real>& dX) const {
+  if (NFP_ == 1) { // on the full torus, the tangent vectors are periodic
+    Upsample(dX, Nt_, Np_, dX1, Nt1, Np1);
+    return;
+  }
+  // On one of NFP field periods, the tangent vectors at t + 1/NFP are those at t rotated by 2*pi*tor_orient/NFP about
+  // the z-axis. In the frame turned by -2*pi*tor_orient*t, they repeat from one period to the next, and are resampled
+  // as periodic functions; their z-components are unchanged.
+  const sctl::Long N = Nt_ * Np_;
+  SCTL_ASSERT(dX.Dim() == COORD_DIM * 2 * N);
+  const auto turn = [this](sctl::Vector<Real>& Y, const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real sign) { // the x and y components of X turned by sign*2*pi*tor_orient*t, into Y (which may be X)
+    const sctl::Long N = Nt * Np;
+    #pragma omp parallel for schedule(static)
+    for (sctl::Long t = 0; t < Nt; t++) {
+      const Real angle = sign * 2 * sctl::const_pi<Real>() * tor_orient_ * t / (Real)(NFP_ * Nt);
+      const Real c = sctl::cos<Real>(angle), s = sctl::sin<Real>(angle);
+      for (sctl::Integer d = 0; d < 2; d++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          const sctl::Long i = t * Np + p;
+          const Real x = X[(0*2+d)*N+i], y = X[(1*2+d)*N+i];
+          Y[(0*2+d)*N+i] = c * x - s * y;
+          Y[(1*2+d)*N+i] = s * x + c * y;
+        }
+      }
+    }
+  };
+  sctl::ScratchBuf<Real> W_buf(COORD_DIM * 2 * N); // in scratch memory: see SurfGrad
+  sctl::Vector<Real> W(W_buf);
+  turn(W, dX, Nt_, Np_, -1);
+  for (sctl::Long i = 0; i < 2 * N; i++) W[2*2*N+i] = dX[2*2*N+i];
+  Upsample(W, Nt_, Np_, dX1, Nt1, Np1);
+  turn(dX1, dX1, Nt1, Np1, 1);
 }
 
 template <class Real> void SurfaceOp<Real>::SurfInteg(sctl::Vector<Real>& I, const sctl::Vector<Real>& area_elem, const sctl::Vector<Real>& F) const {
@@ -513,7 +626,7 @@ template <class Real> void SurfaceOp<Real>::ProjZeroMean(sctl::Vector<Real>& Fpr
   }
 }
 
-template <class Real> typename SurfaceOp<Real>::SpectralInvLapOp SurfaceOp<Real>::SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_) {
+template <class Real> typename SurfaceOp<Real>::SpectralInvLapOp SurfaceOp<Real>::SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_, const sctl::Integer NFP) {
   Real Lt = 0, Lp = 0;
   sctl::Long N = Nt_ * Np_;
   #pragma omp parallel for schedule(static) reduction(+:Lt,Lp)
@@ -529,7 +642,7 @@ template <class Real> typename SurfaceOp<Real>::SpectralInvLapOp SurfaceOp<Real>
     Lt += sqrt(Xt * Xt + Yt * Yt + Zt * Zt);
     Lp += sqrt(Xp * Xp + Yp * Yp + Zp * Zp);
   }
-  const Real invLt2 = N * N / (Lt * Lt);
+  const Real invLt2 = N * N / (Lt * Lt) * (NFP * NFP); // the toroidal frequencies of one of NFP field periods are those of the torus over NFP
   const Real invLp2 = N * N / (Lp * Lp);
   return SpectralInvLapOp{Nt_, Np_, invLt2, invLp2};
 }
@@ -550,9 +663,9 @@ template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLa
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> IdentityOp =[](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { Sx = x; };
     // As a lambda of one reference to the preconditioner, which a std::function holds itself, where it would
     // allocate a copy of SpectralInvLapOp
-    const SpectralInvLapOp spectral_inv_lap = SpectralInvLap(dX, Nt_, Np_);
+    const SpectralInvLapOp spectral_inv_lap = SpectralInvLap(dX, Nt_, Np_, NFP_);
     std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = [&spectral_inv_lap](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { spectral_inv_lap(Sx, x); };
-    SurfaceOp<Real> Sop(comm_, Nt_, Np_);
+    SurfaceOp<Real> Sop(comm_, Nt_, Np_, NFP_, tor_orient_);
     Sop.InvSurfLapPrecond(InvLapF, FPrecond, IdentityOp, dX, F, tol, max_iter);
   };
   sctl::Long Nt_up = (sctl::Long)(Nt_ * upsample);
@@ -561,65 +674,66 @@ template <class Real> void SurfaceOp<Real>::InvSurfLap(sctl::Vector<Real>& InvLa
   sctl::ScratchBuf<Real> InvLapF_up_buf(F.Dim() / N * N_up), dX_up_buf(dX.Dim() / N * N_up), F_up_buf(F.Dim() / N * N_up); // see SurfGrad
   sctl::Vector<Real> InvLapF_up(InvLapF_up_buf), dX_up(dX_up_buf), F_up(F_up_buf);
   Upsample(F, Nt_, Np_, F_up, Nt_up, Np_up);
-  Upsample(dX, Nt_, Np_, dX_up, Nt_up, Np_up);
+  ResampleTangents(dX_up, Nt_up, Np_up, dX); // the metric on the upsampled grid from the tangent vectors there
   spectral_InvSurfLap(InvLapF_up, dX_up, F_up, Nt_up, Np_up, tol, max_iter);
   Upsample(InvLapF_up, Nt_up, Np_up, InvLapF, Nt_, Np_);
 }
 
 template <class Real> void SurfaceOp<Real>::GradInvSurfLap(sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter, Real upsample) const {
-  auto spectral_GradInvSurfLap = [this](sctl::Vector<Real>& GradInvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, sctl::Long Nt_, sctl::Long Np_, Real tol, sctl::Integer max_iter) {
-    std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> IdentityOp = [](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { Sx = x; };
-    // As a lambda of one reference to the preconditioner, which a std::function holds itself, where it would
-    // allocate a copy of SpectralInvLapOp
-    const SpectralInvLapOp spectral_inv_lap = SpectralInvLap(dX, Nt_, Np_);
-    std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> FPrecond = [&spectral_inv_lap](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { spectral_inv_lap(Sx, x); };
-    sctl::ScratchBuf<Real> InvLapF_buf(F.Dim()); // see SurfGrad
-    sctl::Vector<Real> InvLapF(InvLapF_buf);
-    SurfaceOp<Real> Sop(comm_, Nt_, Np_);
-    Sop.InvSurfLapPrecond(InvLapF, FPrecond, IdentityOp, dX, F, tol, max_iter);
-    Sop.SurfGrad(GradInvLapF, dX, InvLapF);
-  };
-  sctl::Long Nt_up = (sctl::Long)(Nt_ * upsample);
-  sctl::Long Np_up = (sctl::Long)(Np_ * upsample);
-  const sctl::Long N = Nt_ * Np_, N_up = Nt_up * Np_up;
-  sctl::ScratchBuf<Real> GradInvLapF_up_buf(COORD_DIM * F.Dim() / N * N_up), dX_up_buf(dX.Dim() / N * N_up), F_up_buf(F.Dim() / N * N_up); // see SurfGrad
-  sctl::Vector<Real> GradInvLapF_up(GradInvLapF_up_buf), dX_up(dX_up_buf), F_up(F_up_buf);
-  Upsample(F, Nt_, Np_, F_up, Nt_up, Np_up);
-  Upsample(dX, Nt_, Np_, dX_up, Nt_up, Np_up);
-  spectral_GradInvSurfLap(GradInvLapF_up, dX_up, F_up, Nt_up, Np_up, tol, max_iter);
-  Upsample(GradInvLapF_up, Nt_up, Np_up, GradInvLapF, Nt_, Np_);
+  // The gradient on the grid of F, of the solution downsampled to it, from the tangent vectors dX at its points: more
+  // accurate than the gradient on the upsampled grid, downsampled
+  sctl::ScratchBuf<Real> InvLapF_buf(F.Dim()); // see SurfGrad
+  sctl::Vector<Real> InvLapF(InvLapF_buf);
+  InvSurfLap(InvLapF, dX, F, tol, max_iter, upsample);
+  SurfGrad(GradInvLapF, dX, InvLapF);
 }
 
 template <class Real> void SurfaceOp<Real>::InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& LeftPrecond, const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter) const {
+  // The coefficients of the operator, set once for all the iterations (in scratch memory: see SurfGrad), and the area
+  // in the grid parameters, the sum of sqrt(g), for the means of Sx
+  const sctl::Long N = Nt_ * Np_;
+  sctl::ScratchBuf<Real> C_buf(4 * N);
+  sctl::Vector<Real> C(C_buf);
+  LapCoeff(C, dX);
+  Real area = 0;
+  #pragma omp parallel for schedule(static) reduction(+:area)
+  for (sctl::Long i = 0; i < N; i++) area += C[3*N+i];
+
   // What the operator uses besides this, behind one reference: a std::function holds a lambda of two pointers itself,
   // where it would allocate one of four
   const struct {
     const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& LeftPrecond;
     const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& RightPrecond;
-    const sctl::Vector<Real>& dX;
-  } args{LeftPrecond, RightPrecond, dX};
+    const sctl::Vector<Real>& C;
+    Real area;
+  } args{LeftPrecond, RightPrecond, C, area};
   typename sctl::GMRES<Real>::ParallelOp fn = [this,&args](sctl::Vector<Real>* fx, const sctl::Vector<Real>& x) {
-    const auto& LeftPrecond = args.LeftPrecond;
-    const auto& RightPrecond = args.RightPrecond;
-    const auto& dX = args.dX;
+    const auto& C = args.C;
+    const sctl::Long N = Nt_ * Np_;
     (*fx) = 0;
     SCTL_ASSERT(fx);
     // The temporaries in scratch memory (see SurfGrad); Sx may be resized by RightPrecond, which then allocates it, and
     // is zero for a RightPrecond that adds to its output
     const sctl::Long Nx = x.Dim();
-    sctl::ScratchBuf<Real> Sx_buf(Nx), LSx_buf(Nx), Proj_Sx_buf(Nx);
-    sctl::Vector<Real> Sx(Sx_buf, false), LSx(LSx_buf), Proj_Sx(Proj_Sx_buf);
+    sctl::ScratchBuf<Real> Sx_buf(Nx), dSx_buf(2 * Nx), LSx_buf(Nx);
+    sctl::Vector<Real> Sx(Sx_buf, false), dSx(dSx_buf), LSx(LSx_buf);
     #pragma omp parallel for schedule(static)
     for (sctl::Long i = 0; i < Nx; i++) Sx[i] = 0;
-    RightPrecond(Sx, x);
+    args.RightPrecond(Sx, x);
     SCTL_ASSERT(Sx.Dim() == Nx);
 
-    SurfLap(LSx, dX, Sx);
-    ProjZeroMean(Proj_Sx, dX, Sx);
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long i = 0; i < Nx; i++) LSx[i] += (Sx[i] - Proj_Sx[i]) * 1;
+    Grad2D(dSx, Sx); // LSx <-- SurfLap(Sx) + mean(Sx)
+    CovDiv(LSx, C, dSx);
+    for (sctl::Long k = 0; k < Nx / N; k++) {
+      Real sum = 0;
+      #pragma omp parallel for schedule(static) reduction(+:sum)
+      for (sctl::Long i = 0; i < N; i++) sum += C[3*N+i] * Sx[k*N+i];
+      const Real mean = sum / args.area;
+      #pragma omp parallel for schedule(static)
+      for (sctl::Long i = 0; i < N; i++) LSx[k*N+i] += mean;
+    }
 
-    LeftPrecond(*fx, LSx);
+    args.LeftPrecond(*fx, LSx);
   };
   // In scratch memory (see SurfGrad), except the solution of GMRES; SFproj and InvLapF_ may be resized by the
   // preconditioners, which then allocate them, and are zero for preconditioners that add to their outputs
@@ -923,9 +1037,13 @@ template <class Real> void SurfaceOp<Real>::test_HodgeDecomp(sctl::Long Nt, sctl
   //WriteVTK("Vh", S, Vh);
 }
 
-template <class Real> void SurfaceOp<Real>::Init(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np) {
+template <class Real> void SurfaceOp<Real>::Init(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient) {
+  SCTL_ASSERT(NFP >= 1);
+  SCTL_ASSERT_MSG(NFP == 1 || tor_orient == 1 || tor_orient == -1, "SurfaceOp on one of NFP > 1 field periods needs the toroidal orientation, +1 or -1.");
   Nt_ = Nt;
   Np_ = Np;
+  NFP_ = NFP;
+  tor_orient_ = (NFP == 1 ? 1 : tor_orient);
   comm_ = comm;
   solver = sctl::GMRES<Real>(comm_,false);
 

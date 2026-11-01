@@ -63,6 +63,22 @@ namespace detail_bie_solvers {
   }
 
   /**
+   * Set Y[i] to the restriction of X[i], a field on the full torus of surface i (SurfDimF[i] grid points), to its first
+   * field period (the first SurfDim[i] points of each component): the geometry of the Laplace-Beltrami solves on one
+   * field period (see SurfaceOp).
+   */
+  template <class Real> void FirstPeriod(sctl::Vector<sctl::Vector<Real>>& Y, const sctl::Vector<sctl::Vector<Real>>& X, const sctl::Vector<sctl::Long>& SurfDim, const sctl::Vector<sctl::Long>& SurfDimF) {
+    if (Y.Dim() != X.Dim()) Y.ReInit(X.Dim());
+    for (sctl::Long i = 0; i < X.Dim(); i++) {
+      const sctl::Long M = SurfDim[i], MF = SurfDimF[i], dof = X[i].Dim() / MF;
+      if (Y[i].Dim() != dof * M) Y[i].ReInit(dof * M);
+      for (sctl::Long k = 0; k < dof; k++) {
+        for (sctl::Long n = 0; n < M; n++) Y[i][k * M + n] = X[i][k * MF + n];
+      }
+    }
+  }
+
+  /**
    * Complete fields given on one of the NFP field periods of each surface (dof components at each of SurfDim[i] grid
    * points, at SurfDsp[i]) to the full tori, by the symmetry: scalars (vec = 0) are copied, and a Cartesian vector
    * (vec = 1, dof = 3) or the real and imaginary parts of a complex one (vec = 2, dof = 6, component 2k+c part c of
@@ -179,9 +195,9 @@ namespace detail_bie_solvers {
     template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void VacuumField<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::ComputeHelper(sctl::Vector<sctl::Vector<Real>>& B, sctl::Vector<sctl::Vector<Real>>& J, sctl::Vector<Real>& tor_flux, sctl::Vector<Real>& pol_flux, const sctl::Vector<Surface<Real>>& Svec, const sctl::Comm& comm, Real gmres_tol, sctl::Long gmres_iter) {
       // The vectors of the solve are those of the object, which keeps them with their storage from one call to the next
       // (see VacuumField()); the temporaries are in scratch memory (see SurfaceOp::SurfGrad). The solve is on one of the
-      // NFP field periods common to the surfaces: the unknown and the fields B and J, the targets of the operators. The
-      // geometry and J0, the densities of the operators, are on the full tori, and so the densities given on one field
-      // period are completed by the symmetry.
+      // NFP field periods common to the surfaces: the unknown and the fields B and J, the targets of the operators, and
+      // the Laplace-Beltrami solve of J0 (SurfaceOp on one field period). The geometry is on the full tori, and so are
+      // the densities of the operators, completed by the symmetry from one field period.
       sctl::Long Nsurf = Svec.Dim();
       const sctl::Integer NFP = detail_fieldperiod::CommonNFP(Svec);
       auto& SurfDim = SurfDim_; // one field period
@@ -215,6 +231,8 @@ namespace detail_bie_solvers {
         if (i == OuterSurfIdx) scal = 1;
         Xn[i] *= scal;
       }
+      auto& dXp = dXp_; // on one field period, for the Laplace-Beltrami solve of ComputeJ
+      detail_bie_solvers::FirstPeriod(dXp, dX, SurfDim, SurfDimF);
 
       sctl::Profile::Tic("Setup", &comm);
       const auto& ker_laplace = Laplace3D<Real>::FxU();
@@ -236,9 +254,12 @@ namespace detail_bie_solvers {
       sctl::Profile::Tic("ComputeJ", &comm);
       auto& J0 = J0_;
       J0.ReInit(Nsurf);
-      auto ComputeJ = [&Svec,&SurfDimF,&SurfDspF,&dX,&Xn,&comm](sctl::Vector<Real>& J, sctl::Integer Sidx, Real gmres_tol, sctl::Long max_iter) { // Set Jp, on the full tori
+      const auto complete_J = [&SurfDim,&SurfDsp,&SurfOrient,NFP](sctl::Vector<Real>& J_full, const sctl::Vector<Real>& J) { // a Cartesian vector
+        detail_bie_solvers::CompletePeriods(J_full, J, COORD_DIM, 1, SurfDim, SurfDsp, SurfOrient, NFP);
+      };
+      auto ComputeJ = [NFP,&Svec,&SurfDim,&SurfDsp,&SurfOrient,&complete_vec = complete_J,&dX = dXp,&comm](sctl::Vector<Real>& J, sctl::Integer Sidx, Real gmres_tol, sctl::Long max_iter) { // Set Jp, on the full tori from one field period
         const auto& S = Svec[Sidx];
-        sctl::Long Nt = S.NTor();
+        sctl::Long Nt = S.NTor() / NFP;
         sctl::Long Np = S.NPol();
         sctl::Long N = Nt * Np;
 
@@ -250,7 +271,7 @@ namespace detail_bie_solvers {
             V[k * N + i] = dX[Sidx][(k*2+0) * N + i] + dX[Sidx][(k*2+1) * N + i];
           }
         }
-        SurfaceOp<Real> surf_op(comm, Nt, Np);
+        SurfaceOp<Real> surf_op(comm, Nt, Np, NFP, SurfOrient[Sidx]);
         surf_op.SurfDiv(DivV, dX[Sidx], V);
         surf_op.GradInvSurfLap(GradInvLapDivV, dX[Sidx], DivV, gmres_tol * max_norm(V) / max_norm(DivV), max_iter, 1.5);
         for (sctl::Long i = 0; i < COORD_DIM * N; i++) V[i] -= GradInvLapDivV[i];
@@ -263,11 +284,12 @@ namespace detail_bie_solvers {
         std::cout<<"\033[0m";
 
         { // Set J
-          sctl::Long Nsurf = SurfDimF.Dim();
-          J.ReInit(COORD_DIM * (SurfDimF[Nsurf-1] + SurfDspF[Nsurf-1]));
-          J = 0;
-          sctl::Vector<Real> J_(COORD_DIM * SurfDimF[Sidx], J.begin() + COORD_DIM * SurfDspF[Sidx], false);
+          sctl::Long Nsurf = SurfDim.Dim();
+          sctl::ScratchBuf<Real> Jp_buf(COORD_DIM * (SurfDim[Nsurf-1] + SurfDsp[Nsurf-1]));
+          sctl::Vector<Real> Jp(Jp_buf), J_(COORD_DIM * SurfDim[Sidx], Jp.begin() + COORD_DIM * SurfDsp[Sidx], false);
+          Jp = 0;
           J_ = V;
+          complete_vec(J, Jp);
         }
       };
       for (sctl::Long i = 0; i < Nsurf; i++) ComputeJ(J0[i], i, gmres_tol * 0.01, gmres_iter); //-1);
@@ -1091,9 +1113,7 @@ namespace detail_bie_solvers {
       }
     }
 
-    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_mH(sctl::Vector<Real>& mH, const Surface<Real>& S, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter) {
-      sctl::Long Nt = S.NTor();
-      sctl::Long Np = S.NPol();
+    template <class Real, sctl::Integer UPSAMPLE, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM> void TaylorState<Real,UPSAMPLE,PATCH_DIM0,RAD_DIM>::Compute_mH(sctl::Vector<Real>& mH, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& Xn, const sctl::Comm& comm, Real tol, sctl::Long max_iter) {
       sctl::Long N= Nt * Np;
 
       // In scratch memory: see SurfaceOp::SurfGrad
@@ -1107,7 +1127,7 @@ namespace detail_bie_solvers {
       }
 
       sctl::Vector<Real> Vn(Vn_buf), Vd(Vd_buf), Vc(Vc_buf), Vh(Vh_buf);
-      SurfaceOp<Real> surf_op(comm, Nt, Np);
+      SurfaceOp<Real> surf_op(comm, Nt, Np, NFP, tor_orient);
       surf_op.HodgeDecomp(Vn, Vd, Vc, Vh, V, dX, Xn, tol, max_iter);
 
       if (mH.Dim() != COORD_DIM * 2 * N) mH.ReInit(COORD_DIM * 2 * N);
@@ -1190,8 +1210,9 @@ namespace detail_bie_solvers {
       if (Nsurf != 1 && Nsurf != 2) return;
       // The vectors of the solve are those of the object, which keeps them with their storage from one call to the next
       // (see TaylorState()); the temporaries are in scratch memory (see SurfaceOp::SurfGrad). The solve is on one of the
-      // NFP field periods common to the surfaces: sigma and the fields B, the targets of the operators. The geometry and
-      // m, the densities of the operators with sigma, are on the full tori, and sigma is completed by the symmetry.
+      // NFP field periods common to the surfaces: sigma, m and the Laplace-Beltrami solves that give m from sigma
+      // (SurfaceOp on one field period), and the fields B, the targets of the operators. The densities of the operators,
+      // sigma and m, are completed by the symmetry to the full tori, on which the geometry is computed.
       const sctl::Integer NFP = detail_fieldperiod::CommonNFP(Svec);
       auto& SurfDim = SurfDim_; // one field period
       auto& SurfDsp = SurfDsp_;
@@ -1202,6 +1223,9 @@ namespace detail_bie_solvers {
       const sctl::Long Ntot = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1], NtotF = NFP * Ntot;
       const auto complete_sigma = [&SurfDim,&SurfDsp,&SurfOrient,NFP](sctl::Vector<Real>& sigma_full, const sctl::Vector<Real>& sigma) { // a complex scalar
         detail_bie_solvers::CompletePeriods(sigma_full, sigma, 2, 0, SurfDim, SurfDsp, SurfOrient, NFP);
+      };
+      const auto complete_m = [&SurfDim,&SurfDsp,&SurfOrient,NFP](sctl::Vector<Real>& m_full, const sctl::Vector<Real>& m) { // a complex vector
+        detail_bie_solvers::CompletePeriods(m_full, m, COORD_DIM * 2, 2, SurfDim, SurfDsp, SurfOrient, NFP);
       };
 
       auto& dX = dX_;
@@ -1227,6 +1251,10 @@ namespace detail_bie_solvers {
         if (i == OuterSurfIdx) scal = 1;
         Xn[i] *= scal;
       }
+      auto& dXp = dXp_; // on one field period, for the Laplace-Beltrami solves
+      auto& Xnp = Xnp_;
+      detail_bie_solvers::FirstPeriod(dXp, dX, SurfDim, SurfDimF);
+      detail_bie_solvers::FirstPeriod(Xnp, Xn, SurfDim, SurfDimF);
 
       sctl::Profile::Tic("Setup", &comm);
       Helmholtz3D<Real> helm(lambda);
@@ -1247,7 +1275,7 @@ namespace detail_bie_solvers {
       const SurfGridOp<std::remove_reference_t<decltype(BI_potn)>> P_op{BI_potn, SurfNt_, SurfNp_};
       sctl::Profile::Toc();
 
-      auto Compute_m = [lambda,&Svec,&SurfDim = SurfDimF,&SurfDsp = SurfDspF,&dX,&Xn,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) ), on the full tori
+      auto Compute_m = [lambda,NFP,&Svec,&SurfDim,&SurfDsp,&SurfOrient,&dX = dXp,&Xn = Xnp,&comm](sctl::Vector<Real>& m, const sctl::Vector<Real>& sigma, Real gmres_tol, sctl::Long gmres_iter) { // m <-- lambda ( i Grad(invLap(sigma)) - n x Grad(invLap(sigma)) ), on one field period
         sctl::Long Nsurf = SurfDim.Dim();
         sctl::Long N = SurfDim[Nsurf-1] + SurfDsp[Nsurf-1];
         if (m.Dim() != COORD_DIM * 2 * N) m.ReInit(COORD_DIM * 2 * N);
@@ -1259,11 +1287,11 @@ namespace detail_bie_solvers {
             sctl::Vector<Real> m_(COORD_DIM * 2 * SurfDim[i], m.begin() + COORD_DIM * 2 * SurfDsp[i], false);
 
             const auto& S = Svec[i];
-            sctl::Long Nt = S.NTor();
+            sctl::Long Nt = S.NTor() / NFP;
             sctl::Long Np = S.NPol();
             sctl::Long N= Nt * Np;
 
-            SurfaceOp<Real> surf_op(comm, Nt, Np);
+            SurfaceOp<Real> surf_op(comm, Nt, Np, NFP, SurfOrient[i]);
             sctl::ScratchBuf<Real> GradInvLapSigma_buf(2 * COORD_DIM * N); // in scratch memory: see SurfaceOp::SurfGrad
             sctl::StaticArray<sctl::Vector<Real>, 2> GradInvLapSigma;
             for (sctl::Long k = 0; k < 2; k++) { // Set GradInvLapSigma <-- Grad(invLap(sigma))
@@ -1326,7 +1354,7 @@ namespace detail_bie_solvers {
               }
 
               sctl::Vector<Real> Divm_real, Divm_imag;
-              SurfaceOp<Real> surf_op(comm, S.NTor(), S.NPol());
+              SurfaceOp<Real> surf_op(comm, S.NTor() / NFP, S.NPol(), NFP, SurfOrient[i]);
               surf_op.SurfDiv(Divm_real, dX[i], m_real);
               surf_op.SurfDiv(Divm_imag, dX[i], m_imag);
 
@@ -1483,12 +1511,13 @@ namespace detail_bie_solvers {
           }
         }
       };
-      auto solve_taylor = [lambda,LB_tol,NFP,&comm,&complete_sigma,&Compute_m,&Compute_B,&Compute_BdotXn] (sctl::Vector<Real>& sigma, const sctl::Vector<Real>& rhs, Real gmres_tol, sctl::Long gmres_iter) { // sigma on one field period
+      auto solve_taylor = [lambda,LB_tol,NFP,&comm,&complete_sigma,&complete_m,&Compute_m,&Compute_B,&Compute_BdotXn] (sctl::Vector<Real>& sigma, const sctl::Vector<Real>& rhs, Real gmres_tol, sctl::Long gmres_iter) { // sigma on one field period
         sctl::Profile::Tic("Solve", &comm);
         sctl::GMRES<Real> solver(comm, true);
         // What the operator uses, behind one reference: a std::function holds a lambda of one pointer itself, where it
         // would allocate one of eight
         using CompleteSigma = std::remove_reference_t<decltype(complete_sigma)>;
+        using CompleteM = std::remove_reference_t<decltype(complete_m)>;
         using ComputeM = decltype(Compute_m);
         using ComputeB = decltype(Compute_B);
         using ComputeBdotXn = decltype(Compute_BdotXn);
@@ -1497,21 +1526,24 @@ namespace detail_bie_solvers {
           sctl::Integer NFP;
           const sctl::Comm& comm;
           CompleteSigma& complete_sigma;
+          CompleteM& complete_m;
           ComputeM& Compute_m;
           ComputeB& Compute_B;
           ComputeBdotXn& Compute_BdotXn;
           Real gmres_tol;
           sctl::Long gmres_iter;
-        } args{lambda, LB_tol, NFP, comm, complete_sigma, Compute_m, Compute_B, Compute_BdotXn, gmres_tol, gmres_iter};
+        } args{lambda, LB_tol, NFP, comm, complete_sigma, complete_m, Compute_m, Compute_B, Compute_BdotXn, gmres_tol, gmres_iter};
         typename sctl::GMRES<Real>::ParallelOp fn = [&args](sctl::Vector<Real>* BdotXn, const sctl::Vector<Real>& sigma) {
           SCTL_ASSERT(BdotXn);
-          // sigma and m on the full tori, B on one field period, in scratch memory (see SurfaceOp::SurfGrad)
-          sctl::ScratchBuf<Real> sigma_full_buf(args.NFP * sigma.Dim()), m_buf(COORD_DIM * args.NFP * sigma.Dim()), B_buf(COORD_DIM * sigma.Dim());
-          sctl::Vector<Real> sigma_full(sigma_full_buf), m(m_buf), B(B_buf);
+          // m and B on one field period, sigma and m completed to the full tori, in scratch memory (see
+          // SurfaceOp::SurfGrad)
+          sctl::ScratchBuf<Real> m_buf(COORD_DIM * sigma.Dim()), sigma_full_buf(args.NFP * sigma.Dim()), m_full_buf(COORD_DIM * args.NFP * sigma.Dim()), B_buf(COORD_DIM * sigma.Dim());
+          sctl::Vector<Real> m(m_buf), sigma_full(sigma_full_buf), m_full(m_full_buf), B(B_buf);
           sctl::Profile::Tic("Compute_B", &args.comm);
+          args.Compute_m(m, sigma, args.gmres_tol / args.lambda * args.LB_tol, args.gmres_iter);
           args.complete_sigma(sigma_full, sigma);
-          args.Compute_m(m, sigma_full, args.gmres_tol / args.lambda * args.LB_tol, args.gmres_iter);
-          args.Compute_B(&B, nullptr, sigma_full, m, sctl::Vector<Real>());
+          args.complete_m(m_full, m);
+          args.Compute_B(&B, nullptr, sigma_full, m_full, sctl::Vector<Real>());
           args.Compute_BdotXn(*BdotXn, B);
           { // Project to space of mean-zero functions : BdotXn <-- P BdotXn
             // TODO
@@ -1523,15 +1555,19 @@ namespace detail_bie_solvers {
         sctl::Profile::Toc();
       };
 
-      auto& mH = mH_; // on the full tori
+      auto& mH = mH_; // on the full tori, from one field period
       auto& B0 = B0_;
       mH.ReInit(Nsurf);
       B0.ReInit(Nsurf);
       sctl::Profile::Tic("Compute_B0", &comm);
       for (sctl::Long i = 0; i < Nsurf; i++) { // Compute mH, B0
-        mH[i].ReInit(COORD_DIM * 2 * NtotF); mH[i] = 0;
-        sctl::Vector<Real> mH_i(COORD_DIM * 2 * SurfDimF[i], mH[i].begin() + COORD_DIM * 2 * SurfDspF[i], false);
-        Compute_mH(mH_i, Svec[i], dX[i], Xn[i], comm, gmres_tol * LB_tol, gmres_iter);
+        {
+          sctl::ScratchBuf<Real> mH_p_buf(COORD_DIM * 2 * Ntot);
+          sctl::Vector<Real> mH_p(mH_p_buf), mH_i(COORD_DIM * 2 * SurfDim[i], mH_p.begin() + COORD_DIM * 2 * SurfDsp[i], false);
+          mH_p = 0;
+          Compute_mH(mH_i, SurfNt_[i] / NFP, SurfNp_[i], NFP, SurfOrient[i], dXp[i], Xnp[i], comm, gmres_tol * LB_tol, gmres_iter);
+          complete_m(mH[i], mH_p);
+        }
         sctl::ScratchBuf<Real> neg_mH_buf(mH[i].Dim());
         sctl::Vector<Real> neg_mH(neg_mH_buf);
         for (sctl::Long j = 0; j < neg_mH.Dim(); j++) neg_mH[j] = -mH[i][j];
@@ -1540,7 +1576,7 @@ namespace detail_bie_solvers {
       sctl::Profile::Toc();
 
       auto& sigma = sigma_; // on one field period
-      auto& m = m_; // on the full tori
+      auto& m = m_; // on the full tori, from one field period
       auto& B = B_; // on one field period
       auto& B_flux = B_flux_;
       sigma.ReInit(Nsurf);
@@ -1552,10 +1588,11 @@ namespace detail_bie_solvers {
         sctl::Vector<Real> rhs(rhs_buf);
         Compute_BdotXn(rhs, B0[i]);
         solve_taylor(sigma[i], rhs, gmres_tol, gmres_iter);
-        sctl::ScratchBuf<Real> sigma_full_buf(2 * NtotF);
-        sctl::Vector<Real> sigma_full(sigma_full_buf);
+        sctl::ScratchBuf<Real> sigma_full_buf(2 * NtotF), m_p_buf(COORD_DIM * 2 * Ntot);
+        sctl::Vector<Real> sigma_full(sigma_full_buf), m_p(m_p_buf);
         complete_sigma(sigma_full, sigma[i]);
-        Compute_m(m[i], sigma_full, gmres_tol * LB_tol, gmres_iter);
+        Compute_m(m_p, sigma[i], gmres_tol * LB_tol, gmres_iter);
+        complete_m(m[i], m_p);
         Compute_B(&B[i], &B_flux[i], sigma_full, m[i], mH[i]);
         m[i] += mH[i];
       }

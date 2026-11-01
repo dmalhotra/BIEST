@@ -14,6 +14,9 @@ namespace biest {
 
 namespace detail_offsurf {
 
+  // The loops of the evaluation run through sctl::omp_par::parallel_for, without a parallel region when it would have
+  // one thread: libgomp allocates and frees the team of such a region each time.
+
   /**
    * The Gauss-Legendre nodes of a panel, and the weights that interpolate and differentiate from them to the check
    * points; L_max and Ld_max bound how much the interpolation and the differentiation on a panel amplify errors in
@@ -240,8 +243,7 @@ namespace detail_offsurf {
     SCTL_ASSERT(Y.Dim() == Nc * N);
     if (Ynds.Dim() != Nc * P * Nnds) Ynds.ReInit(Nc * P * Nnds);
 
-    #pragma omp parallel for schedule(dynamic)
-    for (sctl::Long g = 0; g < (sctl::Long)grp.size() - 1; g++) {
+    sctl::omp_par::parallel_for((sctl::Long)grp.size() - 1, [&](const sctl::Long g) {
       const Panel& q0 = panels[idx[grp[g]]];
       sctl::ScratchBuf<Real> T(Nc * order * (Np + 2 * p)); // the fields at the toroidal nodes of the interval
       ToroidalRows<Real>(T.begin(), Y, Nt, Np, q0.lt, q0.it, Mt0, nds, p);
@@ -249,7 +251,7 @@ namespace detail_offsurf {
         const sctl::Long e = idx[n];
         PoloidalNodes<Real>(Ynds.begin() + e * Nnds, P * Nnds, T.begin(), Nc, Np, panels[e].lp, panels[e].ip, Mp0, nds, flip, p);
       }
-    }
+    }, true);
   }
 
   /**
@@ -342,11 +344,10 @@ namespace detail_offsurf {
     if (dir) {
       if (Y.Dim()) sctl::omp_par::memcpy(R.begin(), Y.begin(), Y.Dim());
     } else {
-      #pragma omp parallel for schedule(static)
-      for (sctl::Long r = 0; r < Nc * Np; r++) { // component c, poloidal index j
+      sctl::omp_par::parallel_for(Nc * Np, [&](const sctl::Long r) { // component c, poloidal index j
         const sctl::Long c = r / Np, j = r % Np;
         for (sctl::Long i = 0; i < Nt; i++) R[r][i] = Y[(c * Nt + i) * Np + j];
-      }
+      });
     }
   }
 
@@ -410,12 +411,11 @@ namespace detail_offsurf {
       {
         const sctl::Vector<Real>& err_k = ModeErrors<Real>(p, U * N, Nk);
         sctl::Vector<Real> est(est_buf);
-        #pragma omp parallel for schedule(static)
-        for (sctl::Long r = 0; r < Nr; r++) {
+        sctl::omp_par::parallel_for(Nr, [&](const sctl::Long r) {
           Real e = 0;
           for (sctl::Long k = 0; k < Nk; k++) e += mag[r * Nk + k] * err_k[k];
           est[r] = (e - round * mag_sum[r]) * scal;
-        }
+        });
         sctl::Long* order_ = &order_buf.begin()[0];
         std::iota(order_, order_ + Nr, 0);
         const sctl::Long Ns = std::min(Nsample, Nr);
@@ -447,8 +447,7 @@ namespace detail_offsurf {
       const sctl::Long Nch = (n + CHUNK - 1) / CHUNK;
       sctl::ScratchBuf<Real> err_ch_buf(Ns * Nch), size_ch_buf(Ns * Nch);
       sctl::Vector<Real> err_ch(err_ch_buf), size_ch(size_ch_buf); // the largest error and value in each chunk of each row
-      #pragma omp parallel for schedule(static)
-      for (sctl::Long task = 0; task < Ns * Nch; task++) {
+      sctl::omp_par::parallel_for(Ns * Nch, [&](const sctl::Long task) {
         const sctl::Long i = task / Nch, j0 = (task % Nch) * CHUNK, j1 = std::min(n, j0 + CHUNK);
         const sctl::ConstIterator<Real> e_ = ext.begin() + i * Ld + p, m_ = mid.begin() + i * n;
         Real e = 0, size = 0;
@@ -460,7 +459,7 @@ namespace detail_offsurf {
         }
         err_ch[task] = e;
         size_ch[task] = size;
-      }
+      });
       Real err_max = 0;
       for (sctl::Long i = 0; i < Ns; i++) {
         Real e = 0, size = 0;
@@ -815,13 +814,12 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::InterpToNodes(sc
   sctl::Vector<Real> Yf(Yf_buf, false), V(V_buf); // V: the values at the nodes, component by component
   UpsampleGrid(Yf, Y, ut, up);
   detail_offsurf::PanelNodeValues<Real>(V, Yf, ut * Nt_, up * Np_, panels, Mt0, Mp0, sctl::QuadElemList<Real>::ParamNodes(ORDER), flip, STENCIL, grp_idx_, grp_);
-  for (sctl::Long c = 0; c < Nc; c++) {
-    const sctl::Long d = c / kdim, k = c % kdim; // field and component
-    #pragma omp parallel for schedule(static)
-    for (sctl::Long e = 0; e < P; e++) {
+  sctl::omp_par::parallel_for(P, [&](const sctl::Long e) { // panel e, for each component c of field d
+    for (sctl::Long c = 0; c < Nc; c++) {
+      const sctl::Long d = c / kdim, k = c % kdim;
       for (sctl::Long n = 0; n < Nnds; n++) Ynds[((d * P + e) * Nnds + n) * kdim + k] = V[(c * P + e) * Nnds + n];
     }
-  }
+  });
 }
 
 }

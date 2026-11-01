@@ -273,15 +273,13 @@ template <class Real> void SurfaceOp<Real>::Upsample(const sctl::Vector<Real>& X
   { // Floating-point correction
     sctl::Long Ut = Nt1 / Nt0;
     sctl::Long Up = Np1 / Np0;
-    if (Nt1 == Nt0 * Ut && Np1 == Np0 * Up) {
-      #pragma omp parallel for collapse(2) schedule(static)
-      for (sctl::Long k = 0; k < dof; k++) {
-        for (sctl::Long t = 0; t < Nt0; t++) {
-          for (sctl::Long p = 0; p < Np0; p++) {
-            X1_[(k * Nt1 + t * Ut) * Np1 + p * Up] = X0_[(k * Nt0 + t) * Np0 + p];
-          }
+    if (Nt1 == Nt0 * Ut && Np1 == Np0 * Up) { // rows t of field k, without a parallel region of one thread (see sctl::omp_par::one_thread)
+      sctl::omp_par::parallel_for(dof * Nt0, [&](const sctl::Long kt) {
+        const sctl::Long k = kt / Nt0, t = kt % Nt0;
+        for (sctl::Long p = 0; p < Np0; p++) {
+          X1_[(k * Nt1 + t * Ut) * Np1 + p * Up] = X0_[(k * Nt0 + t) * Np0 + p];
         }
-      }
+      });
     }
   }
 }
@@ -1227,14 +1225,11 @@ template <class Real> void SurfaceOp<Real>::Resample(sctl::Vector<Real>& X1, con
   biest::SurfaceOp<Real>::Upsample(X0, Nt0, Np0, XX, Nt1*skip_tor, Np1*skip_pol);
 
   if (X1.Dim() != dof * Nt1*Np1) X1.ReInit(dof * Nt1*Np1);
-  #pragma omp parallel for collapse(2) schedule(static)
-  for (sctl::Long k = 0; k < dof; k++) {
-    for (sctl::Long i = 0; i < Nt1; i++) {
-      for (sctl::Long j = 0; j < Np1; j++) {
-        X1[(k*Nt1+i)*Np1+j] = XX[((k*Nt1+i)*skip_tor*Np1+j)*skip_pol];
-      }
+  sctl::omp_par::parallel_for(dof * Nt1, [&](const sctl::Long ki) { // rows i of field k, as in Upsample
+    for (sctl::Long j = 0; j < Np1; j++) {
+      X1[ki*Np1+j] = XX[(ki*skip_tor*Np1+j)*skip_pol];
     }
-  }
+  });
 }
 
 }

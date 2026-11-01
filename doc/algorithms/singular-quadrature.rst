@@ -102,8 +102,21 @@ Gauss--Legendre points on each half of :math:`\rho\in[-1,1]`: the same :math:`2q
 
 The polar nodes are not grid points. The surface coordinates and the tangent vectors
 :math:`\mathbf{x}_\theta,\mathbf{x}_\phi` are interpolated to them with tensor-product Lagrange interpolation on a
-:math:`12\times 12` block of grid points around each node, and the normal and the area element are recomputed from the
-interpolated tangent vectors (interpolating the normals directly is less accurate).
+:math:`16\times 16` block of grid points around each node (the whole patch when it is narrower), and the normal and the
+area element are recomputed from the interpolated tangent vectors (interpolating the normals directly is less accurate).
+The gradient and the Hessian of the single layer need this order for a density that is not constant: with a
+:math:`12\times 12` block, in the test of virtual-casing at 12 digits, they were 1.0 and 1.4 digits less accurate.
+
+The :math:`2q` angles are set by the kernel, which varies with :math:`\omega` the more the grid is anisotropic; the data
+on a circle of radius :math:`\rho R` grid spacings, as far as the grid resolves it, has angular frequencies only to
+about :math:`\pi\rho R`. So the Lagrange interpolation is to :math:`2m+1 \le 2q` equispaced angles on each circle, with
+:math:`m = \lceil \pi\rho R\rceil + 6`, and the values at the :math:`2q` angles are the trigonometric interpolant of
+those (the matrix of the Dirichlet kernel); the correction weights go back by the transpose. For :math:`R = 28` this is
+76% of the polar nodes (62% with the hedgehog of :math:`3q` radii), the interpolation being most of the setup: on an AMD
+EPYC 9474F, the setup of the gradient of the single layer takes 0.68 ms per target instead of 0.82 ms, and that of its
+Hessian 4.6 ms instead of 6.3 ms. Fewer angles, for only the lower frequencies of the grid, do as well for a smooth
+density but not inside GMRES, whose Krylov vectors reach the highest: with half of them, the solves in
+``test/bie-solvers.cpp`` take 32% more iterations.
 
 Precomputed sparse correction
 -----------------------------

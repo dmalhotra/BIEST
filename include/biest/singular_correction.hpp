@@ -16,11 +16,13 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     static constexpr sctl::Integer PATCH_DIM = 2 * PATCH_DIM0 + 1;
     static constexpr sctl::Integer RAD_DIM = (HedgehogOrder > 1 ? RAD_DIM_ * 3 : RAD_DIM_);
     static constexpr sctl::Integer ANG_DIM = 2 * RAD_DIM_;
-    static constexpr sctl::Integer INTERP_ORDER = 12;
+    static constexpr sctl::Integer INTERP_ORDER = (PATCH_DIM < 16 ? PATCH_DIM : 16); // 16, or the patch width when narrower
+    // The coarse nodes on the circles of the polar grid (see Precomp): enough for the angular frequencies to pi times the
+    // radius in grid spacings, those of data that the grid resolves, and ANG_EXTRA more
+    static constexpr sctl::Integer ANG_EXTRA = 6;
     static constexpr sctl::Integer Ngrid = PATCH_DIM * PATCH_DIM;
     static constexpr sctl::Integer Npolar = RAD_DIM * ANG_DIM;
     static constexpr sctl::Integer HedgehogOrder_ = (HedgehogOrder > 1 ? HedgehogOrder : 1);
-    static_assert(INTERP_ORDER <= PATCH_DIM, "Must have INTERP_ORDER <= PATCH_DIM");
 
     using Vec = sctl::Vec<Real>;
     static constexpr sctl::Integer VecLen = Vec::Size();
@@ -34,14 +36,25 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     }
     static constexpr sctl::Integer IVecLen = InterpVecLen();
     using IVec = sctl::Vec<Real, IVecLen>;
+    static constexpr sctl::Integer ANGp = (ANG_DIM + VecLen - 1) / VecLen * VecLen; // the columns of U, padded to whole vectors
 
-    // The precomputed tables, in sctl::Vector for its 64-byte alignment. The Lagrange weights from the patch grid to
-    // polar point j are the products of 1D ones along the two directions of the patch: W_G2P holds, for each point,
-    // the INTERP_ORDER weights a along the first direction and then the INTERP_ORDER weights b along the second, of the
-    // window of the patch at I_G2P[j].
+    // The precomputed tables, in sctl::Vector for its 64-byte alignment.
+    //
+    // The data on the patch grid (the surface and the density) is interpolated to Mc[i] equispaced angles on circle i
+    // of the polar grid, the coarse nodes, enough for data that the grid resolves, and then to the ANG_DIM angles of
+    // the polar grid, which the kernel needs, by trigonometric interpolation: U holds, at U_dsp[i], the ANG_DIM x Mc[i]
+    // matrix of circle i, whose coarse nodes are Mc_dsp[i] onwards of the Npc. Mc[i] = ANG_DIM when it would not be
+    // fewer: then the coarse nodes are those of the polar grid.
+    //
+    // The Lagrange weights from the patch grid to coarse node j are the products of 1D ones along the two directions of
+    // the patch: W_G2P holds, for each node, the INTERP_ORDER weights a along the first direction and then the
+    // INTERP_ORDER weights b along the second, of the window of the patch at I_G2P[j].
     struct Precomp {
       sctl::Vector<Real> qx, qw;
       sctl::Vector<Real> Gpou_, Ppou_;
+      sctl::Vector<sctl::Integer> Mc, Mc_dsp, U_dsp;
+      sctl::Long Npc;
+      sctl::Vector<Real> U;
       sctl::Vector<sctl::Integer> I_G2P;
       sctl::Vector<Real> W_G2P;
       sctl::Vector<Real> HedgehogWts_;
@@ -141,9 +154,39 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
       std::cout<<"POU error: "<<(double)fabs((sum0+sum1)/(fabs(sum0)+fabs(sum1)))<<'\n';
     }
   }
+  { // Set Mc, Mc_dsp, Npc, U, U_dsp: on a circle of radius rho grid spacings, data that the grid resolves has angular
+    // frequencies to about pi * rho
+    const sctl::Integer PATCH_RAD = (PATCH_DIM - 1) / 2;
+    Mc.ReInit(RAD_DIM);
+    Mc_dsp.ReInit(RAD_DIM);
+    U_dsp.ReInit(RAD_DIM);
+    Npc = 0;
+    sctl::Long U_len = 0;
+    for (sctl::Integer i = 0; i < RAD_DIM; i++) {
+      const sctl::Integer m = (sctl::Integer)sctl::ceil<Real>(sctl::const_pi<Real>() * qx[i] * PATCH_RAD) + ANG_EXTRA;
+      Mc[i] = (2 * m + 1 < ANG_DIM ? 2 * m + 1 : ANG_DIM);
+      Mc_dsp[i] = Npc;
+      U_dsp[i] = U_len;
+      Npc += Mc[i];
+      if (Mc[i] < ANG_DIM) U_len += ANGp * Mc[i];
+    }
+    U.ReInit(U_len);
+    U.SetZero();
+    for (sctl::Integer i = 0; i < RAD_DIM; i++) { // U[l][j] = D(2 pi l / ANG_DIM - 2 pi j / M), with D the Dirichlet kernel of the M (odd) angles; by columns, ANGp apart
+      const sctl::Integer M = Mc[i];
+      if (M == ANG_DIM) continue;
+      for (sctl::Integer j = 0; j < M; j++) {
+        for (sctl::Integer l = 0; l < ANG_DIM; l++) {
+          const Real x = 2 * sctl::const_pi<Real>() * (l / (Real)ANG_DIM - j / (Real)M);
+          const Real s = sctl::sin<Real>(x / 2);
+          U[U_dsp[i] + j * ANGp + l] = (sctl::fabs<Real>(s) < 1e-3 * sctl::machine_eps<Real>() ? (Real)1 : sctl::sin<Real>(M * x / 2) / (M * s));
+        }
+      }
+    }
+  }
   { // Set I_G2P, W_G2P
-    sctl::Vector<sctl::Integer> I_G2P_(Npolar);
-    sctl::Vector<Real> W_G2P_(Npolar * 2 * INTERP_ORDER);
+    sctl::Vector<sctl::Integer> I_G2P_(Npc);
+    sctl::Vector<Real> W_G2P_(Npc * 2 * INTERP_ORDER);
 
     Real h = 1 / (Real)(INTERP_ORDER - 1);
     auto lagrange_interp = [&](Real x, sctl::Integer i) { // the weight of node i at x \in [0,1]
@@ -157,9 +200,9 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
       }
       return p;
     };
-    Real h_ang = 2 * sctl::const_pi<Real>() / ANG_DIM;
     for (sctl::Integer i0 = 0; i0 < RAD_DIM; i0++) {
-      for (sctl::Integer i1 = 0; i1 < ANG_DIM; i1++) {
+      const Real h_ang = 2 * sctl::const_pi<Real>() / Mc[i0];
+      for (sctl::Integer i1 = 0; i1 < Mc[i0]; i1++) {
         Real x0 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::cos<Real>(h_ang * i1);
         Real x1 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::sin<Real>(h_ang * i1);
 
@@ -169,10 +212,11 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
         Real z0 = (x0 * (PATCH_DIM - 1) - y0) * h;
         Real z1 = (x1 * (PATCH_DIM - 1) - y1) * h;
 
-        I_G2P_[i0 * ANG_DIM + i1] = y0 * PATCH_DIM + y1;
+        const sctl::Long j0 = Mc_dsp[i0] + i1;
+        I_G2P_[j0] = y0 * PATCH_DIM + y1;
         for (sctl::Integer j = 0; j < INTERP_ORDER; j++) {
-          W_G2P_[((i0 * ANG_DIM + i1) * 2 + 0) * INTERP_ORDER + j] = lagrange_interp(z0, j);
-          W_G2P_[((i0 * ANG_DIM + i1) * 2 + 1) * INTERP_ORDER + j] = lagrange_interp(z1, j);
+          W_G2P_[(j0 * 2 + 0) * INTERP_ORDER + j] = lagrange_interp(z0, j);
+          W_G2P_[(j0 * 2 + 1) * INTERP_ORDER + j] = lagrange_interp(z1, j);
         }
       }
     }
@@ -216,6 +260,12 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
   const sctl::Vector<sctl::Integer>& I_G2P = tables.I_G2P;
   const sctl::Vector<Real>& W_G2P = tables.W_G2P;
   const sctl::Vector<Real>& HedgehogWts_ = tables.HedgehogWts_;
+  const sctl::Vector<sctl::Integer>& Mc = tables.Mc;
+  const sctl::Vector<sctl::Integer>& Mc_dsp = tables.Mc_dsp;
+  const sctl::Vector<sctl::Integer>& U_dsp = tables.U_dsp;
+  const sctl::Vector<Real>& U = tables.U;
+  const sctl::Long Npc = tables.Npc;
+  const bool coarse = (Npc < Npolar); // whether there are fewer coarse nodes than polar ones
 
   Real invNt = 1 / (Real)Nt;
   Real invNp = 1 / (Real)Np;
@@ -279,6 +329,14 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
 
   SetPatch(G , t, p, SrcCoord     , Nt, Np);
   SetPatch(Gg, t, p, SrcGrad      , Nt, Np);
+  for (sctl::Integer k = 0; k < COORD_DIM; k++) { // the coordinates relative to the target, so that the polar points near it lose no digits
+    const Real x0 = TrgCoord[k];
+    for (sctl::Integer i = 0; i < Ngrid; i++) G[k * Ngrid + i] -= x0;
+    if (HedgehogOrder_ > 1) {
+      for (sctl::Integer i = 0; i < HedgehogOrder_; i++) TrgCoordPolar[k * HedgehogOrder_ + i] -= x0;
+    }
+    TrgCoord[k] = 0; // and TrgCoordPolar without the hedgehog, which is a view of it
+  }
 
   for (sctl::Integer i = 0; i < Ngrid; i++) {
     Real n0 = Gg[2 * Ngrid + i] * Gg[5 * Ngrid + i] - Gg[3 * Ngrid + i] * Gg[4 * Ngrid + i];
@@ -298,13 +356,13 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
     Gg[5 * Ngrid + i] *= invNp;
   }
 
-  { // Lagrange interpolation
-    // To polar point j, the value of a component is a^T W b, for the INTERP_ORDER x INTERP_ORDER window W of its patch
+  { // Lagrange interpolation to the coarse nodes, then trigonometric interpolation to the polar grid
+    // To coarse node j, the value of a component is a^T W b, for the INTERP_ORDER x INTERP_ORDER window W of its patch
     // values at I_G2P[j] and the 1D weights a, b of W_G2P: the rows of W scaled by a and summed, in vectors, then the
-    // dot with b. COORD_DIM components at a time, Ngrid apart in Vin and Npolar apart in Vout.
+    // dot with b. COORD_DIM components at a time, Ngrid apart in Vin and Npc apart in Vout.
     constexpr sctl::Integer NV = INTERP_ORDER / IVecLen; // vectors in a row of a window
     auto interp = [&](const sctl::Iterator<Real> Vout, const sctl::ConstIterator<Real> Vin) {
-      for (sctl::Integer j = 0; j < Npolar; j++) {
+      for (sctl::Long j = 0; j < Npc; j++) {
         const sctl::ConstIterator<Real> a = W_G2P.begin() + j * 2 * INTERP_ORDER, b = a + INTERP_ORDER;
         const sctl::ConstIterator<Real> W = Vin + I_G2P[j];
         IVec V[COORD_DIM][NV];
@@ -322,13 +380,54 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
         for (sctl::Integer k = 0; k < COORD_DIM; k++) {
           IVec acc = V[k][0] * bv[0];
           for (sctl::Integer v = 1; v < NV; v++) acc = FMA(V[k][v], bv[v], acc);
-          Vout[k * Npolar + j] = sctl::reduce(acc);
+          Vout[k * Npc + j] = sctl::reduce(acc);
         }
       }
     };
-    interp(P.begin(), G.begin());
-    interp(Pg.begin(), Gg.begin());
-    interp(Pg.begin() + COORD_DIM * Npolar, Gg.begin() + COORD_DIM * Ngrid);
+    if (!coarse) {
+      interp(P.begin(), G.begin());
+      interp(Pg.begin(), Gg.begin());
+      interp(Pg.begin() + COORD_DIM * Npolar, Gg.begin() + COORD_DIM * Ngrid);
+    } else {
+      // The NC = 3*COORD_DIM components on the coarse nodes, then on the polar grid: on circle i, U of the circle times
+      // its Mc[i] values (the same values when Mc[i] = ANG_DIM), VecLen rows of U at a time, its columns scaled by the
+      // values and summed
+      constexpr sctl::Integer NC = 3 * COORD_DIM;
+      sctl::ScratchBuf<Real> Vc_buf(NC * Npc);
+      interp(Vc_buf.begin() + COORD_DIM * Npc * 0, G.begin());
+      interp(Vc_buf.begin() + COORD_DIM * Npc * 1, Gg.begin());
+      interp(Vc_buf.begin() + COORD_DIM * Npc * 2, Gg.begin() + COORD_DIM * Ngrid);
+      const auto Vf = [&P,&Pg](const sctl::Integer k) { return (k < COORD_DIM ? P.begin() + k * Npolar : Pg.begin() + (k - COORD_DIM) * Npolar); };
+      for (sctl::Integer i = 0; i < RAD_DIM; i++) {
+        const sctl::Integer M = Mc[i];
+        const sctl::ConstIterator<Real> vc = Vc_buf.begin() + Mc_dsp[i];
+        if (M == ANG_DIM) {
+          for (sctl::Integer k = 0; k < NC; k++) {
+            for (sctl::Integer l = 0; l < ANG_DIM; l++) Vf(k)[i * ANG_DIM + l] = vc[k * Npc + l];
+          }
+          continue;
+        }
+        const sctl::ConstIterator<Real> Ui = U.begin() + U_dsp[i];
+        for (sctl::Integer l0 = 0; l0 < ANG_DIM; l0 += VecLen) {
+          Vec acc[NC];
+          for (sctl::Integer k = 0; k < NC; k++) acc[k] = Vec::Zero();
+          for (sctl::Integer j = 0; j < M; j++) {
+            const Vec u = Vec::LoadAligned(&Ui[j * ANGp + l0]);
+            for (sctl::Integer k = 0; k < NC; k++) acc[k] = FMA(u, Vec::Load1(&vc[k * Npc + j]), acc[k]);
+          }
+          for (sctl::Integer k = 0; k < NC; k++) {
+            const sctl::Iterator<Real> vf = Vf(k) + i * ANG_DIM + l0;
+            if (l0 + VecLen <= ANG_DIM) {
+              acc[k].Store(&vf[0]);
+            } else {
+              alignas(sizeof(Vec)) Real tmp[VecLen];
+              acc[k].StoreAligned(tmp);
+              for (sctl::Integer l = 0; l < ANG_DIM - l0; l++) vf[l] = tmp[l];
+            }
+          }
+        }
+      }
+    }
     for (sctl::Integer i = 0; i < Npolar; i++) { // Compute Pn, Pa
        Real n0 = Pg[2 * Npolar + i] * Pg[5 * Npolar + i] - Pg[3 * Npolar + i] * Pg[4 * Npolar + i];
        Real n1 = Pg[4 * Npolar + i] * Pg[1 * Npolar + i] - Pg[5 * Npolar + i] * Pg[0 * Npolar + i];
@@ -370,18 +469,59 @@ template <class Real, sctl::Integer PATCH_DIM0, sctl::Integer RAD_DIM_, sctl::In
           }
         }
       }
-      // MGrid <-- MPolar times the transpose of the interpolation: for a source component, with v the KDIM1 values of
-      // polar point j (its hedgehog values combined), the window of MGrid at I_G2P[j] gets a b^T v; row i0 of the
-      // window, its INTERP_ORDER * KDIM1 values contiguous, gets a[i0] times u = b (x) v.
+      // The KDIM0*KDIM1 values of each polar point (its hedgehog values combined), Vf, and then those of the coarse
+      // nodes, Vc: the transpose of the trigonometric interpolation, on circle i U^T times its ANG_DIM values
+      // (Vf padded with zeros, which the vectors of the last circle read past its end)
+      sctl::ScratchBuf<Real> V_buf(KDIM0 * KDIM1 * Npolar + (coarse ? VecLen + KDIM0 * KDIM1 * Npc : 0));
+      const sctl::Iterator<Real> Vf = V_buf.begin(), Vc = (coarse ? Vf + KDIM0 * KDIM1 * Npolar + VecLen : Vf);
+      if (coarse) {
+        for (sctl::Integer l = 0; l < VecLen; l++) Vf[KDIM0 * KDIM1 * Npolar + l] = 0;
+      }
+      for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) {
+        for (sctl::Integer j = 0; j < Npolar; j++) {
+          const sctl::ConstIterator<Real> MPolar_ = MPolar[k0 * Npolar + j];
+          for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
+            Real v = 0;
+            for (sctl::Integer l = 0; l < HedgehogOrder_; l++) v += MPolar_[k1 * HedgehogOrder_ + l] * HedgehogWts_[l];
+            Vf[(k0 * KDIM1 + k1) * Npolar + j] = v;
+          }
+        }
+      }
+      if (coarse) { // value j of circle i: the dot of column j of U with the ANG_DIM values of the circle, in vectors
+        constexpr sctl::Integer NC = KDIM0 * KDIM1;
+        for (sctl::Integer i = 0; i < RAD_DIM; i++) {
+          const sctl::Integer M = Mc[i];
+          const sctl::ConstIterator<Real> vf = Vf + i * ANG_DIM;
+          const sctl::Iterator<Real> vc = Vc + Mc_dsp[i];
+          if (M == ANG_DIM) {
+            for (sctl::Integer k = 0; k < NC; k++) {
+              for (sctl::Integer l = 0; l < ANG_DIM; l++) vc[k * Npc + l] = vf[k * Npolar + l];
+            }
+            continue;
+          }
+          const sctl::ConstIterator<Real> Ui = U.begin() + U_dsp[i];
+          for (sctl::Integer j = 0; j < M; j++) {
+            Vec acc[NC];
+            for (sctl::Integer k = 0; k < NC; k++) acc[k] = Vec::Zero();
+            for (sctl::Integer l0 = 0; l0 < ANG_DIM; l0 += VecLen) {
+              const Vec u = Vec::LoadAligned(&Ui[j * ANGp + l0]);
+              for (sctl::Integer k = 0; k < NC; k++) acc[k] = FMA(u, Vec::Load(&vf[k * Npolar + l0]), acc[k]);
+            }
+            for (sctl::Integer k = 0; k < NC; k++) vc[k * Npc + j] = sctl::reduce(acc[k]);
+          }
+        }
+      }
+
+      // MGrid <-- the transpose of the Lagrange interpolation times Vc: for a source component, with v the KDIM1 values
+      // of coarse node j, the window of MGrid at I_G2P[j] gets a b^T v; row i0 of the window, its INTERP_ORDER * KDIM1
+      // values contiguous, gets a[i0] times u = b (x) v.
       constexpr sctl::Integer NU = INTERP_ORDER * KDIM1 / IVecLen; // vectors in a row of a window
-      for (sctl::Integer j = 0; j < Npolar; j++) {
+      for (sctl::Long j = 0; j < Npc; j++) {
         const sctl::ConstIterator<Real> a = W_G2P.begin() + j * 2 * INTERP_ORDER, b = a + INTERP_ORDER;
-        const sctl::ConstIterator<Real> MPolar_ = MPolar[j];
         for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) {
           alignas(sizeof(IVec)) Real u[INTERP_ORDER * KDIM1];
           for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
-            Real v = 0;
-            for (sctl::Integer l = 0; l < HedgehogOrder_; l++) v += MPolar_[(k0 * Npolar * KDIM1 + k1) * HedgehogOrder_ + l] * HedgehogWts_[l];
+            const Real v = Vc[(k0 * KDIM1 + k1) * Npc + j];
             for (sctl::Integer i1 = 0; i1 < INTERP_ORDER; i1++) u[i1 * KDIM1 + k1] = b[i1] * v;
           }
           IVec uv[NU];

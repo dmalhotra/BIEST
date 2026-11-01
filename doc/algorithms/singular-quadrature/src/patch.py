@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 R = 6  # patch radius in grid spacings (PATCH_DIM0, M/2 in the paper)
 q = 8  # polar quadrature order (RAD_DIM)
-INTERP = 12  # interpolation stencil width (INTERP_ORDER)
+INTERP = min(16, 2 * R + 1)  # interpolation stencil width (INTERP_ORDER: 16, at most the patch width)
 chi = lambda r: np.exp(-36 * r**6)  # exponent 6 for PATCH_DIM = 2R+1 <= 20 (singular_correction.hpp)
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 4.8))
@@ -52,8 +52,9 @@ px, py = rr * np.cos(aa), rr * np.sin(aa)
 ax.plot(gx.ravel(), gy.ravel(), ".", color="0.7", ms=4)
 ax.plot(px.ravel(), py.ravel(), "o", color="tab:blue", ms=3.5, label=r"polar nodes ($q \times 2q$)")
 node = (px[1, 3], py[1, 3])
-s0x = int(np.floor(node[0])) - INTERP // 2 + 1
-s0y = int(np.floor(node[1])) - INTERP // 2 + 1
+stencil_start = lambda x: min(max(int(x + R - (INTERP - 1) // 2), 0), 2 * R + 1 - INTERP) - R  # inside the patch, as in Setup
+s0x = stencil_start(node[0])
+s0y = stencil_start(node[1])
 ax.add_patch(plt.Rectangle((s0x - 0.4, s0y - 0.4), INTERP - 0.2, INTERP - 0.2, fill=False, color="darkorange", lw=1.5, label=f"{INTERP}x{INTERP} interpolation stencil"))
 ax.plot(*node, "s", color="darkorange", ms=7)
 ax.plot(0, 0, "*", color="crimson", ms=14, label="target")

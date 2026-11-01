@@ -107,8 +107,8 @@ namespace detail_offsurf {
    */
   template <class Real> const sctl::Vector<Real>& ModeErrors(const sctl::Integer p, const sctl::Long n, const sctl::Long Nk) {
     using Key = std::tuple<sctl::Integer, sctl::Long, sctl::Long>;
-    // Destroyed at exit before the memory manager of SCTL, which is constructed first: LocalUpsample, the caller, has
-    // allocated (the matrix of values it estimates from)
+    // Destroyed at exit before the memory manager of SCTL, which is constructed first: OffSurfaceOp, the caller of
+    // LocalUpsample, has allocated its copy X_ of the surface
     static std::map<Key, std::unique_ptr<sctl::Vector<Real>>> cache;
     const Key key(p, n, Nk);
     const sctl::Vector<Real>* err = nullptr;
@@ -232,14 +232,14 @@ namespace detail_offsurf {
    * @param[in] nds the nodes of a panel in [0,1].
    *
    * @param[in] flip whether the poloidal nodes of each panel are in decreasing order.
+   *
+   * @param[in] idx, grp the panels grouped by their toroidal interval (see GroupByInterval).
    */
-  template <class Real> void PanelNodeValues(sctl::Vector<Real>& Ynds, const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Panel>& panels, const sctl::Long Mt0, const sctl::Long Mp0, const sctl::Vector<Real>& nds, const bool flip, const sctl::Integer p) {
+  template <class Real> void PanelNodeValues(sctl::Vector<Real>& Ynds, const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Panel>& panels, const sctl::Long Mt0, const sctl::Long Mp0, const sctl::Vector<Real>& nds, const bool flip, const sctl::Integer p, const std::vector<sctl::Long>& idx, const std::vector<sctl::Long>& grp) {
     const sctl::Long N = Nt * Np, Nc = Y.Dim() / N, P = panels.Dim(), order = nds.Dim(), Nnds = order * order;
     SCTL_ASSERT(Y.Dim() == Nc * N);
     if (Ynds.Dim() != Nc * P * Nnds) Ynds.ReInit(Nc * P * Nnds);
 
-    std::vector<sctl::Long> idx, grp;
-    GroupByInterval(idx, grp, panels);
     #pragma omp parallel for schedule(dynamic)
     for (sctl::Long g = 0; g < (sctl::Long)grp.size() - 1; g++) {
       const Panel& q0 = panels[idx[grp[g]]];
@@ -330,14 +330,15 @@ namespace detail_offsurf {
   }
 
   /**
-   * Returns the lines of the components of Y along the toroidal (dir = 0) or poloidal (dir = 1) direction, as the rows
-   * of a matrix.
+   * Set the rows of R to the lines of the components of Y along the toroidal (dir = 0) or poloidal (dir = 1) direction.
+   *
+   * @param[out] R a matrix of Y.Dim() values, of rows of Nt (dir = 0) or Np (dir = 1) values.
    *
    * @param[in] Y fields on an Nt x Np grid in SoA order.
    */
-  template <class Real> sctl::Matrix<Real> GridLines(const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Integer dir) {
+  template <class Real> void GridLines(sctl::Matrix<Real>& R, const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Integer dir) {
     const sctl::Long N = Nt * Np, Nc = Y.Dim() / N;
-    sctl::Matrix<Real> R(dir ? Nc * Nt : Nc * Np, dir ? Np : Nt);
+    SCTL_ASSERT(R.Dim(0) == (dir ? Nc * Nt : Nc * Np) && R.Dim(1) == (dir ? Np : Nt));
     if (dir) {
       if (Y.Dim()) sctl::omp_par::memcpy(R.begin(), Y.begin(), Y.Dim());
     } else {
@@ -347,8 +348,13 @@ namespace detail_offsurf {
         for (sctl::Long i = 0; i < Nt; i++) R[r][i] = Y[(c * Nt + i) * Np + j];
       }
     }
-    return R;
   }
+
+  /**
+   * Returns the smallest upsampling factor U, at least U0, at which the local interpolation along the lines of Y in the
+   * direction dir is within tol (see LocalUpsample()), or -1 if there is none; the lines in scratch memory.
+   */
+  template <class Real> sctl::Long LocalUpsampleLines(const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Integer dir, const Real scal, const Real tol, const sctl::Integer p, const sctl::Long U0);
 
   /**
    * Returns the smallest upsampling factor U, at least U0, from 1, 2, 3, 4, 6, 8, 12 and 16, at which the local
@@ -367,7 +373,9 @@ namespace detail_offsurf {
 
     // the Fourier coefficients of the rows, divided by N; their sizes, those of the modes of the real rows; and the sum of
     // these over each row
-    sctl::Vector<Real> coeff(Nr * Nk * 2), mag(Nr * Nk), mag_sum(Nr);
+    sctl::ScratchBuf<Real> coeff_buf(Nr * Nk * 2), mag_buf(Nr * Nk), mag_sum_buf(Nr), est_buf(Nr); // in scratch memory, as the other temporaries: see SurfaceOp::SurfGrad
+    sctl::ScratchBuf<sctl::Long> order_buf(Nr), rows_buf(std::min(Nsample, Nr));
+    sctl::Vector<Real> coeff(coeff_buf), mag(mag_buf), mag_sum(mag_sum_buf);
     {
       const sctl::Iterator<Real> C = coeff.begin(), M = mag.begin(), Ms = mag_sum.begin();
       const sctl::ConstIterator<Real> R_ = R.begin();
@@ -398,29 +406,29 @@ namespace detail_offsurf {
     // the rows with the largest error estimated from their Fourier coefficients
     for (const sctl::Long U : {1, 2, 3, 4, 6, 8, 12, 16}) {
       if (U < U0) continue;
-      sctl::Vector<sctl::Long> rows; // the rows with the largest estimated error, from their mode sizes
+      sctl::Vector<sctl::Long> rows(rows_buf); // the rows with the largest estimated error, from their mode sizes
       {
         const sctl::Vector<Real>& err_k = ModeErrors<Real>(p, U * N, Nk);
-        sctl::Vector<Real> est(Nr);
+        sctl::Vector<Real> est(est_buf);
         #pragma omp parallel for schedule(static)
         for (sctl::Long r = 0; r < Nr; r++) {
           Real e = 0;
           for (sctl::Long k = 0; k < Nk; k++) e += mag[r * Nk + k] * err_k[k];
           est[r] = (e - round * mag_sum[r]) * scal;
         }
-        std::vector<sctl::Long> order_(Nr);
-        std::iota(order_.begin(), order_.end(), 0);
+        sctl::Long* order_ = &order_buf.begin()[0];
+        std::iota(order_, order_ + Nr, 0);
         const sctl::Long Ns = std::min(Nsample, Nr);
-        std::partial_sort(order_.begin(), order_.begin() + Ns, order_.end(), [&est](sctl::Long a, sctl::Long b) { return est[a] > est[b]; });
+        std::partial_sort(order_, order_ + Ns, order_ + Nr, [&est](sctl::Long a, sctl::Long b) { return est[a] > est[b]; });
         if (est[order_[0]] <= tol) return U; // the estimate already meets tol
-        rows.ReInit(Ns);
         for (sctl::Long i = 0; i < Ns; i++) rows[i] = order_[i];
       }
 
       // the rows upsampled 2U times: the even points are the rows upsampled U times, the odd points the midpoints;
       // ext: the even points of each row, extended periodically by p on each side, and mid: the odd points
       const sctl::Long n = U * N, Ns = rows.Dim(), Ld = n + 2 * p;
-      sctl::Vector<Real> ext(Ns * Ld), mid(Ns * n);
+      sctl::ScratchBuf<Real> ext_buf(Ns * Ld), mid_buf(Ns * n);
+      sctl::Vector<Real> ext(ext_buf), mid(mid_buf);
       {
         const sctl::Iterator<Real> E = ext.begin(), Mi = mid.begin();
         const sctl::ConstIterator<Real> C = coeff.begin();
@@ -437,7 +445,8 @@ namespace detail_offsurf {
       }
       constexpr sctl::Long CHUNK = 256; // points of a row in a task
       const sctl::Long Nch = (n + CHUNK - 1) / CHUNK;
-      sctl::Vector<Real> err_ch(Ns * Nch), size_ch(Ns * Nch); // the largest error and value in each chunk of each row
+      sctl::ScratchBuf<Real> err_ch_buf(Ns * Nch), size_ch_buf(Ns * Nch);
+      sctl::Vector<Real> err_ch(err_ch_buf), size_ch(size_ch_buf); // the largest error and value in each chunk of each row
       #pragma omp parallel for schedule(static)
       for (sctl::Long task = 0; task < Ns * Nch; task++) {
         const sctl::Long i = task / Nch, j0 = (task % Nch) * CHUNK, j1 = std::min(n, j0 + CHUNK);
@@ -466,6 +475,14 @@ namespace detail_offsurf {
     return -1;
   }
 
+  template <class Real> sctl::Long LocalUpsampleLines(const sctl::Vector<Real>& Y, const sctl::Long Nt, const sctl::Long Np, const sctl::Integer dir, const Real scal, const Real tol, const sctl::Integer p, const sctl::Long U0) {
+    const sctl::Long Nc = Y.Dim() / (Nt * Np);
+    sctl::ScratchBuf<Real> R_buf(Y.Dim());
+    sctl::Matrix<Real> R(dir ? Nc * Nt : Nc * Np, dir ? Np : Nt, R_buf.begin(), false);
+    GridLines<Real>(R, Y, Nt, Np, dir);
+    return LocalUpsample<Real>(R, scal, tol, p, U0);
+  }
+
   /**
    * Returns the reciprocal of the largest absolute value in V, or 1 if V is zero or empty.
    */
@@ -477,25 +494,21 @@ namespace detail_offsurf {
 
 }
 
-template <class Real, class SKer> template <sctl::Integer DIGITS, sctl::Integer Nv> OffSurfaceOp<Real,SKer>::OffSurfaceOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) : ker_(ker.GetSctlKernel()), comm_(comm), tol_(0), Nt_(0), Np_(0), Ntrg(0), trg0(0), trg1(0), Ut(1), Up(1), warned_panels(false), warned_interp(false), flip(false) {
+template <class Real, class SKer> template <sctl::Integer DIGITS, sctl::Integer Nv> OffSurfaceOp<Real,SKer>::OffSurfaceOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) : ker_(ker.GetSctlKernel()), comm_(comm), tol_(0), Nt_(0), Np_(0), Ntrg(0), trg0(0), trg1(0), L_max_(0), Ut(1), Up(1), warned_panels(false), warned_interp(false), flip(false) {
 }
 
 template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& F) {
-  SCTL_ASSERT(X.Dim() == COORD_DIM * Nt * Np);
   (void)F;
+  SetupSurface(X, Nt, Np, tol);
+  SetTargets(Xt);
+}
+
+template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol) {
+  SCTL_ASSERT(X.Dim() == COORD_DIM * Nt * Np);
   Nt_ = Nt;
   Np_ = Np;
   X_ = X;
   tol_ = tol;
-
-  Ntrg = Xt.Dim() / COORD_DIM;
-  SCTL_ASSERT(Xt.Dim() == COORD_DIM * Ntrg);
-  trg0 = (comm_.Rank() + 0) * Ntrg / comm_.Size();
-  trg1 = (comm_.Rank() + 1) * Ntrg / comm_.Size();
-  Xt_.ReInit(COORD_DIM * (trg1 - trg0));
-  for (sctl::Long i = trg0; i < trg1; i++) {
-    for (sctl::Integer k = 0; k < COORD_DIM; k++) Xt_[(i - trg0) * COORD_DIM + k] = Xt[k * Ntrg + i];
-  }
 
   panels.ReInit(Mt0 * Mp0); // the coarse mesh
   for (sctl::Long a = 0; a < Mt0; a++) {
@@ -505,9 +518,30 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Setup(const sctl
   Up = 1;
   warned_panels = false;
   warned_interp = false;
-  sctl::Vector<Real> coord;
-  FitPanels(coord);
-  BuildPanels(coord);
+  FitPanels(coord_);
+  detail_offsurf::GroupByInterval(grp_idx_, grp_, panels);
+  L_max_ = detail_offsurf::PanelRule<Real>(ORDER).L_max;
+  op.reset(); // for the targets of the next SetTargets()
+}
+
+template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::SetTargets(const sctl::Vector<Real>& Xt) {
+  const sctl::Long Ntrg_ = Xt.Dim() / COORD_DIM;
+  SCTL_ASSERT(Xt.Dim() == COORD_DIM * Ntrg_);
+  if (op && Ntrg_ == Ntrg) { // the targets of the operator already: nothing to do
+    bool same = true;
+    for (sctl::Long i = trg0; i < trg1 && same; i++) {
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) same = same && (Xt_[(i - trg0) * COORD_DIM + k] == Xt[k * Ntrg + i]);
+    }
+    if (same) return;
+  }
+  Ntrg = Ntrg_;
+  trg0 = (comm_.Rank() + 0) * Ntrg / comm_.Size();
+  trg1 = (comm_.Rank() + 1) * Ntrg / comm_.Size();
+  Xt_.ReInit(COORD_DIM * (trg1 - trg0));
+  for (sctl::Long i = trg0; i < trg1; i++) {
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) Xt_[(i - trg0) * COORD_DIM + k] = Xt[k * Ntrg + i];
+  }
+  BuildPanels(coord_);
 }
 
 template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) {
@@ -517,9 +551,9 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Eval(sctl::Vecto
 
   // The FFT upsampling of F before its local interpolation to the nodes: at least that of the surface, and enough for
   // the error of the local interpolation to be within tol/2
-  const Real cF = detail_offsurf::PanelRule<Real>(ORDER).L_max * detail_offsurf::InvMaxAbs<Real>(F);
+  const Real cF = L_max_ * detail_offsurf::InvMaxAbs<Real>(F);
   const auto upsample_factor = [this,&F,cF](const sctl::Long U0, const sctl::Integer dir) {
-    const sctl::Long U = detail_offsurf::LocalUpsample<Real>(detail_offsurf::GridLines<Real>(F, Nt_, Np_, dir), cF, tol_ / 2, STENCIL, U0);
+    const sctl::Long U = detail_offsurf::LocalUpsampleLines<Real>(F, Nt_, Np_, dir, cF, tol_ / 2, STENCIL, U0);
     if (U < 0) {
       if (!warned_interp) SCTL_WARN("The local interpolation of the density may not reach the requested accuracy.");
       warned_interp = true;
@@ -615,7 +649,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(sctl::
       }
       const Real cX = std::max<Real>(rule.L_max * sX, rule.Ld_max * std::max<Real>((Mt0 << lt) * st, (Mp0 << lp) * sp));
       const auto upsample_factor = [this,cX](const sctl::Long U0, const sctl::Integer dir) {
-        const sctl::Long U = detail_offsurf::LocalUpsample<Real>(detail_offsurf::GridLines<Real>(X_, Nt_, Np_, dir), cX, tol_ / 2, STENCIL, U0);
+        const sctl::Long U = detail_offsurf::LocalUpsampleLines<Real>(X_, Nt_, Np_, dir, cX, tol_ / 2, STENCIL, U0);
         if (U < 0) {
           if (!warned_interp) SCTL_WARN("The local interpolation of the surface may not reach the requested accuracy.");
           warned_interp = true;
@@ -780,7 +814,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::InterpToNodes(sc
   sctl::ScratchBuf<Real> Yf_buf(ut * up > 1 ? Nc * N * ut * up : 0), V_buf(Nc * P * Nnds);
   sctl::Vector<Real> Yf(Yf_buf, false), V(V_buf); // V: the values at the nodes, component by component
   UpsampleGrid(Yf, Y, ut, up);
-  detail_offsurf::PanelNodeValues<Real>(V, Yf, ut * Nt_, up * Np_, panels, Mt0, Mp0, sctl::QuadElemList<Real>::ParamNodes(ORDER), flip, STENCIL);
+  detail_offsurf::PanelNodeValues<Real>(V, Yf, ut * Nt_, up * Np_, panels, Mt0, Mp0, sctl::QuadElemList<Real>::ParamNodes(ORDER), flip, STENCIL, grp_idx_, grp_);
   for (sctl::Long c = 0; c < Nc; c++) {
     const sctl::Long d = c / kdim, k = c % kdim; // field and component
     #pragma omp parallel for schedule(static)

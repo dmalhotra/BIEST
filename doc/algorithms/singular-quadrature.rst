@@ -277,7 +277,10 @@ which handles targets at any distance from the surface:
    although the surface coordinates are resolved: the area element is the square root of a polynomial on each panel,
    and near a sharp concave fold of the surface its branch points are close to the panel. The panels are therefore
    small only where the surface varies rapidly. A panel is not split beyond 32 nodes per grid point. The panels
-   depend only on the surface, so one setup serves every density.
+   depend only on the surface and the tolerance, so they serve every density and every set of targets:
+   ``BoundaryIntegralOp``, ``ExtVacuumField`` and ``IntVacuumField`` fit them by the first ``EvalOffSurface`` after
+   their setup, and set up step 3 again only for other targets. The static ``EvalOffSurface`` of ``VacuumField`` and
+   ``TaylorState``, given the surfaces at each call, fit them at each call.
 2. The surface coordinates and the densities are interpolated from the periodic grid to the panel nodes: first FFT
    upsampling, then local 12-point Lagrange interpolation. The upsampling factor (up to 16) is chosen for the surface,
    to meet the tolerance on the finest panels, and for each density, at least that of the surface, to meet the

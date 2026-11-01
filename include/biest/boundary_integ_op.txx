@@ -75,6 +75,7 @@ namespace biest {
       using SingCorr = SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>;
       SetupHelper(Svec, ker, trg_idx_);
       const sctl::Long Nsurf = Svec.Dim();
+      off_op_.clear(); // the panels of EvalOffSurface() for the earlier surfaces
       while ((sctl::Long)singular_correction.size() < Nsurf) singular_correction.emplace_back(comm_); // those of the earlier setup kept
       singular_correction.resize(Nsurf);
       for (sctl::Long i = 0; i < Nsurf; i++) {
@@ -242,7 +243,7 @@ namespace biest {
       }
     };
 
-    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer HedgehogOrder> template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,HedgehogOrder>::EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol) const {
+    template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UPSAMPLE, sctl::Integer HedgehogOrder> template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void BoundaryIntegralOp<Real,KDIM0,KDIM1,UPSAMPLE,HedgehogOrder>::EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real>& Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol) const {
       SCTL_ASSERT(ker_ptr);
       SCTL_ASSERT_MSG(&ker == ker_ptr, "EvalOffSurface: the kernel function must be the one given to SetupSingular.");
       SCTL_ASSERT(F.Dim() == Dim(0));
@@ -253,14 +254,29 @@ namespace biest {
         U = 0;
       }
 
-      sctl::Vector<Real> Fsrc;
+      const sctl::Long Nsurf = Xsrc.Dim();
+      if ((sctl::Long)off_op_.size() != Nsurf || off_tol_ != tol) { // the panels fit for another tolerance
+        off_op_.clear();
+        off_op_.resize(Nsurf);
+        off_tol_ = tol;
+      }
       sctl::Long SrcOffset = 0;
-      for (sctl::Long s = 0; s < Xsrc.Dim(); s++) {
+      for (sctl::Long s = 0; s < Nsurf; s++) {
         const sctl::Vector<Real> F_(ker_ptr->Dim(0) * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + ker_ptr->Dim(0) * SrcOffset, false);
-        Upsample(F_, Fsrc, Nt0[s], Np0[s]);
-        OffSurfaceOp<Real,SKer> op(ker, comm_);
-        op.Setup(Xsrc[s], Nt0[s] * UPSAMPLE, Np0[s] * UPSAMPLE, Xt, tol);
-        op.Eval(U, Fsrc);
+        if (!off_op_[s]) {
+          off_op_[s] = NewNearOp(ker, comm_);
+          off_op_[s]->SetupSurface(Xsrc[s], Nt0[s] * UPSAMPLE, Np0[s] * UPSAMPLE, tol);
+        }
+        off_op_[s]->SetTargets(Xt);
+        // Fsrc: F_ upsampled, in scratch memory (see SurfaceOp::SurfGrad), or F_ itself
+        sctl::ScratchBuf<Real> Fsrc_buf(UPSAMPLE == 1 ? 0 : F_.Dim() * UPSAMPLE * UPSAMPLE);
+        sctl::Vector<Real> Fsrc;
+        if (UPSAMPLE == 1) Fsrc.ReInit(F_.Dim(), (sctl::Iterator<Real>)F_.begin(), false);
+        else {
+          Fsrc.ReInit(Fsrc_buf.size(), Fsrc_buf.begin(), false);
+          Upsample(F_, Fsrc, Nt0[s], Np0[s]);
+        }
+        off_op_[s]->Eval(U, Fsrc);
         SrcOffset += Nt0[s] * Np0[s];
       }
     };
@@ -381,18 +397,21 @@ namespace biest {
       return biest::Surface<Real>(NFP, surf_Nt, surf_Np, X);
     }
 
-    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::FieldPeriodBIOp(const sctl::Comm& comm) : biop(nullptr), NFP_(0), comm_(comm) {
+    template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::FieldPeriodBIOp(const sctl::Comm& comm) : biop(nullptr), dbl_op_(nullptr), NFP_(0), comm_(comm) {
     }
 
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::~FieldPeriodBIOp() {
       delete biop;
+      delete dbl_op_;
     }
 
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const biest::KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long qNt, const sctl::Long qNp) {
       SCTL_ASSERT(Svec.Dim() == 1);
       SCTL_ASSERT(Svec[0].NTor() % NFP == 0);
-      const auto one = [](const sctl::Long a) { sctl::Vector<sctl::Long> v(1); v[0] = a; return v; };
-      SetupDigits(Svec, ker, digits, NFP, one(src_Nt), one(src_Np), one(trg_Nt), one(trg_Np), (qNt > 0 && qNp > 0 ? one(qNt) : sctl::Vector<sctl::Long>()), (qNt > 0 && qNp > 0 ? one(qNp) : sctl::Vector<sctl::Long>()));
+      sctl::StaticArray<sctl::Long,6> d{src_Nt, src_Np, trg_Nt, trg_Np, qNt, qNp};
+      const auto one = [&d](const sctl::Integer k) { return sctl::Vector<sctl::Long>(1, d + k, false); }; // a view of d[k]
+      const bool q = (qNt > 0 && qNp > 0);
+      SetupDigits(Svec, ker, digits, NFP, one(0), one(1), one(2), one(3), (q ? one(4) : sctl::Vector<sctl::Long>()), (q ? one(5) : sctl::Vector<sctl::Long>()));
     }
 
     namespace detail_fieldperiod {
@@ -412,7 +431,8 @@ namespace biest {
 
     template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,COORD_DIM,KDIM0,KDIM1,HedgehogOrder>::SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const sctl::Integer digits, const sctl::Vector<sctl::Long>& trg_Nt, const sctl::Vector<sctl::Long>& trg_Np, const sctl::Vector<sctl::Long>& qNt, const sctl::Vector<sctl::Long>& qNp) {
       const sctl::Long Nsurf = Svec.Dim();
-      sctl::Vector<sctl::Long> src_Nt(Nsurf), src_Np(Nsurf); // the densities on the surface grids, at most
+      sctl::ScratchBuf<sctl::Long> src_buf(2 * Nsurf); // the densities on the surface grids, at most; in scratch memory
+      sctl::Vector<sctl::Long> src_Nt(Nsurf, src_buf.begin(), false), src_Np(Nsurf, src_buf.begin() + Nsurf, false);
       for (sctl::Long i = 0; i < Nsurf; i++) {
         src_Nt[i] = Svec[i].NTor();
         src_Np[i] = Svec[i].NPol();
@@ -445,19 +465,23 @@ namespace biest {
 
       // For each surface, the anisotropy of its grid (cond), the aspect ratio of the quadrature grid that makes its cells
       // square on average, and the patch radius of the singular quadrature on a grid of that aspect ratio
+      // The temporaries in scratch memory (see SurfaceOp::SurfGrad)
       const Real tol = sctl::pow<Real>((Real)0.1,digits);
-      sctl::Vector<Real> optim_aspect_ratio(Nsurf);
-      sctl::Vector<sctl::Integer> PDIM(Nsurf);
+      sctl::ScratchBuf<Real> optim_aspect_ratio_buf(Nsurf);
+      sctl::ScratchBuf<sctl::Long> PDIM_buf(Nsurf);
+      sctl::Vector<Real> optim_aspect_ratio(optim_aspect_ratio_buf);
+      sctl::Vector<sctl::Long> PDIM(PDIM_buf);
       Real cond = 1;
       for (sctl::Long s = 0; s < Nsurf; s++) {
         sctl::StaticArray<Real,2> aspect_ratio{100,0};
-        sctl::Vector<Real> dX;
+        sctl::ScratchBuf<Real> dX_buf(COORD_DIM * 2 * Svec[s].NTor() * Svec[s].NPol());
+        sctl::Vector<Real> dX(dX_buf);
         { // Set aspect_ratio
           sctl::StaticArray<sctl::Long,2> SurfDim{Svec[s].NTor(),Svec[s].NPol()};
           biest::SurfaceOp<Real> SurfOp(comm_, SurfDim[0], SurfDim[1]);
           SurfOp.Grad2D(dX, Svec[s].Coord());
 
-          sctl::Matrix<Real> M(2,2);
+          Real M[2][2];
           const sctl::Long N = SurfDim[0] * SurfDim[1];
           for (sctl::Long i = 0; i < N; i++) {
             for (sctl::Integer k0 = 0; k0 < 2; k0++) {
@@ -502,18 +526,25 @@ namespace biest {
         // while the error is above 10^-digits, a grid finer by the factor that the error predicts for digits+1 digits,
         // unless that factor is below 1.5. The grids are multiples of the target grid, and the last one tested is the
         // quadrature grid.
-        sctl::Vector<biest::Surface<Real>> S(1);
-        S[0] = Svec[s];
+        // The test operator: that of the object, set up in the memory of the earlier tests; S: surface s alone (a view)
+        const sctl::Vector<biest::Surface<Real>> S(1, (sctl::Iterator<biest::Surface<Real>>)Svec.begin() + s, false);
+        if (!dbl_op_) dbl_op_ = new FieldPeriodBIOp<Real, COORD_DIM, 1, 1>(comm_);
+        auto& dbl_op = *dbl_op_;
         for (sctl::Integer i = 0; i < 3; i++) {
-          FieldPeriodBIOp<Real, COORD_DIM, 1, 1> dbl_op(comm_);
-          const auto one = [](const sctl::Long a) { sctl::Vector<sctl::Long> v(1); v[0] = a; return v; };
-          dbl_op.trg_Nt_ = one(trg_Nt[s]);
-          dbl_op.trg_Np_ = one(trg_Np[s]);
-          dbl_op.quad_Nt_ = one(quad_Nt);
-          dbl_op.quad_Np_ = one(quad_Np);
+          dbl_op.trg_Nt_.ReInit(1);
+          dbl_op.trg_Np_.ReInit(1);
+          dbl_op.quad_Nt_.ReInit(1);
+          dbl_op.quad_Np_.ReInit(1);
+          dbl_op.trg_Nt_[0] = trg_Nt[s];
+          dbl_op.trg_Np_[0] = trg_Np[s];
+          dbl_op.quad_Nt_[0] = quad_Nt;
+          dbl_op.quad_Np_[0] = quad_Np;
           dbl_op.SetGrids(S, NFP);
           dbl_op.SetupSingular0(biest::Laplace3D<Real>::DxU(), tol, SingularQuadParams());
-          sctl::Vector<Real> U, F(quad_Nt * quad_Np); F = 1;
+          sctl::ScratchBuf<Real> U_buf(dbl_op.Dim(1)), F_buf(dbl_op.Dim(0));
+          sctl::Vector<Real> U(U_buf), F(F_buf);
+          U = 0;
+          F = 1;
           dbl_op(U, F);
 
           Real err = 0;

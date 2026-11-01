@@ -100,8 +100,9 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
 
     /**
      * Evaluate the potential at off-surface points, at any distance from the
-     * surfaces. The panels for near-surface quadrature are rebuilt on every
-     * call.
+     * surfaces. The panels for near-surface quadrature are fit to the surfaces
+     * by the first call after SetupSingular() (and again for another tol), and
+     * their operator is set up for the targets, again only for other targets.
      *
      * @param[in,out] U the computed potential in SoA order, added to U if it
      * already has the right size.
@@ -115,7 +116,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
      *
      * @param[in] tol the accuracy tolerance.
      */
-    template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real> Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol = (Real)1e-10) const;
+    template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real>& Xt, const sctl::Vector<Real>& F, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol = (Real)1e-10) const;
 
     template <class Kernel> static sctl::Vector<Real> test(sctl::Long Nt, sctl::Long Np, SurfType surf_type, const Kernel& ker, const sctl::Comm& comm, const SingularQuadParams& quad = SingularQuadParams());
 
@@ -133,11 +134,15 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
     struct NearOpBase {
       virtual ~NearOpBase() = default;
       virtual void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol) = 0;
+      virtual void SetupSurface(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, Real tol) = 0;
+      virtual void SetTargets(const sctl::Vector<Real>& Xt) = 0;
       virtual void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) = 0;
     };
     template <class SKer> struct NearOp : NearOpBase {
       template <sctl::Integer DIGITS, sctl::Integer Nv> NearOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) : op(ker, comm) {}
       void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol) override { op.Setup(X, Nt, Np, Xt, tol); }
+      void SetupSurface(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, Real tol) override { op.SetupSurface(X, Nt, Np, tol); }
+      void SetTargets(const sctl::Vector<Real>& Xt) override { op.SetTargets(Xt); }
       void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) override { op.Eval(U, F); }
       OffSurfaceOp<Real,SKer> op;
     };
@@ -177,6 +182,11 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer UP
       std::unique_ptr<NearOpBase> near_op;
     };
     std::vector<CrossInterac> cross;
+
+    // The operators of EvalOffSurface(), one for each surface, with their panels fit for the tolerance off_tol_, kept
+    // until the next SetupSingular()
+    mutable std::vector<std::unique_ptr<NearOpBase>> off_op_;
+    mutable Real off_tol_ = 0;
 };
 
 /**
@@ -425,6 +435,7 @@ template <class Real, sctl::Integer COORD_DIM=3, sctl::Integer KDIM0=1, sctl::In
     template <class, sctl::Integer, sctl::Integer, sctl::Integer, sctl::Integer> friend class FieldPeriodBIOp;
 
     BIOp* biop;
+    FieldPeriodBIOp<Real,COORD_DIM,1,1>* dbl_op_; // the operator of the test of the quadrature grids in SetupDigits(), kept for later setups
     sctl::Integer NFP_;
     sctl::Vector<sctl::Integer> tor_orient_; // for each surface
     sctl::Vector<sctl::Long> trg_Nt_, trg_Np_, quad_Nt_, quad_Np_; // for each surface

@@ -5,7 +5,9 @@
 #ifndef _SINGULAR_CORRECTION_HPP_
 #define _SINGULAR_CORRECTION_HPP_
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 #include <biest/kernel.hpp>
 #include <biest/mat.hpp>
@@ -141,7 +143,10 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     static void SetPatch(sctl::Vector<Real>& out, sctl::Long t0, sctl::Long p0, const sctl::Vector<Real>& in, sctl::Long Nt, sctl::Long Np, sctl::Integer PATCH_DIM);
 
     sctl::Comm comm_;
-    std::shared_ptr<const Precomp> tables_;
+    // The tables of the last TABLES_KEPT quadratures, the most recent first: those of the setup, and those of the
+    // earlier ones, which a later setup with the same quadrature uses again instead of building them
+    static constexpr sctl::Integer TABLES_KEPT = 4;
+    std::vector<std::shared_ptr<const Precomp>> tables_;
     sctl::Long Nt_, Np_, Ntrg_, trg_dsp_; // the grid, and the targets of all the processes, of which the local ones are trg_dsp_ onwards
     sctl::Vector<sctl::Long> trg_t_, trg_p_; // the grid point of each local target
     sctl::Vector<Real> MGrid_; // the corrections of each local target (see Precomp)
@@ -362,10 +367,19 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 }
 
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::Setup(const SingularQuadParams& params, sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) {
-  if (!tables_ || tables_->params.patch_rad != params.patch_rad || tables_->params.rad_nodes != params.rad_nodes || tables_->params.ang_nodes != params.ang_nodes) {
-    tables_ = std::make_shared<const Precomp>(params);
+  { // The tables of the quadrature, first in tables_: those kept if any, else new ones in place of the oldest
+    const auto same = [&params](const std::shared_ptr<const Precomp>& t) { return t->params.patch_rad == params.patch_rad && t->params.rad_nodes == params.rad_nodes && t->params.ang_nodes == params.ang_nodes; };
+    auto it = std::find_if(tables_.begin(), tables_.end(), same);
+    if (it == tables_.end()) {
+      if (tables_.capacity() < (size_t)TABLES_KEPT) tables_.reserve(TABLES_KEPT);
+      if (tables_.size() < (size_t)TABLES_KEPT) tables_.emplace_back();
+      it = tables_.end() - 1;
+      *it = nullptr; // the oldest freed before the new ones are built
+      *it = std::make_shared<const Precomp>(params);
+    }
+    std::rotate(tables_.begin(), it, it + 1);
   }
-  const Precomp& T = *tables_;
+  const Precomp& T = *tables_[0];
   SCTL_ASSERT(Nt >= T.PATCH_DIM && Np >= T.PATCH_DIM);
   assert(KDIM0 == ker.Dim(0));
   assert(KDIM1 == ker.Dim(1));
@@ -404,7 +418,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> template <sctl::Integer IORD> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::SetupTarget(sctl::Long trg, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, sctl::Vector<Real>& work_buff) {
   const sctl::Long Nt = Nt_, Np = Np_, t = trg_t_[trg], p = trg_p_[trg];
 
-  const Precomp& tables = *tables_;
+  const Precomp& tables = *tables_[0];
   const sctl::Integer PATCH_DIM = tables.PATCH_DIM;
   const sctl::Integer RAD_DIM = tables.RAD_DIM;
   const sctl::Integer ANG_DIM = tables.ANG_DIM;
@@ -709,7 +723,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   sctl::Vector<Real> Uloc(Uloc_buf), Uglb(Uglb_buf);
   Uloc = 0;
   if (Nloc) {
-    const Precomp& T = *tables_;
+    const Precomp& T = *tables_[0];
     const sctl::Long N = KDIM0 * T.Ngrid, Kp = T.Kp;
     #pragma omp parallel
     {

@@ -58,8 +58,9 @@ namespace detail_offsurf {
 /**
  * Layer potentials of a toroidal surface at off-surface targets, by quadrature on panels that resolve the surface. The
  * panels are refined adaptively from a coarse mesh, along one or both directions, where the surface or the density
- * needs them. The panels and the operator are set up once per set of targets. Target points must not lie on the
- * surface.
+ * needs them. The panels depend only on the surface and the tolerance, and the operator on the targets too: a later
+ * SetTargets() keeps the panels, and does nothing for the targets of the last call. Target points must not lie on
+ * the surface.
  *
  * @tparam SKer the SCTL kernel, e.g. sctl::Laplace3D_FxdU.
  */
@@ -99,6 +100,18 @@ template <class Real, class SKer> class OffSurfaceOp {
      * @param[in] F unused: the panels depend only on the surface. It is kept for compatibility.
      */
     void Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& F = sctl::Vector<Real>());
+
+    /**
+     * Fit panels to the surface, for the tolerance tol: the part of Setup() that does not depend on the targets. The
+     * operator is then set up by SetTargets().
+     */
+    void SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol);
+
+    /**
+     * Set up the operator for the target points Xt (in SoA order) on the panels of the last SetupSurface(), unless
+     * they are the targets of the operator already.
+     */
+    void SetTargets(const sctl::Vector<Real>& Xt);
 
     /**
      * Add the potential of the densities F at the target points to U. F is interpolated to the panel nodes by FFT
@@ -164,6 +177,9 @@ template <class Real, class SKer> class OffSurfaceOp {
     sctl::Vector<Real> Xt_; // coordinates of the target points of this process, AoS
 
     sctl::Vector<detail_offsurf::Panel> panels;
+    sctl::Vector<Real> coord_; // the surface coordinates at the nodes of the panels (see FitPanels)
+    std::vector<sctl::Long> grp_idx_, grp_; // the panels grouped by their toroidal interval (see GroupByInterval)
+    Real L_max_; // of the panel rule (see PanelRule)
     sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation of the surface, in each direction
     bool warned_panels, warned_interp; // whether each warning has been printed since Setup
     bool flip; // whether the poloidal nodes of each panel are reversed, so that the panel normals point outward

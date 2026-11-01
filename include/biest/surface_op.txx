@@ -51,6 +51,24 @@ namespace detail_surfop {
   }
 
   /**
+   * Calls body(b0, b1) for the blocks b0 to b1 of the Nb, divided evenly among LoopThreads(n) threads; on the calling
+   * thread, without a parallel region, when that is one thread: libgomp allocated and freed the team of such a region
+   * each time, in the solvers (in TaylorState, 9 times in each iteration of its Laplace-Beltrami solves).
+   */
+  template <class Body> void ForBlocks(const sctl::Long Nb, const sctl::Long n, const Body& body) {
+    const sctl::Integer nt = LoopThreads(n);
+    if (nt == 1) {
+      body((sctl::Long)0, Nb);
+      return;
+    }
+    #pragma omp parallel num_threads(nt)
+    {
+      const sctl::Integer tid = omp_get_thread_num(), nt_ = omp_get_num_threads();
+      body(Nb * tid / nt_, Nb * (tid + 1) / nt_);
+    }
+  }
+
+  /**
    * Returns Q rounded up to a multiple of FFT_COLS: the leading dimension, in complex values, of the arrays whose
    * columns are transformed.
    */
@@ -67,12 +85,10 @@ namespace detail_surfop {
     const sctl::Long Q = n / 2 + 1, Nb = (R + FFT_ROWS - 1) / FFT_ROWS;
     SCTL_ASSERT(Qm <= Q);
     const sctl::FFT<Real>& fft = CachedFFT<Real>(sctl::FFT_Type::R2C, FFT_ROWS, n);
-    #pragma omp parallel num_threads(LoopThreads(R * n))
-    {
+    ForBlocks(Nb, R * n, [&](const sctl::Long b0, const sctl::Long b1) {
       sctl::ScratchBuf<Real> X_buf(FFT_ROWS * n), C_buf(FFT_ROWS * Q * 2);
       sctl::Vector<Real> X(X_buf), C(C_buf);
-      #pragma omp for schedule(static)
-      for (sctl::Long b = 0; b < Nb; b++) {
+      for (sctl::Long b = b0; b < b1; b++) {
         const sctl::Long r0 = b * FFT_ROWS, nr = std::min(FFT_ROWS, R - r0);
         for (sctl::Long i = 0; i < FFT_ROWS; i++) {
           if (i < nr) {
@@ -85,7 +101,7 @@ namespace detail_surfop {
         fft.Execute(X, C, false);
         for (sctl::Long i = 0; i < nr; i++) out(r0 + i, (sctl::ConstIterator<Real>)C.begin() + i * Q * 2);
       }
-    }
+    });
   }
 
   /**
@@ -97,12 +113,10 @@ namespace detail_surfop {
     const sctl::Long Q = n / 2 + 1, Nb = (R + FFT_ROWS - 1) / FFT_ROWS;
     SCTL_ASSERT(Qm <= Q);
     const sctl::FFT<Real>& fft = CachedFFT<Real>(sctl::FFT_Type::C2R, FFT_ROWS, n);
-    #pragma omp parallel num_threads(LoopThreads(R * n))
-    {
+    ForBlocks(Nb, R * n, [&](const sctl::Long b0, const sctl::Long b1) {
       sctl::ScratchBuf<Real> C_buf(FFT_ROWS * Q * 2), X_buf(FFT_ROWS * n);
       sctl::Vector<Real> C(C_buf), X(X_buf);
-      #pragma omp for schedule(static)
-      for (sctl::Long b = 0; b < Nb; b++) {
+      for (sctl::Long b = b0; b < b1; b++) {
         const sctl::Long r0 = b * FFT_ROWS, nr = std::min(FFT_ROWS, R - r0);
         for (sctl::Long i = 0; i < FFT_ROWS; i++) {
           const sctl::Iterator<Real> c = C.begin() + i * Q * 2;
@@ -113,7 +127,7 @@ namespace detail_surfop {
         fft.Execute(C, X, false);
         for (sctl::Long i = 0; i < nr; i++) out(r0 + i, (sctl::ConstIterator<Real>)X.begin() + i * n);
       }
-    }
+    });
   }
 
   /**
@@ -129,12 +143,10 @@ namespace detail_surfop {
     const sctl::Long Nb = ld / CB; // blocks of columns of each block of rows
     const sctl::FFT<Real>& fwd = CachedFFT<Real>(sctl::FFT_Type::C2C, CB, Nt0);
     const sctl::FFT<Real>& inv = CachedFFT<Real>(sctl::FFT_Type::C2C_INV, CB, Nt1);
-    #pragma omp parallel num_threads(LoopThreads(dof * Qm * (Nt0 + Nt1)))
-    {
+    ForBlocks(dof * Nb, dof * Qm * (Nt0 + Nt1), [&](const sctl::Long task0, const sctl::Long task1) {
       sctl::ScratchBuf<Real> a_buf(CB * Nt0 * 2), ahat_buf(CB * Nt0 * 2), bhat_buf(CB * Nt1 * 2), b_buf(CB * Nt1 * 2);
       sctl::Vector<Real> a(a_buf), ahat(ahat_buf), bhat(bhat_buf), b(b_buf);
-      #pragma omp for schedule(static)
-      for (sctl::Long task = 0; task < dof * Nb; task++) {
+      for (sctl::Long task = task0; task < task1; task++) {
         const sctl::Long k = task / Nb, q0 = (task % Nb) * CB;
         for (sctl::Long t = 0; t < Nt0; t++) {
           const sctl::ConstIterator<Real> src = A + ((k * Nt0 + t) * ld + q0) * 2;
@@ -158,7 +170,7 @@ namespace detail_surfop {
           }
         }
       }
-    }
+    });
   }
 
   /**

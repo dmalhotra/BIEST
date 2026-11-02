@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <vector>
 
 #include <biest/kernel.hpp>
 #include <biest/mat.hpp>
@@ -143,10 +142,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     static void SetPatch(sctl::Vector<Real>& out, sctl::Long t0, sctl::Long p0, const sctl::Vector<Real>& in, sctl::Long Nt, sctl::Long Np, sctl::Integer PATCH_DIM);
 
     sctl::Comm comm_;
-    // The tables of the last TABLES_KEPT quadratures, the most recent first: those of the setup, and those of the
-    // earlier ones, which a later setup with the same quadrature uses again instead of building them
-    static constexpr sctl::Integer TABLES_KEPT = 4;
-    std::vector<std::shared_ptr<const Precomp>> tables_;
+    std::shared_ptr<const Precomp> tables_; // the tables of the quadrature of the setup
     sctl::Long Nt_, Np_, Ntrg_, trg_dsp_; // the grid, and the targets of all the processes, of which the local ones are trg_dsp_ onwards
     sctl::Vector<sctl::Long> trg_t_, trg_p_; // the grid point of each local target
     sctl::Vector<Real> MGrid_; // the corrections of each local target (see Precomp)
@@ -204,23 +200,23 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 
     sctl::Vector<Real> Gpou(Ngrid);
     Real h = 1 / (Real)PATCH_RAD;
-    for (sctl::Integer i = 0; i < PATCH_DIM; i++){
+    sctl::omp_par::parallel_for(PATCH_DIM, [&](const sctl::Long i) {
       for (sctl::Integer j = 0; j < PATCH_DIM; j++){
         Real dr[2] = {(i - PATCH_RAD) * h, (j - PATCH_RAD) * h};
         Real r = sctl::sqrt<Real>(dr[0] * dr[0] + dr[1] * dr[1]);
         Gpou[i * PATCH_DIM + j] = -pou(r);
       }
-    }
+    });
 
     sctl::Vector<Real> Ppou(Npolar);
     Real dt = 2 * sctl::const_pi<Real>() / ANG_DIM;
-    for (sctl::Integer i = 0; i < RAD_DIM; i++){
+    sctl::omp_par::parallel_for(RAD_DIM, [&](const sctl::Long i) {
       for (sctl::Integer j = 0; j < ANG_DIM; j++){
         Real dr = qw[i] * PATCH_RAD;
         Real rdt = qx[i] * PATCH_RAD * dt;
         Ppou[i * ANG_DIM + j] = pou(qx[i]) * dr * rdt;
       }
-    }
+    });
     Gpou_.Swap(Gpou);
     Ppou_.Swap(Ppou);
     if (0) {
@@ -232,6 +228,8 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
       std::cout<<"POU error: "<<(double)fabs((sum0+sum1)/(fabs(sum0)+fabs(sum1)))<<'\n';
     }
   }
+  // The circle of coarse node n, from Mc_dsp (set below)
+  const auto circle = [this](const sctl::Long n) { return (sctl::Integer)(std::upper_bound(&Mc_dsp[0], &Mc_dsp[0] + RAD_DIM, n) - &Mc_dsp[0]) - 1; };
   { // Set Mc, Mc_dsp, Npc, U, U_dsp: on a circle of radius rho grid spacings, data that the grid resolves has angular
     // frequencies to about pi * rho
     Mc.ReInit(RAD_DIM);
@@ -249,17 +247,18 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     }
     U.ReInit(U_len);
     U.SetZero();
-    for (sctl::Integer i = 0; i < RAD_DIM; i++) { // U[l][j] = D(2 pi l / ANG_DIM - 2 pi j / M), with D(x) = sin(M x / 2) / (M tan(x / 2)) the interpolant of the M (even) angles; by columns, ANGp apart
-      const sctl::Integer M = Mc[i];
-      if (M == ANG_DIM) continue;
-      for (sctl::Integer j = 0; j < M; j++) {
-        for (sctl::Integer l = 0; l < ANG_DIM; l++) {
-          const Real x = 2 * sctl::const_pi<Real>() * (l / (Real)ANG_DIM - j / (Real)M);
-          const Real s = sctl::sin<Real>(x / 2);
-          U[U_dsp[i] + j * ANGp + l] = (sctl::fabs<Real>(s) < 1e-3 * sctl::machine_eps<Real>() ? (Real)1 : sctl::sin<Real>(M * x / 2) * sctl::cos<Real>(x / 2) / (M * s));
-        }
+    // U[l][j] = D(2 pi l / ANG_DIM - 2 pi j / M), with D(x) = sin(M x / 2) / (M tan(x / 2)) the interpolant of the M
+    // (even) angles; by columns, ANGp apart, one coarse node j of circle i a column, in parallel
+    sctl::omp_par::parallel_for(Npc, [&](const sctl::Long n) {
+      const sctl::Integer i = circle(n), M = Mc[i];
+      if (M == ANG_DIM) return;
+      const sctl::Long j = n - Mc_dsp[i];
+      for (sctl::Integer l = 0; l < ANG_DIM; l++) {
+        const Real x = 2 * sctl::const_pi<Real>() * (l / (Real)ANG_DIM - j / (Real)M);
+        const Real s = sctl::sin<Real>(x / 2);
+        U[U_dsp[i] + j * ANGp + l] = (sctl::fabs<Real>(s) < 1e-3 * sctl::machine_eps<Real>() ? (Real)1 : sctl::sin<Real>(M * x / 2) * sctl::cos<Real>(x / 2) / (M * s));
       }
-    }
+    });
   }
   { // Set I_G2P, W_G2P
     sctl::Vector<sctl::Long> I_G2P_(Npc);
@@ -277,26 +276,25 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
       }
       return p;
     };
-    for (sctl::Integer i0 = 0; i0 < RAD_DIM; i0++) {
+    sctl::omp_par::parallel_for(Npc, [&](const sctl::Long j0) { // coarse node i1 of circle i0
+      const sctl::Integer i0 = circle(j0);
+      const sctl::Long i1 = j0 - Mc_dsp[i0];
       const Real h_ang = 2 * sctl::const_pi<Real>() / Mc[i0];
-      for (sctl::Integer i1 = 0; i1 < Mc[i0]; i1++) {
-        Real x0 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::cos<Real>(h_ang * i1);
-        Real x1 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::sin<Real>(h_ang * i1);
+      Real x0 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::cos<Real>(h_ang * i1);
+      Real x1 = (Real)0.5 + (Real)0.5 * qx[i0] * sctl::sin<Real>(h_ang * i1);
 
-        sctl::Integer y0 = std::max<sctl::Integer>(0, std::min<sctl::Integer>((sctl::Integer)(x0 * (PATCH_DIM - 1) - (INTERP_ORDER - 1) / 2), PATCH_DIM - INTERP_ORDER));
-        sctl::Integer y1 = std::max<sctl::Integer>(0, std::min<sctl::Integer>((sctl::Integer)(x1 * (PATCH_DIM - 1) - (INTERP_ORDER - 1) / 2), PATCH_DIM - INTERP_ORDER));
+      sctl::Integer y0 = std::max<sctl::Integer>(0, std::min<sctl::Integer>((sctl::Integer)(x0 * (PATCH_DIM - 1) - (INTERP_ORDER - 1) / 2), PATCH_DIM - INTERP_ORDER));
+      sctl::Integer y1 = std::max<sctl::Integer>(0, std::min<sctl::Integer>((sctl::Integer)(x1 * (PATCH_DIM - 1) - (INTERP_ORDER - 1) / 2), PATCH_DIM - INTERP_ORDER));
 
-        Real z0 = (x0 * (PATCH_DIM - 1) - y0) * h;
-        Real z1 = (x1 * (PATCH_DIM - 1) - y1) * h;
+      Real z0 = (x0 * (PATCH_DIM - 1) - y0) * h;
+      Real z1 = (x1 * (PATCH_DIM - 1) - y1) * h;
 
-        const sctl::Long j0 = Mc_dsp[i0] + i1;
-        I_G2P_[j0] = y0 * PATCH_DIM + y1;
-        for (sctl::Integer j = 0; j < INTERP_ORDER; j++) {
-          W_G2P_[(j0 * 2 + 0) * INTERP_ORDER + j] = lagrange_interp(z0, j);
-          W_G2P_[(j0 * 2 + 1) * INTERP_ORDER + j] = lagrange_interp(z1, j);
-        }
+      I_G2P_[j0] = y0 * PATCH_DIM + y1;
+      for (sctl::Integer j = 0; j < INTERP_ORDER; j++) {
+        W_G2P_[(j0 * 2 + 0) * INTERP_ORDER + j] = lagrange_interp(z0, j);
+        W_G2P_[(j0 * 2 + 1) * INTERP_ORDER + j] = lagrange_interp(z1, j);
       }
-    }
+    });
     I_G2P.Swap(I_G2P_);
     W_G2P.Swap(W_G2P_);
   }
@@ -364,19 +362,11 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 }
 
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::Setup(const SingularQuadParams& params, sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) {
-  { // The tables of the quadrature, first in tables_: those kept if any, else new ones in place of the oldest
-    const auto same = [&params](const std::shared_ptr<const Precomp>& t) { return t->params.patch_rad == params.patch_rad && t->params.rad_nodes == params.rad_nodes && t->params.ang_nodes == params.ang_nodes; };
-    auto it = std::find_if(tables_.begin(), tables_.end(), same);
-    if (it == tables_.end()) {
-      if (tables_.capacity() < (size_t)TABLES_KEPT) tables_.reserve(TABLES_KEPT);
-      if (tables_.size() < (size_t)TABLES_KEPT) tables_.emplace_back();
-      it = tables_.end() - 1;
-      *it = nullptr; // the oldest freed before the new ones are built
-      *it = std::make_shared<const Precomp>(params);
-    }
-    std::rotate(tables_.begin(), it, it + 1);
+  if (!tables_ || tables_->params.patch_rad != params.patch_rad || tables_->params.rad_nodes != params.rad_nodes || tables_->params.ang_nodes != params.ang_nodes) {
+    tables_ = nullptr; // the old tables freed before the new ones are built
+    tables_ = std::make_shared<const Precomp>(params);
   }
-  const Precomp& T = *tables_[0];
+  const Precomp& T = *tables_;
   SCTL_ASSERT(Nt >= T.PATCH_DIM && Np >= T.PATCH_DIM);
   assert(KDIM0 == ker.Dim(0));
   assert(KDIM1 == ker.Dim(1));
@@ -414,7 +404,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> template <sctl::Integer IORD> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::SetupTarget(sctl::Long trg, const sctl::Vector<Real>& SrcCoord, const sctl::Vector<Real>& SrcGrad, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, sctl::Vector<Real>& work_buff) {
   const sctl::Long Nt = Nt_, Np = Np_, t = trg_t_[trg], p = trg_p_[trg];
 
-  const Precomp& tables = *tables_[0];
+  const Precomp& tables = *tables_;
   const sctl::Integer PATCH_DIM = tables.PATCH_DIM;
   const sctl::Integer RAD_DIM = tables.RAD_DIM;
   const sctl::Integer ANG_DIM = tables.ANG_DIM;
@@ -719,7 +709,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   sctl::Vector<Real> Uloc(Uloc_buf), Uglb(Uglb_buf);
   Uloc = 0;
   if (Nloc) {
-    const Precomp& T = *tables_[0];
+    const Precomp& T = *tables_;
     const sctl::Long N = KDIM0 * T.Ngrid, Kp = T.Kp;
     const sctl::Integer Nthread = omp_get_max_threads();
     sctl::omp_par::parallel_for(Nthread, [&](const sctl::Long tid) { // the targets i0 to i1

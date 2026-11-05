@@ -9,21 +9,24 @@
 #include <memory>
 
 #include <biest/kernel.hpp>
-#include <biest/mat.hpp>
 #include <sctl.hpp>
 
 namespace biest {
 
 /**
- * The singular quadrature at a target (see Singular quadrature in the documentation): the partition of unity on the
- * patch of the grid within patch_rad grid spacings of the target, and the polar grid on it, of rad_nodes radii and
- * ang_nodes angles. A value of zero is chosen from the tolerance and the anisotropy of the grid (see
- * SingularCorrection::QuadParams()).
+ * The singular quadrature (see Singular quadrature in the documentation): the quadrature grid, the surface grid
+ * upsampled upsample_t times in the toroidal direction and upsample_p times in the poloidal one; and at each target, the
+ * partition of unity on the patch of that grid within patch_rad grid spacings of the target, and the polar grid on it,
+ * of rad_nodes radii and ang_nodes angles. A value of zero is chosen from the tolerance and the anisotropy of the grid
+ * (see SingularCorrection::QuadGrid() and SingularCorrection::QuadParams()); the two upsampling factors are given
+ * together or not at all.
  */
 struct SingularQuadParams {
   sctl::Integer patch_rad = 0; ///< radius of the patch, in grid spacings: (2 patch_rad + 1)^2 grid points
   sctl::Integer rad_nodes = 0; ///< radial nodes of the polar grid
   sctl::Integer ang_nodes = 0; ///< angular nodes of the polar grid, an even number for principal values
+  sctl::Integer upsample_t = 0; ///< toroidal upsampling factor of the quadrature grid
+  sctl::Integer upsample_p = 0; ///< poloidal upsampling factor of the quadrature grid
 };
 
 /**
@@ -31,7 +34,7 @@ struct SingularQuadParams {
  * grid around it that, applied to a density, give the difference between the potential and its trapezoidal rule.
  *
  * @tparam HedgehogOrder 0 or 1 gives the principal value on the surface; a value in [2, 16] the one-sided limit from
- * the side opposite to the normal, by extrapolation from points off the surface (see BoundaryIntegralOp).
+ * the side opposite to the normal, by extrapolation from points off the surface (see FieldPeriodBIOp).
  */
 template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder = 1> class SingularCorrection {
     static constexpr sctl::Integer COORD_DIM = 3;
@@ -106,11 +109,23 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     static Real GridAnisotropy(const sctl::Vector<Real>& dX, const sctl::Long Nt, const sctl::Long Np, const Real gNt = 0, const Real gNp = 0);
 
     /**
+     * Returns the dimensions qNt x qNp of the quadrature grid of a surface for the tolerance tol: of the grids whose
+     * dimensions are multiples of mt and mp, at least twice dNt and dNp (the grid of the surface and the densities),
+     * on which the patch of the quadrature fits (quad.patch_rad, or that of QuadParams() for tol and the anisotropy of
+     * the grid) and whose anisotropy is at most max(6, 1.1 c), for the least anisotropy c of a grid of the surface,
+     * the one of the fewest points, and then of the least anisotropy. With quad.upsample_t and quad.upsample_p, the
+     * grid of those multiples of mt and mp. dX are the derivatives of the surface on an Nt x Np grid (see
+     * GridAnisotropy()).
+     */
+    static void QuadGrid(sctl::Long& qNt, sctl::Long& qNp, const sctl::Vector<Real>& dX, const sctl::Long Nt, const sctl::Long Np, const Real tol, const SingularQuadParams& quad, const sctl::Long dNt, const sctl::Long dNp, const sctl::Long mt, const sctl::Long mp);
+
+    /**
      * Set up the corrections at the targets, in the memory of the earlier setup when it is no larger.
      *
-     * @param[in] params the quadrature, every value given.
+     * @param[in] params the quadrature at the targets, every value given (the upsampling factors are not used).
      *
-     * @param[in] TRG_SKIP the targets are on the grid of every TRG_SKIP-th point of the surface grid.
+     * @param[in] skip_t, skip_p the targets are on the grid of every skip_t-th point of the surface grid in the
+     * toroidal direction and every skip_p-th in the poloidal one.
      *
      * @param[in] Nt, Np the dimensions of the surface grid.
      *
@@ -122,9 +137,9 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
      *
      * @param[in] normal_orient the orientation of the normal, 1 or -1 (see SurfaceOp::SurfNormalAreaElem()).
      *
-     * @param[in] trg_idx the targets: indices of points of the (Nt/TRG_SKIP) x (Np/TRG_SKIP) grid.
+     * @param[in] trg_idx the targets: indices of points of the (Nt/skip_t) x (Np/skip_p) grid.
      */
-    void Setup(const SingularQuadParams& params, sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx);
+    void Setup(const SingularQuadParams& params, sctl::Long skip_t, sctl::Long skip_p, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx);
 
     /**
      * Add the corrections for the density F on the Nt x Np grid to the potential U at the targets, in SoA order.
@@ -184,7 +199,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     qw.Swap(qw_);
   }
   { // Set Gpou, Ppou
-    auto pou = [&](Real r) {
+    auto pou = [this](Real r) {
       Real a = 0;
       Real b = 1;
       //return r < a ? 1 : (r >= b ? 0 : sctl::exp<Real>(1 - 1 / (1 - ((r-a)/(b-a)) * ((r-a)/(b-a)))) );
@@ -200,7 +215,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 
     sctl::Vector<Real> Gpou(Ngrid);
     Real h = 1 / (Real)PATCH_RAD;
-    sctl::omp_par::parallel_for(PATCH_DIM, [&](const sctl::Long i) {
+    sctl::omp_par::parallel_for(PATCH_DIM, [this,h,&Gpou,&pou](const sctl::Long i) {
       for (sctl::Integer j = 0; j < PATCH_DIM; j++){
         Real dr[2] = {(i - PATCH_RAD) * h, (j - PATCH_RAD) * h};
         Real r = sctl::sqrt<Real>(dr[0] * dr[0] + dr[1] * dr[1]);
@@ -210,7 +225,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 
     sctl::Vector<Real> Ppou(Npolar);
     Real dt = 2 * sctl::const_pi<Real>() / ANG_DIM;
-    sctl::omp_par::parallel_for(RAD_DIM, [&](const sctl::Long i) {
+    sctl::omp_par::parallel_for(RAD_DIM, [this,dt,&Ppou,&pou](const sctl::Long i) {
       for (sctl::Integer j = 0; j < ANG_DIM; j++){
         Real dr = qw[i] * PATCH_RAD;
         Real rdt = qx[i] * PATCH_RAD * dt;
@@ -229,27 +244,27 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     }
   }
   // The circle of coarse node n, from Mc_dsp (set below)
-  const auto circle = [this](const sctl::Long n) { return (sctl::Integer)(std::upper_bound(&Mc_dsp[0], &Mc_dsp[0] + RAD_DIM, n) - &Mc_dsp[0]) - 1; };
+  const auto circle = [this](const sctl::Long n) { return (sctl::Integer)(std::upper_bound(Mc_dsp.begin(), Mc_dsp.end(), n) - Mc_dsp.begin()) - 1; };
   { // Set Mc, Mc_dsp, Npc, U, U_dsp: on a circle of radius rho grid spacings, data that the grid resolves has angular
     // frequencies to about pi * rho
     Mc.ReInit(RAD_DIM);
     Mc_dsp.ReInit(RAD_DIM);
     U_dsp.ReInit(RAD_DIM);
-    Npc = 0;
-    sctl::Long U_len = 0;
+    sctl::ScratchBuf<sctl::Long> U_cnt(RAD_DIM); // the values of U of each circle
     for (sctl::Integer i = 0; i < RAD_DIM; i++) {
       const sctl::Integer m = (sctl::Integer)sctl::ceil<Real>(sctl::const_pi<Real>() * qx[i] * PATCH_RAD) + ANG_EXTRA;
       Mc[i] = (2 * m + 2 < ANG_DIM ? 2 * m + 2 : ANG_DIM);
-      Mc_dsp[i] = Npc;
-      U_dsp[i] = U_len;
-      Npc += Mc[i];
-      if (Mc[i] < ANG_DIM) U_len += ANGp * Mc[i];
+      U_cnt[i] = (Mc[i] < ANG_DIM ? ANGp * Mc[i] : 0);
     }
+    sctl::omp_par::scan(Mc.begin(), Mc_dsp.begin(), RAD_DIM, (sctl::Long)0);
+    sctl::omp_par::scan(U_cnt.begin(), U_dsp.begin(), RAD_DIM, (sctl::Long)0);
+    Npc = Mc_dsp[RAD_DIM - 1] + Mc[RAD_DIM - 1];
+    const sctl::Long U_len = U_dsp[RAD_DIM - 1] + U_cnt[RAD_DIM - 1];
     U.ReInit(U_len);
     U.SetZero();
     // U[l][j] = D(2 pi l / ANG_DIM - 2 pi j / M), with D(x) = sin(M x / 2) / (M tan(x / 2)) the interpolant of the M
     // (even) angles; by columns, ANGp apart, one coarse node j of circle i a column, in parallel
-    sctl::omp_par::parallel_for(Npc, [&](const sctl::Long n) {
+    sctl::omp_par::parallel_for(Npc, [this,&circle](const sctl::Long n) {
       const sctl::Integer i = circle(n), M = Mc[i];
       if (M == ANG_DIM) return;
       const sctl::Long j = n - Mc_dsp[i];
@@ -265,7 +280,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     sctl::Vector<Real> W_G2P_(Npc * 2 * INTERP_ORDER);
 
     Real h = 1 / (Real)(INTERP_ORDER - 1);
-    auto lagrange_interp = [&](Real x, sctl::Integer i) { // the weight of node i at x \in [0,1]
+    auto lagrange_interp = [this,h](Real x, sctl::Integer i) { // the weight of node i at x \in [0,1]
       Real p=1;
       Real z = i * h;
       for (sctl::Integer j = 0; j < INTERP_ORDER; j++) {
@@ -276,7 +291,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
       }
       return p;
     };
-    sctl::omp_par::parallel_for(Npc, [&](const sctl::Long j0) { // coarse node i1 of circle i0
+    sctl::omp_par::parallel_for(Npc, [this,&circle,h,&I_G2P_,&W_G2P_,&lagrange_interp](const sctl::Long j0) { // coarse node i1 of circle i0
       const sctl::Integer i0 = circle(j0);
       const sctl::Long i1 = j0 - Mc_dsp[i0];
       const Real h_ang = 2 * sctl::const_pi<Real>() / Mc[i0];
@@ -348,7 +363,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   const sctl::Long N = Nt * Np;
   const Real gNt = (gNt_ > 0 ? gNt_ : (Real)Nt), gNp = (gNp_ > 0 ? gNp_ : (Real)Np);
   SCTL_ASSERT(dX.Dim() == COORD_DIM * 2 * N);
-  return sctl::omp_par::parallel_reduce(N, (Real)1, [&](const sctl::Long i) { // the metric per grid spacing, [a c; c b], and the square root of the ratio of its eigenvalues (at least 1)
+  return sctl::omp_par::parallel_reduce(N, (Real)1, [&dX,N,gNt,gNp](const sctl::Long i) { // the metric per grid spacing, [a c; c b], and the square root of the ratio of its eigenvalues (at least 1)
     Real a = 0, b = 0, c = 0;
     for (sctl::Integer k = 0; k < COORD_DIM; k++) {
       const Real xt = dX[(k * 2 + 0) * N + i] / gNt, xp = dX[(k * 2 + 1) * N + i] / gNp;
@@ -361,7 +376,72 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   }, [](const Real x, const Real y) { return std::max<Real>(x, y); });
 }
 
-template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::Setup(const SingularQuadParams& params, sctl::Integer TRG_SKIP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) {
+template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::QuadGrid(sctl::Long& qNt, sctl::Long& qNp, const sctl::Vector<Real>& dX, const sctl::Long Nt, const sctl::Long Np, const Real tol, const SingularQuadParams& quad, const sctl::Long dNt, const sctl::Long dNp, const sctl::Long mt, const sctl::Long mp) {
+  SCTL_ASSERT_MSG(!quad.upsample_t == !quad.upsample_p, "SingularQuadParams: the upsampling factors must be given together or not at all.");
+  if (quad.upsample_t) {
+    qNt = quad.upsample_t * mt;
+    qNp = quad.upsample_p * mp;
+    return;
+  }
+
+  // The least anisotropy of a grid of the surface, which depends only on the ratio of its dimensions: by golden-section
+  // search on the logarithm of that ratio, about that of Nt x Np; the anisotropy at each point is a quasiconvex
+  // function of it, and so is their maximum
+  Real c_min;
+  {
+    const auto cond = [&dX, Nt, Np](const Real x) { return GridAnisotropy(dX, Nt, Np, Nt * sctl::exp<Real>(x), (Real)Np); };
+    const Real g = (sctl::sqrt<Real>(5) - 1) / 2;
+    Real a = -sctl::log<Real>(1024), b = sctl::log<Real>(1024);
+    Real x0 = b - g * (b - a), x1 = a + g * (b - a);
+    Real c0 = cond(x0), c1 = cond(x1);
+    for (sctl::Integer i = 0; i < 40; i++) {
+      if (c0 < c1) {
+        b = x1;
+        x1 = x0;
+        c1 = c0;
+        x0 = b - g * (b - a);
+        c0 = cond(x0);
+      } else {
+        a = x0;
+        x0 = x1;
+        c0 = c1;
+        x1 = a + g * (b - a);
+        c1 = cond(x1);
+      }
+    }
+    c_min = std::min<Real>(c0, c1);
+  }
+  if (c_min > 4) {
+    SCTL_WARN("The surface mesh is highly anisotropic! Quadrature generation will be very slow. Consider using a better surface discretization.");
+    std::cout<<"Mesh anisotropy = "<<c_min<<'\n';
+  }
+
+  // The grids of Ut mt x Up mp points, from the least Ut and Up for at least twice dNt x dNp, in order of their number
+  // of points; a grid narrower than the patch at the least anisotropy is skipped without computing its anisotropy, as
+  // the patch is nondecreasing in the anisotropy
+  const Real c_max = std::max<Real>(6, (Real)1.1 * c_min);
+  const auto patch_rad = [&quad, tol](const Real c) { return (quad.patch_rad ? quad.patch_rad : QuadParams(tol, c).patch_rad); };
+  const sctl::Long R_min = patch_rad(1);
+  const sctl::Long Ut0 = (2 * dNt + mt - 1) / mt, Up0 = (2 * dNp + mp - 1) / mp;
+  for (sctl::Long P = Ut0 * Up0; ; P++) {
+    bool found = false;
+    Real c_best = 0;
+    for (sctl::Long Ut = Ut0; Ut * Up0 <= P; Ut++) {
+      if (P % Ut) continue;
+      const sctl::Long gNt = Ut * mt, gNp = (P / Ut) * mp;
+      if (2 * R_min + 1 > std::min(gNt, gNp)) continue;
+      const Real c = GridAnisotropy(dX, Nt, Np, (Real)gNt, (Real)gNp);
+      if (c > c_max || 2 * patch_rad(c) + 1 > std::min(gNt, gNp) || (found && c >= c_best)) continue;
+      found = true;
+      c_best = c;
+      qNt = gNt;
+      qNp = gNp;
+    }
+    if (found) return;
+  }
+}
+
+template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer HedgehogOrder> void SingularCorrection<Real,KDIM0,KDIM1,HedgehogOrder>::Setup(const SingularQuadParams& params, sctl::Long skip_t, sctl::Long skip_p, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker, Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) {
   if (!tables_ || tables_->params.patch_rad != params.patch_rad || tables_->params.rad_nodes != params.rad_nodes || tables_->params.ang_nodes != params.ang_nodes) {
     tables_ = nullptr; // the old tables freed before the new ones are built
     tables_ = std::make_shared<const Precomp>(params);
@@ -380,15 +460,15 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   trg_dsp_ = a;
   trg_t_.ReInit(Nloc);
   trg_p_.ReInit(Nloc);
-  const sctl::Long Np0 = Np / TRG_SKIP;
+  const sctl::Long Np0 = Np / skip_p;
   for (sctl::Long i = 0; i < Nloc; i++) {
-    trg_t_[i] = (trg_idx[a + i] / Np0) * TRG_SKIP;
-    trg_p_[i] = (trg_idx[a + i] % Np0) * TRG_SKIP;
+    trg_t_[i] = (trg_idx[a + i] / Np0) * skip_t;
+    trg_p_[i] = (trg_idx[a + i] % Np0) * skip_p;
   }
   MGrid_.ReInit(Nloc * KDIM1 * T.Kp);
 
   const sctl::Integer Nthread = omp_get_max_threads();
-  sctl::omp_par::parallel_for(Nthread, [&](const sctl::Long tid) {
+  sctl::omp_par::parallel_for(Nthread, [this,Nloc,Nthread,&Xsrc,&dXsrc,&ker,normal_orient,&T](const sctl::Long tid) {
     // The work buffer of the thread, in its scratch memory, which the next setup uses again (see SurfaceOp::SurfGrad)
     sctl::ScratchBuf<Real> work_buff_buf(T.WorkBuffSize);
     sctl::Vector<Real> work_buff(work_buff_buf, false);
@@ -512,9 +592,9 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     // To coarse node j, the value of a component is a^T W b, for the INTERP_ORDER x INTERP_ORDER window W of its patch
     // values at I_G2P[j] and the 1D weights a, b of W_G2P: the rows of W scaled by a and summed, in vectors, then the
     // dot with b. COORD_DIM components at a time, Ngrid apart in Vin and Npc apart in Vout.
-    constexpr sctl::Integer NV_MAX = INTERP_ORDER_MAX / IVecLen;
+    static constexpr sctl::Integer NV_MAX = INTERP_ORDER_MAX / IVecLen;
     const sctl::Integer NV = INTERP_ORDER / IVecLen; // vectors in a row of a window
-    auto interp = [&](const sctl::Iterator<Real> Vout, const sctl::ConstIterator<Real> Vin) {
+    auto interp = [&I_G2P,Npc,&W_G2P,Ngrid,PATCH_DIM,INTERP_ORDER,NV](const sctl::Iterator<Real> Vout, const sctl::ConstIterator<Real> Vin) {
       for (sctl::Long j = 0; j < Npc; j++) {
         const sctl::ConstIterator<Real> a = W_G2P.begin() + j * 2 * INTERP_ORDER, b = a + INTERP_ORDER;
         const sctl::ConstIterator<Real> W = Vin + I_G2P[j];
@@ -598,7 +678,6 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
 
   { // Subtract singular part from U
     { // Subtract singular part from U
-      #ifndef DISABLE_FAR_FIELD
       ker.BuildMatrix(G, Gn, TrgCoord, MGrid);
       for (sctl::Integer k0 = 0; k0 < KDIM0; k0++) { // apply weights (Ga * Gpou)
         for (sctl::Integer k1 = 0; k1 < KDIM1; k1++) {
@@ -607,9 +686,6 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
           }
         }
       }
-      #else
-      MGrid.SetZero();
-      #endif
     }
     { // Add singular part to U
       sctl::Matrix<Real> MPolar(KDIM0 * Npolar, KDIM1 * HedgehogOrder_, work_buff.begin() + (Ngrid+VecLen+Npolar)*(COORD_DIM*4+1), false);
@@ -712,7 +788,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     const Precomp& T = *tables_;
     const sctl::Long N = KDIM0 * T.Ngrid, Kp = T.Kp;
     const sctl::Integer Nthread = omp_get_max_threads();
-    sctl::omp_par::parallel_for(Nthread, [&](const sctl::Long tid) { // the targets i0 to i1
+    sctl::omp_par::parallel_for(Nthread, [this,Nloc,Nthread,&F,&Uloc,Kp,N,dof,&T](const sctl::Long tid) { // the targets i0 to i1
       // The density on the patch of a target, padded with zeros to Kp values; its dot with each row of the corrections
       sctl::ScratchBuf<Real> GF_buf(Kp);
       sctl::Vector<Real> GF(N, GF_buf.begin(), false);

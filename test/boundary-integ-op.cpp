@@ -2,7 +2,7 @@
 // Author: Dhairya Malhotra
 // SPDX-License-Identifier: Apache-2.0
 
-// Tests of BoundaryIntegralOp and FieldPeriodBIOp with Gauss's identity: the Laplace double-layer potential of
+// Tests of FieldPeriodBIOp with Gauss's identity: the Laplace double-layer potential of
 // the density 1 is -1 inside the surface, -1/2 on it (principal value) and 0 outside.
 // Also a test of OffSurfaceOp with the single-layer potential, on a surface that is hard for its panels.
 
@@ -15,24 +15,32 @@ int main(int argc, char** argv) {
   const Real pi = sctl::const_pi<Real>();
   const auto& ker = biest::Laplace3D<Real>::DxU();
   const biest::SingularQuadParams quad{6, 10, 20}; // the patch radius, and the radial and angular nodes
-  const sctl::Vector<sctl::Vector<sctl::Long>> all; // the targets: all the grid points
   Results res;
 
-  { // BoundaryIntegralOp on one surface
+  // The surfaces below declare no field periods, unless stated: the densities on the full tori, on the surface grids,
+  // and the potential at all the grid points
+
+  { // FieldPeriodBIOp on one surface
     const sctl::Long Nt = 60, Np = 30, N = Nt * Np;
     sctl::Vector<biest::Surface<Real>> Svec(1);
     Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::RotatingEllipseWide);
-    biest::BoundaryIntegralOp<Real,1,1,1> op(comm);
-    op.SetupSingular(Svec, ker, all, 1e-10, quad);
+    biest::FieldPeriodBIOp<Real> op(comm);
+    op.SetupSingular(Svec, ker, (Real)1e-10, quad);
 
     sctl::Vector<Real> F(N), U;
     F = 1;
-    op(U, F);
-    res.Check("BoundaryIntegralOp: D[1] = -1/2 on the surface", MaxAbs(U + 0.5), 1e-4);
+    op.Eval(U, F, 1, Nt, Np);
+    res.Check("FieldPeriodBIOp: D[1] = -1/2 on the surface", MaxAbs(U + 0.5), 1e-4);
 
     sctl::Vector<Real> U2 = U;
-    op(U2, F);
-    res.Check("BoundaryIntegralOp: operator() adds into U of the right size", MaxRelDiff(U2, U * 2), 1e-15);
+    op.Eval(U2, F, 1, Nt, Np);
+    res.Check("FieldPeriodBIOp: Eval() adds into U of the right size", MaxRelDiff(U2, U * 2), 1e-15);
+
+    sctl::Vector<Real> F3, U3, U3ref; // two densities, F and 2 F, one after the other
+    for (const Real a : {1, 2}) for (const auto& f : F) F3.PushBack(a * f);
+    for (const Real a : {1, 2}) for (const auto& u : U) U3ref.PushBack(a * u);
+    op.Eval(U3, F3, 1, Nt, Np);
+    res.Check("FieldPeriodBIOp: Eval() of two densities one after the other", MaxRelDiff(U3, U3ref), 1e-10);
 
     { // EvalOffSurface at points close to the surface
       sctl::Vector<Real> dX, normal;
@@ -45,14 +53,14 @@ int main(int argc, char** argv) {
         Xin[i] = Svec[0].Coord()[i] - h * normal[i];
         Xout[i] = Svec[0].Coord()[i] + h * normal[i];
       }
-      op.EvalOffSurface(Uin, Xin, F, ker, 1e-10);
-      op.EvalOffSurface(Uout, Xout, F, ker, 1e-10);
-      res.Check("BoundaryIntegralOp::EvalOffSurface: D[1] = -1 inside, near the surface", MaxAbs(Uin + 1), 1e-8);
-      res.Check("BoundaryIntegralOp::EvalOffSurface: D[1] = 0 outside, near the surface", MaxAbs(Uout), 1e-8);
+      op.EvalOffSurface(Uin, Xin, F, 1, Nt, Np, ker, 1e-10);
+      op.EvalOffSurface(Uout, Xout, F, 1, Nt, Np, ker, 1e-10);
+      res.Check("FieldPeriodBIOp::EvalOffSurface: D[1] = -1 inside, near the surface", MaxAbs(Uin + 1), 1e-8);
+      res.Check("FieldPeriodBIOp::EvalOffSurface: D[1] = 0 outside, near the surface", MaxAbs(Uout), 1e-8);
     }
   }
 
-  { // BoundaryIntegralOp on two surfaces whose grids have opposite orientations, in both orders
+  { // FieldPeriodBIOp on two surfaces whose grids have opposite orientations, in both orders
     const sctl::Long Nt = 60, Np = 30, N = Nt * Np;
     const biest::Surface<Real> A(Nt, Np, biest::SurfType::AxisymCircleWide);
     biest::Surface<Real> B(Nt, Np, biest::SurfType::None);
@@ -68,17 +76,22 @@ int main(int argc, char** argv) {
       sctl::Vector<biest::Surface<Real>> Svec(2);
       Svec[0] = (B_first ? B : A);
       Svec[1] = (B_first ? A : B);
-      biest::BoundaryIntegralOp<Real,1,1,1> op(comm);
-      op.SetupSingular(Svec, ker, all, 1e-10, quad);
+      biest::FieldPeriodBIOp<Real> op(comm);
+      op.SetupSingular(Svec, ker, (Real)1e-10, quad);
+      sctl::Vector<sctl::Integer> NFP2(2);
+      sctl::Vector<sctl::Long> Nt2(2), Np2(2);
+      NFP2 = 1;
+      Nt2 = Nt;
+      Np2 = Np;
       sctl::Vector<Real> F(2 * N), U;
       F = 1;
-      op(U, F);
+      op.Eval(U, F, NFP2, Nt2, Np2);
       err = std::max<Real>(err, MaxAbs(U + 0.5));
     }
-    res.Check("BoundaryIntegralOp: two surfaces with opposite orientations", err, 1e-4);
+    res.Check("FieldPeriodBIOp: two surfaces with opposite orientations", err, 1e-4);
   }
 
-  { // BoundaryIntegralOp on two nested tori 0.1 apart, closer than the trapezoidal rule is accurate for (about 0.75
+  { // FieldPeriodBIOp on two nested tori 0.1 apart, closer than the trapezoidal rule is accurate for (about 0.75
     // toroidal grid spacings): the potential of each torus at the grid points of the other, against EvalOffSurface
     const auto torus = [pi](const sctl::Long Nt, const sctl::Long Np, const Real r) {
       biest::Surface<Real> S(Nt, Np, biest::SurfType::None);
@@ -102,13 +115,20 @@ int main(int argc, char** argv) {
     sctl::Vector<biest::Surface<Real>> Svec(2);
     Svec[0] = torus(60, 30, 0.3);
     Svec[1] = torus(48, 24, 0.2);
-    const auto check = [&](const auto& ker, const char* name) {
+    sctl::Vector<sctl::Integer> SurfNFP(2); // the densities on the full tori, on the surface grids
+    sctl::Vector<sctl::Long> SurfNt(2), SurfNp(2);
+    SurfNFP = 1;
+    for (sctl::Long s = 0; s < 2; s++) {
+      SurfNt[s] = Svec[s].NTor();
+      SurfNp[s] = Svec[s].NPol();
+    }
+    const auto check = [&comm,&Svec,&SurfNFP,&SurfNt,&SurfNp,&quad,&density,&res](const auto& ker, const char* name) {
       constexpr sctl::Integer KDIM1 = std::decay_t<decltype(ker)>::Dim(1);
-      biest::BoundaryIntegralOp<Real,1,KDIM1,1> op(comm);
-      op.SetupSingular(Svec, ker, all, 1e-10, quad);
+      biest::FieldPeriodBIOp<Real> op(comm);
+      op.SetupSingular(Svec, ker, (Real)1e-10, quad);
       sctl::Vector<Real> F, U;
       for (const auto& S : Svec) for (const auto& f : density(S)) F.PushBack(f);
-      op(U, F);
+      op.Eval(U, F, SurfNFP, SurfNt, SurfNp);
 
       sctl::Vector<Real> Uref; // for each surface t, its own potential and that of the other one, s
       for (sctl::Long t = 0; t < 2; t++) {
@@ -116,15 +136,15 @@ int main(int argc, char** argv) {
         sctl::Vector<biest::Surface<Real>> St(1), Ss(1);
         St[0] = Svec[t];
         Ss[0] = Svec[s];
-        biest::BoundaryIntegralOp<Real,1,KDIM1,1> op_t(comm), op_s(comm);
-        op_t.SetupSingular(St, ker, all, 1e-10, quad);
-        op_s.SetupSingular(Ss, ker, all, 1e-10, quad);
+        biest::FieldPeriodBIOp<Real> op_t(comm), op_s(comm);
+        op_t.SetupSingular(St, ker, (Real)1e-10, quad);
+        op_s.SetupSingular(Ss, ker, (Real)1e-10, quad);
         sctl::Vector<Real> U_t;
-        op_t(U_t, density(Svec[t]));
-        op_s.EvalOffSurface(U_t, Svec[t].Coord(), density(Svec[s]), ker, 1e-12);
+        op_t.Eval(U_t, density(Svec[t]), 1, SurfNt[t], SurfNp[t]);
+        op_s.EvalOffSurface(U_t, Svec[t].Coord(), density(Svec[s]), 1, SurfNt[s], SurfNp[s], ker, 1e-12);
         for (const auto& u : U_t) Uref.PushBack(u);
       }
-      res.Check((std::string("BoundaryIntegralOp: two tori 0.1 apart, ") + name + " = own + EvalOffSurface").c_str(), MaxRelDiff(U, Uref), 1e-9);
+      res.Check((std::string("FieldPeriodBIOp: two tori 0.1 apart, ") + name + " = own + EvalOffSurface").c_str(), MaxRelDiff(U, Uref), 1e-9);
 
       sctl::Vector<Real> F2, U2, U2ref; // two densities, F and 2 F, stacked surface by surface
       sctl::Long offset = 0;
@@ -133,14 +153,14 @@ int main(int argc, char** argv) {
         for (const Real a : {1, 2}) for (sctl::Long i = 0; i < N; i++) F2.PushBack(a * F[offset + i]);
         offset += N;
       }
-      op(U2, F2);
+      op.Eval(U2, F2, SurfNFP, SurfNt, SurfNp);
       offset = 0;
       for (sctl::Long t = 0; t < 2; t++) {
         const sctl::Long M = KDIM1 * Svec[t].NTor() * Svec[t].NPol();
         for (const Real a : {1, 2}) for (sctl::Long i = 0; i < M; i++) U2ref.PushBack(a * U[offset + i]);
         offset += M;
       }
-      res.Check((std::string("BoundaryIntegralOp: two tori 0.1 apart, ") + name + " of two stacked densities").c_str(), MaxRelDiff(U2, U2ref), 1e-10);
+      res.Check((std::string("FieldPeriodBIOp: two tori 0.1 apart, ") + name + " of two stacked densities").c_str(), MaxRelDiff(U2, U2ref), 1e-10);
     };
     check(biest::Laplace3D<Real>::FxU(), "S[F]");
     check(biest::Laplace3D<Real>::FxdU(), "grad S[F]");
@@ -150,12 +170,12 @@ int main(int argc, char** argv) {
     const sctl::Long Nt = 120, Np = 60, N = Nt * Np;
     sctl::Vector<biest::Surface<Real>> Svec(1);
     Svec[0] = biest::Surface<Real>(Nt, Np, biest::SurfType::AxisymCircleWide);
-    biest::BoundaryIntegralOp<Real,1,1,1,4> op(comm);
-    op.SetupSingular(Svec, ker, all, 1e-10, {12, 60, 40});
+    biest::FieldPeriodBIOp<Real,4> op(comm);
+    op.SetupSingular(Svec, ker, (Real)1e-10, {12, 60, 40});
     sctl::Vector<Real> F(N), U;
     F = 1;
-    op(U, F);
-    res.Check("BoundaryIntegralOp<HedgehogOrder=4>: D[1] = -1 (interior limit)", MaxAbs(U + 1), 1e-3);
+    op.Eval(U, F, 1, Nt, Np);
+    res.Check("FieldPeriodBIOp<HedgehogOrder=4>: D[1] = -1 (interior limit)", MaxAbs(U + 1), 1e-3);
   }
 
   { // OffSurfaceOp: the single-layer potential S[1] far from an axisymmetric torus whose cross-section
@@ -216,10 +236,10 @@ int main(int argc, char** argv) {
     res.Check((name + "ToroidalOrientation").c_str(), (biest::SurfaceOp<Real>::ToroidalOrientation(X, Nt, Np) == orient ? 0 : 1), 0);
 
     sctl::Vector<biest::Surface<Real>> Svec(1);
-    Svec[0] = biest::FieldPeriodBIOp<Real,COORD_DIM,1,1>::BuildSurface(X, NFP, Nt, Np);
+    Svec[0] = biest::Surface<Real>(NFP, Nt, Np, X);
     { // scalar density
-      biest::FieldPeriodBIOp<Real,COORD_DIM,1,1> biop(comm);
-      biop.SetupSingular(Svec, ker, digits, NFP, NFP * Nt, Np, Nt, Np);
+      biest::FieldPeriodBIOp<Real> biop(comm);
+      biop.SetupSingular(Svec[0], ker, digits, NFP, Nt, Np);
 
       sctl::Vector<Real> F(Nt * Np), U;
       F = 1;
@@ -242,8 +262,8 @@ int main(int argc, char** argv) {
         }
         return F;
       };
-      biest::FieldPeriodBIOp<Real,COORD_DIM,3,3> biop(comm);
-      biop.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU(), digits, NFP, NFP * Nt, Np, Nt, Np);
+      biest::FieldPeriodBIOp<Real> biop(comm);
+      biop.SetupSingular(Svec[0], biest::BiotSavart3D<Real>::FxU(), digits, NFP, Nt, Np);
       sctl::Vector<Real> U, U_full;
       biop.Eval(U, density(X), NFP, Nt, Np);
       biop.Eval(U_full, density(Svec[0].Coord()), 1, NFP * Nt, Np);
@@ -251,11 +271,11 @@ int main(int argc, char** argv) {
     }
   }
 
-  { // FieldPeriodBIOp on two nested tori with 3 field periods 0.1 apart: on one field period, the potential of
-    // BoundaryIntegralOp on the full tori, with the density given on the full tori or on one field period; and the
-    // double-layer identity with the quadrature from digits
+  { // FieldPeriodBIOp on two nested tori with 3 field periods 0.1 apart: on one field period, the potential on the full
+    // tori of the same tori without their field periods, with the density given on the full tori or on one field
+    // period; and the double-layer identity with the quadrature for a tolerance
     const sctl::Integer NFP = 3;
-    const auto torus = [pi,NFP](const sctl::Long Nt, const sctl::Long Np, const Real r) {
+    const auto torus = [pi](const sctl::Long Nt, const sctl::Long Np, const Real r) {
       biest::Surface<Real> S(Nt, Np, biest::SurfType::None);
       for (sctl::Long t = 0; t < Nt; t++) {
         for (sctl::Long p = 0; p < Np; p++) {
@@ -273,8 +293,9 @@ int main(int argc, char** argv) {
     Svec[0] = torus(60, 30, 0.3);
     Svec[1] = torus(48, 24, 0.2);
 
-    { // the quadrature given, against BoundaryIntegralOp
+    { // the quadrature given, without upsampling (the densities on the surface grids), against the full tori
       const auto& ker = biest::Laplace3D<Real>::FxdU();
+      const biest::SingularQuadParams quad1{quad.patch_rad, quad.rad_nodes, quad.ang_nodes, 1, 1};
       sctl::Vector<Real> F, F1; // 1 + z + x^2 + y^2 (invariant under the rotations) on the full tori, and on one period
       for (const auto& S : Svec) {
         const sctl::Long N = S.NTor() * S.NPol();
@@ -284,10 +305,19 @@ int main(int argc, char** argv) {
           if (i < N / NFP) F1.PushBack(1 + z + x * x + y * y);
         }
       }
-      biest::BoundaryIntegralOp<Real,1,3,1> op(comm);
-      op.SetupSingular(Svec, ker, all, 1e-10, quad);
+      sctl::Vector<biest::Surface<Real>> Svec1 = Svec; // the tori without their field periods
+      sctl::Vector<sctl::Integer> SurfNFP(2); // the densities on the full tori, on the surface grids
+      sctl::Vector<sctl::Long> SurfNt(2), SurfNp(2);
+      SurfNFP = 1;
+      for (sctl::Long s = 0; s < 2; s++) {
+        Svec1[s].SetNFP(1);
+        SurfNt[s] = Svec[s].NTor();
+        SurfNp[s] = Svec[s].NPol();
+      }
+      biest::FieldPeriodBIOp<Real> op(comm);
+      op.SetupSingular(Svec1, ker, (Real)1e-10, quad1);
       sctl::Vector<Real> U, Uref; // Uref: U on one field period
-      op(U, F);
+      op.Eval(U, F, SurfNFP, SurfNt, SurfNp);
       sctl::Long offset = 0;
       for (const auto& S : Svec) {
         const sctl::Long N = S.NTor() * S.NPol();
@@ -297,35 +327,51 @@ int main(int argc, char** argv) {
         offset += 3 * N;
       }
 
-      biest::FieldPeriodBIOp<Real,COORD_DIM,1,3> fp_op(comm);
-      fp_op.SetupSingular<1>(Svec, ker, 1e-10, quad);
+      biest::FieldPeriodBIOp<Real> fp_op(comm);
+      fp_op.SetupSingular(Svec, ker, 1e-10, quad1);
       sctl::Vector<Real> Ufp, Ufp1;
-      fp_op(Ufp, F);
+      fp_op.Eval(Ufp, F, SurfNFP, SurfNt, SurfNp);
+      sctl::Vector<sctl::Integer> NFP1(2);
       sctl::Vector<sctl::Long> Nt1(2), Np1(2);
+      NFP1 = NFP;
       for (sctl::Long s = 0; s < 2; s++) {
         Nt1[s] = Svec[s].NTor() / NFP;
         Np1[s] = Svec[s].NPol();
       }
-      fp_op.Eval(Ufp1, F1, NFP, Nt1, Np1);
-      res.Check("FieldPeriodBIOp, two tori with 3 field periods: = BoundaryIntegralOp on one period", MaxRelDiff(Ufp, Uref), 1e-13);
+      fp_op.Eval(Ufp1, F1, NFP1, Nt1, Np1);
+      res.Check("FieldPeriodBIOp, two tori with 3 field periods: = on the full tori, on one period", MaxRelDiff(Ufp, Uref), 1e-13);
       res.Check("FieldPeriodBIOp, two tori with 3 field periods: the density on one period", MaxRelDiff(Ufp1, Uref), 1e-13);
+
+      sctl::Vector<Real> Fmix, Ufp_mix; // the density on one period of the first torus and on the full second torus
+      const sctl::Long N0 = Svec[0].NTor() * Svec[0].NPol();
+      for (sctl::Long i = 0; i < N0 / NFP; i++) Fmix.PushBack(F1[i]);
+      for (sctl::Long i = N0; i < F.Dim(); i++) Fmix.PushBack(F[i]);
+      sctl::Vector<sctl::Integer> NFPmix(2);
+      sctl::Vector<sctl::Long> Ntmix(2);
+      NFPmix[0] = NFP;
+      NFPmix[1] = 1;
+      Ntmix[0] = Nt1[0];
+      Ntmix[1] = SurfNt[1];
+      fp_op.Eval(Ufp_mix, Fmix, NFPmix, Ntmix, SurfNp);
+      res.Check("FieldPeriodBIOp, two tori with 3 field periods: the density on one period of one torus, the full other", MaxRelDiff(Ufp_mix, Uref), 1e-13);
     }
-    { // the quadrature from digits: D[1] of both = -1/2 + 0 on the outer torus and -1/2 - 1 on the inner one
-      const sctl::Integer digits = 8;
-      sctl::Vector<sctl::Long> trg_Nt(2), trg_Np(2);
+    { // the quadrature for the tolerance 1e-8: D[1] of both = -1/2 + 0 on the outer torus and -1/2 - 1 on the inner one
+      sctl::Vector<sctl::Integer> trg_NFP(2);
+      sctl::Vector<sctl::Long> trg_Nt(2), trg_Np(2); // one field period of the grids
+      trg_NFP = NFP;
       for (sctl::Long s = 0; s < 2; s++) {
         trg_Nt[s] = Svec[s].NTor() / NFP;
         trg_Np[s] = Svec[s].NPol();
       }
-      biest::FieldPeriodBIOp<Real,COORD_DIM,1,1> fp_op(comm);
-      fp_op.SetupSingular(Svec, ker, digits, trg_Nt, trg_Np);
-      sctl::Vector<Real> F(fp_op.Dim(0)), U;
+      biest::FieldPeriodBIOp<Real> fp_op(comm);
+      fp_op.SetupSingular(Svec, ker, (Real)1e-8);
+      sctl::Vector<Real> F(trg_Nt[0] * trg_Np[0] + trg_Nt[1] * trg_Np[1]), U;
       F = 1;
-      fp_op(U, F);
+      fp_op.Eval(U, F, trg_NFP, trg_Nt, trg_Np);
       Real err = 0;
       const sctl::Long M0 = trg_Nt[0] * trg_Np[0];
       for (sctl::Long i = 0; i < U.Dim(); i++) err = std::max<Real>(err, sctl::fabs<Real>(U[i] - (i < M0 ? -0.5 : -1.5)));
-      res.Check("FieldPeriodBIOp from digits (8), two tori with 3 field periods: D[1] = -1/2, -3/2", err, 1e-7);
+      res.Check("FieldPeriodBIOp for the tolerance 1e-8, two tori with 3 field periods: D[1] = -1/2, -3/2", err, 1e-7);
     }
   }
 

@@ -17,6 +17,21 @@ int main(int argc, char** argv) {
     sctl::Comm comm = sctl::Comm::Self();
     sctl::Profile::Enable(true);
 
+    // The single layer of FieldPeriodBIOp, with the quadrature quad, as the preconditioner of the Laplace-Beltrami solve of
+    // SurfaceOp::test_InvSurfLap()
+    const auto sl_precond = [&comm](const sctl::Long Nt, const sctl::Long Np, const biest::SurfType surf_type, const Real gmres_tol, const sctl::Long gmres_iter, const biest::SingularQuadParams& quad) {
+      sctl::Profile::Tic("SLayerPrecond", &comm);
+      sctl::Profile::Tic("Setup", &comm);
+      sctl::Vector<biest::Surface<Real>> Svec(1);
+      Svec[0] = biest::Surface<Real>(Nt, Np, surf_type);
+      biest::FieldPeriodBIOp<Real> integ_op(comm);
+      integ_op.SetupSingular(Svec, biest::Laplace3D<Real>::FxU(), (Real)1e-10, quad);
+      std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> SPrecond = [&integ_op, Nt, Np](sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) { integ_op.Eval(Sx, x, 1, Nt, Np); };
+      sctl::Profile::Toc();
+      biest::SurfaceOp<Real>::test_InvSurfLap(Nt, Np, surf_type, gmres_tol, gmres_iter, &SPrecond, &SPrecond, comm);
+      sctl::Profile::Toc();
+    };
+
     { // SurfaceOp::test_InvSurfLap
       biest::SurfaceOp<Real>::test_InvSurfLap( 70,  14, biest::SurfType::Quas3, 2.4e-01, 100, nullptr, nullptr, comm);
       biest::SurfaceOp<Real>::test_InvSurfLap(140,  28, biest::SurfType::Quas3, 3.5e-03, 100, nullptr, nullptr, comm);
@@ -29,16 +44,16 @@ int main(int argc, char** argv) {
       biest::SurfaceOp<Real>::test_InvSurfLap(630, 126, biest::SurfType::Quas3, 3.0e-08, 100, nullptr, nullptr, comm);
       biest::SurfaceOp<Real>::test_InvSurfLap(700, 140, biest::SurfType::Quas3, 9.8e-09, 100, nullptr, nullptr, comm);
 
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond( 70,  14, biest::SurfType::Quas3, 1.0e+00, 100, comm, {6, 15, 30});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(140,  28, biest::SurfType::Quas3, 8.8e-02, 100, comm, {12, 24, 48});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(210,  42, biest::SurfType::Quas3, 1.3e-02, 100, comm, {15, 27, 54});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(280,  56, biest::SurfType::Quas3, 1.5e-03, 100, comm, {15, 30, 60});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(350,  70, biest::SurfType::Quas3, 1.9e-04, 100, comm, {20, 33, 66});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(420,  84, biest::SurfType::Quas3, 5.1e-05, 100, comm, {20, 36, 72});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(490,  98, biest::SurfType::Quas3, 1.1e-05, 100, comm, {20, 36, 72});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(560, 112, biest::SurfType::Quas3, 2.1e-06, 100, comm, {25, 39, 78});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(630, 126, biest::SurfType::Quas3, 7.5e-07, 100, comm, {25, 39, 78});
-      biest::BoundaryIntegralOp<Real, 1, 1, 1>::test_Precond(700, 140, biest::SurfType::Quas3, 2.4e-07, 100, comm, {25, 42, 84});
+      sl_precond( 70,  14, biest::SurfType::Quas3, 1.0e+00, 100, {6, 15, 30, 1, 1});
+      sl_precond(140,  28, biest::SurfType::Quas3, 8.8e-02, 100, {12, 24, 48, 1, 1});
+      sl_precond(210,  42, biest::SurfType::Quas3, 1.3e-02, 100, {15, 27, 54, 1, 1});
+      sl_precond(280,  56, biest::SurfType::Quas3, 1.5e-03, 100, {15, 30, 60, 1, 1});
+      sl_precond(350,  70, biest::SurfType::Quas3, 1.9e-04, 100, {20, 33, 66, 1, 1});
+      sl_precond(420,  84, biest::SurfType::Quas3, 5.1e-05, 100, {20, 36, 72, 1, 1});
+      sl_precond(490,  98, biest::SurfType::Quas3, 1.1e-05, 100, {20, 36, 72, 1, 1});
+      sl_precond(560, 112, biest::SurfType::Quas3, 2.1e-06, 100, {25, 39, 78, 1, 1});
+      sl_precond(630, 126, biest::SurfType::Quas3, 7.5e-07, 100, {25, 39, 78, 1, 1});
+      sl_precond(700, 140, biest::SurfType::Quas3, 2.4e-07, 100, {25, 42, 84, 1, 1});
 
       //  Nt      Np       gmres_tol   gmres_iter   Rel-InfError    Solve_1   Solve_60
       //  70      14         2.4e-01            1        3.7e-01     0.0014     0.0052

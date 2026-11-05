@@ -8,7 +8,7 @@
 Evaluating Layer Potentials
 ===========================
 
-The ``BoundaryIntegralOp`` class evaluates layer potentials
+The ``FieldPeriodBIOp`` class evaluates layer potentials
 
 .. math::
 
@@ -16,20 +16,21 @@ The ``BoundaryIntegralOp`` class evaluates layer potentials
 
 on toroidal surfaces, with high-order accuracy at the grid points of the surface (where the kernel is singular) and at points off the surface.
 It is the building block of the solvers, and can be used directly, for example for the virtual casing principle.
+This page uses a surface that declares no field periods: the densities are given on the full torus and the potential is computed at all the grid points (for surfaces with field periods, see :ref:`Layer potentials with field-period symmetry <tutorial-field-period>`).
 For the method see :ref:`Singular quadrature <algorithms-singular-quadrature>`, and for the full API :ref:`boundary_integ_op.hpp <boundary_integ_op_hpp>` and :ref:`kernel.hpp <kernel_hpp>`.
 
 1. Set up the operator
 ----------------------
 
-The template parameters are the number of components of the density and of the potential (which must match the kernel), and the upsampling of the grid for the quadrature.
-``SetupSingular`` takes the vector of surfaces, the kernel, the targets (all the grid points when empty) and a tolerance (``1e-10`` by default), and precomputes the singular corrections.
-The tolerance sets the singular quadrature, with the anisotropy of the grid (see :ref:`Choosing the parameters <algorithms-quadrature-params>`); a ``SingularQuadParams`` after it gives the quadrature instead.
+The number of components of the density and of the potential are those of the kernel given to ``SetupSingular``.
+``SetupSingular`` takes the vector of surfaces, the kernel and a tolerance, and precomputes the singular corrections at the targets, the grid points of one field period of each surface: here all the grid points.
+The tolerance sets the quadrature grid, the surface grid upsampled at least twice in each direction, and the singular quadrature on it, with the anisotropy of the grid (see :ref:`Upsampling <algorithms-upsampling>` and :ref:`Choosing the parameters <algorithms-quadrature-params>`); a ``SingularQuadParams`` after it gives the quadrature instead.
 With several surfaces, the potential of each surface at the grid points of the others is the trapezoidal rule, except at the grid points too close to the surface for it, where it is computed as by ``EvalOffSurface``, to the same tolerance (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`).
 The code on this page is from the :ref:`virtual casing example <tutorial-virtual-casing>` below, which uses the layer potentials of the Biot--Savart kernel (3 density components, 3 potential components) and of the gradient of the Laplace single layer (1 density component, 3 potential components):
 
 .. literalinclude:: ../examples/layer-potentials.cpp
    :language: c++
-   :start-at: constexpr int UPSAMPLE = 1;
+   :start-at: const Real tol = 1e-12;
    :end-at: LaplaceGrad.SetupSingular(
    :dedent: 2
 
@@ -39,12 +40,12 @@ A ``Helmholtz3D`` object holds its wavenumber and must outlive the operators tha
 2. Evaluate on the surface
 --------------------------
 
-The densities (here ``NxB`` and ``BdotN``) and the potentials are given on the grid points, in the same layout as the surface coordinates:
+``Eval`` takes the densities (here ``NxB`` and ``BdotN``), the number of field periods they are given on (here 1, the full torus) and their grid (here the surface grid), and returns the potentials at the targets; both are in the same layout as the surface coordinates:
 
 .. literalinclude:: ../examples/layer-potentials.cpp
    :language: c++
    :start-at: sctl::Vector<Real> curlS, gradS;
-   :end-at: LaplaceGrad(gradS, BdotN);
+   :end-at: LaplaceGrad.Eval(gradS, BdotN, 1, Nt, Np);
    :dedent: 4
 
 If the potential vector already has the right size, the potential is added to it. Several densities can be stored one after the other; the potentials are then returned in the same order.
@@ -53,7 +54,7 @@ For kernels of principal-value type (the gradient of the single layer, the doubl
 3. Evaluate off the surface
 ---------------------------
 
-``EvalOffSurface`` evaluates the potential at points ``Xt`` (in SoA order, ``{x1, x2, ..., y1, ..., z1, ...}``) at any distance from the surface, to the requested accuracy. It must be given the same kernel object as ``SetupSingular``:
+``EvalOffSurface`` evaluates the potential at points ``Xt`` (in SoA order, ``{x1, x2, ..., y1, ..., z1, ...}``) at any distance from the surface, to the requested accuracy. It must be given the same kernel object as ``SetupSingular``, and the densities as ``Eval``:
 
 .. literalinclude:: ../examples/layer-potentials.cpp
    :language: c++
@@ -96,8 +97,8 @@ In the complete program ``doc/examples/layer-potentials.cpp`` below, :math:`\mat
 
 .. code-block:: text
 
-   on the surface:  relative error = 1.95176e-10
-   off the surface: relative error = 4.77692e-10
+   on the surface:  relative error = 1.62961e-13
+   off the surface: relative error = 4.7769e-10
 
 The `virtual-casing <https://github.com/hiddenSymmetries/virtual-casing>`_ library, which is built on BIEST, implements the same formulas with field-period and stellarator symmetry, and has Python bindings.
 

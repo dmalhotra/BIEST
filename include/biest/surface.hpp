@@ -46,8 +46,7 @@ enum class SurfType {
  * Np grid in the toroidal and poloidal angles, in SoA order. A surface may
  * have NFP toroidal field periods: its coordinates are then invariant under
  * the rotation by 2*pi/NFP about the z-axis, which maps the grid points of one
- * field period to those of the next, and the solvers solve on one field
- * period.
+ * field period to those of the next.
  */
 template <class Real> class Surface {
     static constexpr sctl::Integer COORD_DIM = 3;

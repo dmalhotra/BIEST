@@ -34,16 +34,13 @@ int main(int argc, char** argv) {
     WriteVTK("f", Svec, f); // visualize f
 
     // Setup the boundary integral operator
-    constexpr int DENSITY_DOF = 1; // degree-of-freedom of density function at each grid point
-    constexpr int POTENTIAL_DOF = 1; // degree-of-freedom of the potential at each grid point
-    constexpr int UPSAMPLE = 1; // upsample factor for the quadrature
-    const Real tol = 1e-10; // accuracy of the singular quadrature, which sets its patch and polar grid
-    biest::BoundaryIntegralOp<Real, DENSITY_DOF, POTENTIAL_DOF, UPSAMPLE> LaplaceSingleLayer;
-    LaplaceSingleLayer.SetupSingular(Svec, biest::Laplace3D<Real>::FxU(), sctl::Vector<sctl::Vector<sctl::Long>>(), tol);
+    const Real tol = 1e-10; // accuracy of the singular quadrature, which sets its grid, patch and polar grid
+    biest::FieldPeriodBIOp<Real> LaplaceSingleLayer;
+    LaplaceSingleLayer.SetupSingular(Svec, biest::Laplace3D<Real>::FxU(), tol);
 
     // Evaluate boundary integral operator
     sctl::Vector<Real> u;
-    LaplaceSingleLayer(u, f);
+    LaplaceSingleLayer.Eval(u, f, 1, Nt, Np);
     WriteVTK("u", Svec, u); // visualize f
   }
   return 0;

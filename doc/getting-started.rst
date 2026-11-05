@@ -124,7 +124,7 @@ The predefined surfaces ``SurfType::Quas3``, ``SurfType::LHD`` and ``SurfType::W
    * - ``double-layer-convergence``
      - Convergence of the Laplace double-layer potential (Gauss's identity) on a torus and on W7-X.
    * - ``virtual-casing-principle``
-     - Convergence study of virtual casing computations with ``BoundaryIntegralOp`` on W7-X. It first computes a reference solution on a fine grid, which takes several hours.
+     - Convergence study of virtual casing computations with ``FieldPeriodBIOp`` on W7-X. It first computes a reference solution on a fine grid, which takes several hours.
    * - ``table1``, ``table3`` ... ``table7``
      - Codes used to generate the tables in the :ref:`Taylor states paper <biest_citing>`.
 
@@ -185,6 +185,6 @@ The BIEST library extends these features with:
 
 - :ref:`ExtVacuumField and IntVacuumField classes <tutorial-ext-vacuum>` for computing vacuum fields outside or inside a surface with a given normal component, with toroidal field-period symmetry.
 
-- :ref:`BoundaryIntegralOp and FieldPeriodBIOp classes <tutorial-layer-potentials>` for evaluating layer potentials (Laplace, Biot--Savart, Helmholtz and Stokes kernels) on toroidal surfaces to high order accuracy, at on-surface and off-surface points.
+- :ref:`FieldPeriodBIOp class <tutorial-layer-potentials>` for evaluating layer potentials (Laplace, Biot--Savart, Helmholtz and Stokes kernels) on toroidal surfaces to high order accuracy, at on-surface and off-surface points.
 
 - :ref:`SurfaceOp class <tutorial-surface-op>` for spectral differential operators on surfaces (gradient, divergence, curl, Laplace--Beltrami operator and its inverse, Hodge decomposition) and for Fourier resampling.

@@ -22,7 +22,7 @@ The trapezoidal rule, which is spectrally accurate for smooth periodic integrand
 The standard method in fusion codes (singularity subtraction, as in NESTOR) leaves an integrand with a jump and
 converges at second order ([MCOT2020]_, Sec. 3.1). BIEST uses a high-order method that converges spectrally
 ([MCIO2019]_, Sec. 3.2; [MCOT2020]_, Sec. 3.2), based on the methods of Bruno and Kunyansky and of Ying, Biros and Zorin.
-It is implemented in ``BoundaryIntegralOp`` (with the class ``SingularCorrection``).
+It is implemented in ``FieldPeriodBIOp`` (with the class ``SingularCorrection``).
 
 Partition of unity
 ------------------
@@ -145,20 +145,42 @@ the trapezoidal rule plus a correction that acts only on the :math:`(2R+1)^2` gr
 
 - **Setup** (``SetupSingular``): :math:`\mathcal{O}(n_\rho n_\omega)` kernel evaluations and interpolations per target, done
   once for a given surface and kernel.
-- **Evaluation** (``operator()``): the :math:`\mathcal{O}(N^2)` trapezoidal sum, plus :math:`\mathcal{O}(R^2)` operations
+- **Evaluation** (``Eval``): the :math:`\mathcal{O}(N^2)` trapezoidal sum, plus :math:`\mathcal{O}(R^2)` operations
   per target for the correction. No kernel evaluation or interpolation of the density is needed for the correction,
   which matters when the operator is applied many times inside GMRES.
 - **Memory**: :math:`k_0 k_1 (2R+1)^2` numbers per target, for a kernel with :math:`k_0` density and :math:`k_1`
   potential components. For example, 173 KB per target for the Biot--Savart kernel with :math:`R = 24`.
 
+.. _algorithms-upsampling:
+
 Upsampling
 ----------
 
-The template parameter ``UPSAMPLE`` upsamples the surface and the density by this factor in each direction (with
-the FFT) before applying the quadrature; the targets remain the original grid points. The patch radius :math:`R`
-is measured in grid spacings of the upsampled grid. Upsampling helps when the density and the surface are resolved
-on the original grid but the integrand :math:`(1-\eta)Kf` is not.
-Each direction of the (upsampled) grid must have at least :math:`2R+1` points.
+The quadrature is applied on a quadrature grid: the surface and the density upsampled with the FFT, by a factor in
+each direction; the targets remain the original grid points. The patch radius :math:`R` is measured in grid spacings of
+the quadrature grid, and each direction of that grid must have at least :math:`2R+1` points.
+``FieldPeriodBIOp::SetupSingular()`` chooses the factors (``SingularCorrection::QuadGrid()``), unless they are given
+in ``SingularQuadParams``: of the grids at least twice as fine as the surface grid in each direction, on which the patch
+of the rule below (for the tolerance and the anisotropy of that grid) fits, and whose anisotropy is at most
+:math:`\max(6, 1.1\,c_{min})`, for the least anisotropy :math:`c_{min}` of a grid of the surface, the one with the
+fewest points. A warning is printed if :math:`c_{min}` is above 4.
+
+- **At least twice**: when the requested accuracy is within about 2 digits of how well the grid resolves the surface
+  and the density, the quadrature on the surface grid loses up to 2.6 digits, which upsampling twice recovers. Neither
+  the tolerance nor the anisotropy tells when that is, and the surface coordinates do not either: the normal and the
+  density are resolved less well than the coordinates.
+- **The patch fits**: a patch clipped to the grid loses digits, 6.4 of 12 requested on an axisymmetric torus of
+  :math:`40\times 20` points.
+- **The anisotropy**: the rule below was fit for :math:`c` up to 4.4. On W7-X with :math:`140\times 56` points
+  (:math:`c = 10.9`), upsampling twice in each direction gives 4.8 digits for 6 requested, and the grid of cells that
+  are about square, 4 times toroidally, gives 5.7, what the data allow.
+
+In the test of Green's identity for the Laplace single and double layers, with a smooth harmonic function on
+axisymmetric, W7-X and stellarator surfaces (grids of 800 to 63,000 points, 3 to 12 digits), the rule reaches within
+0.3 digits of the requested accuracy, or of what the data allow if less, in 82 of 84 cases (the other two 0.4 digits
+short, at 12 digits); without upsampling, 42 cases, and upsampling twice in each direction, 79. Its cost, the setup
+and 10 evaluations, is 1.6 times the least that reaches the accuracy, whose factors depend on how well the grid
+resolves the data.
 
 .. _algorithms-quadrature-params:
 
@@ -166,8 +188,8 @@ Choosing the parameters
 -----------------------
 
 The patch radius :math:`R` and the polar grid must grow with the requested accuracy for the quadrature error to
-decrease. ``BoundaryIntegralOp::SetupSingular()`` chooses them for its tolerance :math:`10^{-d}` and the anisotropy
-:math:`c` of the grid of each surface: the largest ratio, over the grid points, of the singular values of the Jacobian of
+decrease. ``FieldPeriodBIOp::SetupSingular()`` chooses them for its tolerance :math:`10^{-d}` and the anisotropy
+:math:`c` of the quadrature grid of each surface: the largest ratio, over the grid points, of the singular values of the Jacobian of
 the surface with respect to the grid indices (:math:`c = 1` for square cells; skewed cells count as well). The rules were
 fit to the error of Green's identity for the Laplace single and double layers, with a smooth density, on tori and
 rotating ellipses with :math:`c` from 1.3 to 4.4:
@@ -244,17 +266,9 @@ The programs ``src/table3.cpp``, ``src/table5.cpp``, ``src/table6.cpp`` and ``sr
 used for the other results in the paper. In the test of [MCOT2020]_ (Fig. 2), the method converges at roughly
 12th order on an axisymmetric torus and 10th order on W7-X, while singularity subtraction converges at second order.
 
-``FieldPeriodBIOp`` chooses the quadrature grid from the requested number of digits :math:`d`:
-
-1. It measures how much the ratio of the toroidal to the poloidal grid spacing varies over the surface,
-   :math:`\sqrt{s_{max}/s_{min}}`, where :math:`s` is that ratio at a grid point (a warning is printed if it is above 4),
-   and the patch radius :math:`R` of the rule above on a grid of the aspect ratio it chooses.
-2. It chooses a quadrature grid with spacings of about the same size in the two directions, at least as fine as the
-   surface, the density and the patch require. It then tests the grid: the Laplace double layer of a constant density
-   (which equals :math:`-1/2` on the surface) at the targets. While the test is not accurate to :math:`d` digits, it
-   refines the grid by the factor that the error predicts for :math:`d+1` digits, assuming geometric convergence,
-   unless that factor is below 1.5 (the error no longer decreases with the grid, as when the patch limits it), with at
-   most three tests. The quadrature grid is the last grid tested.
+``FieldPeriodBIOp`` chooses its quadrature grid by the rule of :ref:`Upsampling <algorithms-upsampling>` for the
+requested number of digits :math:`d`, with dimensions that are multiples of those of the target grid on the full
+torus, and at least twice the larger of the surface grid and the grid of the densities in each direction.
 
 .. _algorithms-off-surface:
 
@@ -278,7 +292,7 @@ which handles targets at any distance from the surface:
    and near a sharp concave fold of the surface its branch points are close to the panel. The panels are therefore
    small only where the surface varies rapidly. A panel is not split beyond 32 nodes per grid point. The panels
    depend only on the surface and the tolerance, so they serve every density and every set of targets:
-   ``BoundaryIntegralOp``, ``ExtVacuumField`` and ``IntVacuumField`` fit them by the first ``EvalOffSurface`` after
+   ``FieldPeriodBIOp``, ``ExtVacuumField`` and ``IntVacuumField`` fit them by the first ``EvalOffSurface`` after
    their setup, and set up step 3 again only for other targets. The static ``EvalOffSurface`` of ``VacuumField`` and
    ``TaylorState``, given the surfaces at each call, fit them at each call.
 2. The surface coordinates and the densities are interpolated from the periodic grid to the panel nodes: first FFT
@@ -299,9 +313,9 @@ targets must not lie on the surface.
 Interactions between surfaces
 -----------------------------
 
-With several surfaces (a toroidal shell), ``BoundaryIntegralOp`` also computes the potential of each surface at the
-grid points of the others, which are off that surface. The trapezoidal rule on the grid of spacing :math:`h`
-(upsampled ``UPSAMPLE`` times) has an error of about :math:`e^{-2\pi d/h}` at a distance :math:`d` from the surface,
+With several surfaces (a toroidal shell), ``FieldPeriodBIOp`` also computes the potential of each surface at the
+grid points of the others, which are off that surface. The trapezoidal rule on the quadrature grid, of spacing
+:math:`h`, has an error of about :math:`e^{-2\pi d/h}` at a distance :math:`d` from the surface,
 with :math:`h` the larger of the two grid spacings. For a tolerance :math:`\epsilon` (an argument of
 ``SetupSingular``), ``SetupSingular`` finds the targets within :math:`(\log(1/\epsilon)/(2\pi) + 1)\,h` of a grid
 point of the source surface, with the local :math:`h` of that point (the extra :math:`h` covers a target that is

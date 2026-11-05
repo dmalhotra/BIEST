@@ -124,11 +124,6 @@ template <class Real, class SKer> class OffSurfaceOp {
      */
     void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F);
 
-    /**
-     * Returns the number of panels.
-     */
-    sctl::Long PanelCount() const { return panels.Dim(); }
-
   private:
 
     /**
@@ -138,10 +133,8 @@ template <class Real, class SKer> class OffSurfaceOp {
      * area, unless the panel is the finest allowed (32 nodes per grid point). Set Ut and Up to the smallest values,
      * at least their current values, for which the local interpolation of the surface is accurate on the finest
      * panels. Set flip, from the normal at the node of largest x.
-     *
-     * @param[out] coord the surface coordinates at the nodes of the panels, as sctl::QuadElemList takes them.
      */
-    void FitPanels(sctl::Vector<Real>& coord);
+    void FitPanels();
 
     /**
      * Build the elements from the surface coordinates at their nodes, and set up the operator.
@@ -177,7 +170,8 @@ template <class Real, class SKer> class OffSurfaceOp {
     sctl::Vector<Real> Xt_; // coordinates of the target points of this process, AoS
 
     sctl::Vector<detail_offsurf::Panel> panels;
-    sctl::Vector<Real> coord_; // the surface coordinates at the nodes of the panels (see FitPanels)
+    sctl::Vector<detail_offsurf::Panel> todo_, next_, done_; // while panels are split: a level, the next one, the resolved; kept for their storage
+    sctl::Vector<Real> coord_; // the surface coordinates at the nodes of the panels, as sctl::QuadElemList takes them
     std::vector<sctl::Long> grp_idx_, grp_; // the panels grouped by their toroidal interval (see GroupByInterval)
     Real L_max_; // of the panel rule (see PanelRule)
     sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation of the surface, in each direction

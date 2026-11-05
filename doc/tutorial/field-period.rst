@@ -10,25 +10,25 @@ Layer Potentials with Field-Period Symmetry
 
 Stellarators are invariant under rotation by :math:`2\pi/N_{fp}` about the :math:`z`-axis, where :math:`N_{fp}` is the number of field periods.
 The ``FieldPeriodBIOp`` class evaluates layer potentials for such surfaces, with densities that have the same symmetry: the density is given on one field period and the potential is computed on one field period, which reduces the cost of the singular quadrature by the factor :math:`N_{fp}`.
-Unlike ``BoundaryIntegralOp``, it chooses the quadrature parameters and the quadrature grid at run time from the requested number of digits (see :ref:`Choosing the parameters <algorithms-quadrature-params>`).
+It chooses the quadrature grid and the quadrature parameters from the requested number of digits, or from a tolerance (see :ref:`Upsampling <algorithms-upsampling>` and :ref:`Choosing the parameters <algorithms-quadrature-params>`).
 For the full API see :ref:`boundary_integ_op.hpp <boundary_integ_op_hpp>`.
 
 1. Build the surface
 --------------------
 
 The surface coordinates are given on one field period, :math:`\theta\in[0,2\pi/N_{fp})`, on an ``Nt x Np`` grid in SoA order.
-``BuildSurface`` rotates them to build the full torus:
+The ``Surface`` constructor with the number of field periods rotates them to build the full torus:
 
 .. literalinclude:: ../examples/field-period.cpp
    :language: c++
    :start-at: // Laplace double-layer operator
-   :end-at: Svec[0] = biop.BuildSurface(
+   :end-at: const biest::Surface<Real> S(NFP, Nt, Np, X);
    :dedent: 2
 
 2. Set up the operator
 ----------------------
 
-``SetupSingular`` takes the surface, the kernel, the number of digits, the number of field periods, the resolution of the densities on the full torus (``NFP*Nt x Np``), and the resolution of the potential on one field period (``Nt x Np``):
+``SetupSingular`` takes the surface, the kernel, the number of digits, and the targets: the ``Nt x Np`` grid on the first ``1/NFP`` of the torus. Two optional arguments give the finest density grid that the quadrature must resolve, counted on the full torus; by default it is the target grid on the full torus (``NFP*Nt x Np``):
 
 .. literalinclude:: ../examples/field-period.cpp
    :language: c++
@@ -37,7 +37,6 @@ The surface coordinates are given on one field period, :math:`\theta\in[0,2\pi/N
    :dedent: 2
 
 The densities are resampled to a quadrature grid of ``QuadNt() x QuadNp()`` points on the full torus, chosen so that the quadrature reaches the requested accuracy.
-The grid can also be set explicitly with the optional last two arguments.
 
 3. Evaluate
 -----------
@@ -68,22 +67,24 @@ This version of ``WriteVTK`` takes the surface and the data on one field period,
 -------------------
 
 ``FieldPeriodBIOp`` also takes several surfaces, such as the two surfaces of a toroidal shell, that declare their field periods (``Surface::SetNFP``, see :ref:`Field periods <tutorial-surface-nfp>`); it uses those common to all.
-The targets are the points of a grid on one field period of each surface, and the densities of the surfaces are stored one after the other, as for ``BoundaryIntegralOp``:
+``SetupSingular`` then takes a tolerance instead of the digits: the quadrature grids and the singular quadrature are chosen for ``tol`` (or given in ``quad``, a ``SingularQuadParams``), and the targets are the grid points of one field period of each surface.
+The densities of the surfaces are stored one after the other, and ``Eval`` takes them with the field periods and the grid of each:
 
 .. code-block:: c++
 
-   sctl::Vector<sctl::Long> trg_Nt(2), trg_Np(2); // the targets: the grid points of one field period of each surface
+   sctl::Vector<sctl::Integer> nfp(2); // for each surface, the field periods of F: here NFP, those common to the surfaces
+   sctl::Vector<sctl::Long> Nt(2), Np(2); // and the grid of F on one field period
    for (int s = 0; s < 2; s++) {
-     trg_Nt[s] = Svec[s].NTor() / Svec[s].NFP();
-     trg_Np[s] = Svec[s].NPol();
+     nfp[s] = NFP;
+     Nt[s] = Svec[s].NTor() / NFP;
+     Np[s] = Svec[s].NPol();
    }
-   biest::FieldPeriodBIOp<Real,3,1,1> biop;
-   biop.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, trg_Nt, trg_Np);
-   biop.Eval(U, F, NFP, trg_Nt, trg_Np); // F on the same grids, on one field period of each surface
+   biest::FieldPeriodBIOp<Real> biop;
+   biop.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), tol);
+   biop.Eval(U, F, nfp, Nt, Np);
 
-Each surface gets its own quadrature grid (``QuadNt(s) x QuadNp(s)``), and ``biop(U, F)`` takes densities on these grids without resampling them.
-The potential of a surface at the targets of another is computed as in ``BoundaryIntegralOp`` (see :ref:`Interactions between surfaces <algorithms-between-surfaces>`), to the requested digits.
-The variant ``SetupSingular<UPSAMPLE>(Svec, ker, tol, quad)`` takes the quadrature grids instead of choosing them, the surface grids upsampled ``UPSAMPLE`` times, with the singular quadrature of ``BoundaryIntegralOp`` for ``tol`` (or ``quad``, a ``SingularQuadParams``) and the targets at the grid points of one field period; ``VacuumField`` and ``TaylorState`` use it.
+Each surface gets its own quadrature grid (``QuadNt(s) x QuadNp(s)``).
+The potential of a surface at the targets of another is computed as described in :ref:`Interactions between surfaces <algorithms-between-surfaces>`, to the tolerance; ``VacuumField`` and ``TaylorState`` use this setup.
 
 Complete Example Code
 ---------------------
@@ -93,7 +94,7 @@ The program ``doc/examples/field-period.cpp`` prints
 .. code-block:: text
 
    quadrature grid: 300 x 60
-   max |U + 1/2| = 4.06635e-11
+   max |U + 1/2| = 4.06425e-11
 
 .. raw:: html
 

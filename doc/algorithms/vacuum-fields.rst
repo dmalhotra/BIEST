@@ -79,8 +79,9 @@ one field period, and compute the solution on one field period, with ``FieldPeri
 - the densities are extended to the full torus by rotation;
 - the layer potentials are computed only at the target points of one field period, which reduces the number of
   targets, and the cost and memory of the singular corrections, by a factor :math:`N_{fp}`;
-- the quadrature parameters and the quadrature grid are chosen from the requested number of digits
-  (see :ref:`Choosing the parameters <algorithms-quadrature-params>`), and the GMRES tolerance is
+- the quadrature grid and the quadrature parameters are chosen from the requested number of digits
+  (see :ref:`Upsampling <algorithms-upsampling>` and :ref:`Choosing the parameters <algorithms-quadrature-params>`),
+  and the GMRES tolerance is
   :math:`10^{-\text{digits}}`.
 
 The resolutions of the surface and of the field may differ: the surface is resampled to the field grid and to the
@@ -121,8 +122,8 @@ codes ([MCOT2020]_, Eq. 2.2),
 and the external field has :math:`\mathbf{B}_{ext}\cdot\mathbf{n} = -\mathbf{B}_{plasma}\cdot\mathbf{n}`, which is the
 input to coil design.
 The integrals on :math:`\Gamma` are the Biot--Savart and the Laplace gradient layer potentials, computed with
-``BoundaryIntegralOp`` and the kernels ``BiotSavart3D::FxU`` and ``Laplace3D::FxdU``; off the surface,
-``BoundaryIntegralOp::EvalOffSurface`` computes them at any distance. ``src/virtual-casing-principle.cpp`` contains
+``FieldPeriodBIOp`` and the kernels ``BiotSavart3D::FxU`` and ``Laplace3D::FxdU``; off the surface,
+``FieldPeriodBIOp::EvalOffSurface`` computes them at any distance. ``src/virtual-casing-principle.cpp`` contains
 several variants, and the `virtual-casing <https://github.com/hiddenSymmetries/virtual-casing>`_ library implements these formulas with
 field-period symmetry.
 

@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Tests of VacuumField and TaylorState. The toroidal flux of the computed field is measured independently, by
-// integrating B . phi_hat over the cross-section of the domain in the plane phi = 0.
+// integrating B . phi_hat over the cross-section of the domain in the plane phi = 0, and the poloidal flux of a shell
+// by integrating B . (-z_hat) over a band of the midplane between the surfaces.
 
 #include "test-utils.hpp"
 
@@ -83,16 +84,17 @@ int main(int argc, char** argv) {
   const TorusShape outer{0.45, 0, 0.05, 0}, inner{0.2, 0, 0.05, 0};
   const sctl::Long Nt = 72, Np = 32;
 
-  { // One surface: B.n = 0, and the toroidal flux; VacuumField with tor_flux > 0 gives B in the direction of decreasing t
+  { // One surface: B.n = 0, and the toroidal flux, counterclockwise about the z-axis
     sctl::Vector<biest::Surface<Real>> Svec(1);
     Svec[0] = torus(Nt, Np, outer);
     sctl::Vector<Real> Xtrg, W;
     cross_section(Xtrg, W, nullptr, outer);
 
-    sctl::Vector<Real> B, J, Btrg;
-    VacuumField(comm, quad).Compute(B, J, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
-    VacuumField::EvalOffSurface(Btrg, Xtrg, Svec, J, comm);
-    res.Check("VacuumField, one surface: toroidal flux = -tor_flux", sctl::fabs<Real>(toroidal_flux(Btrg, W) + 1), 1e-3);
+    sctl::Vector<Real> B, Btrg;
+    sctl::Vector<sctl::Vector<Real>> J;
+    VacuumField(comm, quad).Compute(B, 1.0, 0.0, Svec, gmres_tol, gmres_iter, &J);
+    VacuumField::EvalOffSurface(Btrg, Xtrg, Svec, 1.0, 0.0, J, comm);
+    res.Check("VacuumField, one surface: toroidal flux = tor_flux", sctl::fabs<Real>(toroidal_flux(Btrg, W) - 1), 1e-3);
 
     sctl::Vector<Real> dX, normal, BdotN(Nt * Np);
     biest::SurfaceOp<Real> surf_op(comm, Nt, Np);
@@ -119,9 +121,9 @@ int main(int argc, char** argv) {
     for (const auto& S_ : S) {
       sctl::Vector<biest::Surface<Real>> Svec(1);
       Svec[0] = S_;
-      sctl::Vector<Real> B0, J0, B1, J1;
-      VacuumField(comm, quad).Compute(B0, J0, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
-      vacuum_field.Compute(B1, J1, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
+      sctl::Vector<Real> B0, B1;
+      VacuumField(comm, quad).Compute(B0, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
+      vacuum_field.Compute(B1, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
       err_vacuum = std::max(err_vacuum, MaxRelDiff(B1, B0));
       TaylorState(comm, quad).Compute(B0, 1.0, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
       taylor_state.Compute(B1, 1.0, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
@@ -142,10 +144,12 @@ int main(int argc, char** argv) {
         Svec5[i] = Svec[i];
         Svec5[i].SetNFP(5);
       }
-      sctl::Vector<Real> B, J, B5, J5;
-      VacuumField(comm, quad).Compute(B, J, 1.0, 0.5, Svec, gmres_tol, gmres_iter);
-      VacuumField(comm, quad).Compute(B5, J5, 1.0, 0.5, Svec5, gmres_tol, gmres_iter);
-      const Real err_vacuum = std::max(MaxRelDiff(B5, B), MaxRelDiff(J5, J));
+      sctl::Vector<Real> B, B5;
+      sctl::Vector<sctl::Vector<Real>> J, J5;
+      VacuumField(comm, quad).Compute(B, 1.0, 0.5, Svec, gmres_tol, gmres_iter, &J);
+      VacuumField(comm, quad).Compute(B5, 1.0, 0.5, Svec5, gmres_tol, gmres_iter, &J5);
+      Real err_vacuum = MaxRelDiff(B5, B);
+      for (sctl::Long i = 0; i < J.Dim(); i++) err_vacuum = std::max(err_vacuum, MaxRelDiff(J5[i], J[i]));
       sctl::Vector<sctl::Vector<Real>> m, sigma, m5, sigma5;
       TaylorState(comm, quad).Compute(B, 1.0, 0.5, 1.0, Svec, gmres_tol, gmres_iter, 0.1, &m, &sigma);
       TaylorState(comm, quad).Compute(B5, 1.0, 0.5, 1.0, Svec5, gmres_tol, gmres_iter, 0.1, &m5, &sigma5);
@@ -157,19 +161,19 @@ int main(int argc, char** argv) {
     }
   }
 
-  { // Shell: VacuumField(tor_flux, pol_flux) is the limit lambda -> 0 of TaylorState(-tor_flux, -pol_flux)
+  { // Shell: VacuumField(tor_flux, pol_flux) is the limit lambda -> 0 of TaylorState(tor_flux, pol_flux)
     sctl::Vector<biest::Surface<Real>> Svec(2);
     Svec[0] = torus(Nt, Np, outer);
     Svec[1] = torus(Nt, Np, inner);
-    sctl::Vector<Real> Bv, J, Bt;
-    VacuumField(comm, quad).Compute(Bv, J, 1.0, 0.5, Svec, gmres_tol, gmres_iter);
-    TaylorState(comm, quad).Compute(Bt, -1.0, -0.5, 1e-10, Svec, gmres_tol, gmres_iter);
-    res.Check("Shell: VacuumField(1, 0.5) = TaylorState(lambda = 1e-10; -1, -0.5)", MaxRelDiff(Bt, Bv), 1e-2);
+    sctl::Vector<Real> Bv, Bt;
+    VacuumField(comm, quad).Compute(Bv, 1.0, 0.5, Svec, gmres_tol, gmres_iter);
+    TaylorState(comm, quad).Compute(Bt, 1.0, 0.5, 1e-10, Svec, gmres_tol, gmres_iter);
+    res.Check("Shell: VacuumField(1, 0.5) = TaylorState(lambda = 1e-10; 1, 0.5)", MaxRelDiff(Bt, Bv), 1e-2);
   }
 
   { // Shell whose inner surface has the larger area, in both orders: the outer surface encloses the larger volume
     const TorusShape outer2{0.55, 0, 0.05, 0}, inner2{0.25, 0.6, 0, 6};
-    const sctl::Long Nt2 = 96, Np2 = 64;
+    const sctl::Long Nt2 = 96, Np2 = 96; // 64 poloidal points do not resolve the six lobes of the inner surface
     const biest::Surface<Real> S_outer = torus(Nt2, Np2, outer2), S_inner = torus(Nt2, Np2, inner2);
     { // test setup: the inner surface has the larger area
       const auto area = [&comm,Nt2,Np2](const biest::Surface<Real>& S) {
@@ -191,14 +195,88 @@ int main(int argc, char** argv) {
       Svec[0] = (inner_first ? S_inner : S_outer);
       Svec[1] = (inner_first ? S_outer : S_inner);
 
-      sctl::Vector<Real> B, J, Btrg0, Btrg1;
-      VacuumField(comm, quad).Compute(B, J, 1.0, 0.0, Svec, gmres_tol, gmres_iter);
-      VacuumField::EvalOffSurface(Btrg0, Xtrg, Svec, J, comm);
-      VacuumField(comm, quad).Compute(B, J, 0.0, 1.0, Svec, gmres_tol, gmres_iter);
-      VacuumField::EvalOffSurface(Btrg1, Xtrg, Svec, J, comm);
+      sctl::Vector<Real> B, Btrg0, Btrg1;
+      sctl::Vector<sctl::Vector<Real>> J; // one solve, the field inside for both fluxes
+      VacuumField(comm, quad).Compute(B, 1.0, 0.0, Svec, gmres_tol, gmres_iter, &J);
+      VacuumField::EvalOffSurface(Btrg0, Xtrg, Svec, 1.0, 0.0, J, comm);
+      VacuumField::EvalOffSurface(Btrg1, Xtrg, Svec, 0.0, 1.0, J, comm);
       const std::string name = (inner_first ? "Shell (inner surface first): " : "Shell (outer surface first): ");
-      res.Check((name + "toroidal flux for (tor_flux, pol_flux) = (1, 0)").c_str(), sctl::fabs<Real>(toroidal_flux(Btrg0, W) + 1), 1e-2);
+      res.Check((name + "toroidal flux for (tor_flux, pol_flux) = (1, 0)").c_str(), sctl::fabs<Real>(toroidal_flux(Btrg0, W) - 1), 1e-2);
       res.Check((name + "toroidal flux for (tor_flux, pol_flux) = (0, 1)").c_str(), sctl::fabs<Real>(toroidal_flux(Btrg1, W)), 1e-2);
+    }
+  }
+
+  { // The signs of the fluxes for each direction of the grid indices: the toroidal flux counterclockwise about the
+    // z-axis, and the poloidal flux of a shell, through the band Z = 0 between the surfaces on the outboard side, toward
+    // -z, the direction of the field of a current counterclockwise about the z-axis inside the inner surface; circular
+    // cross-sections, so that the fields are axisymmetric and the flux through the band is 2 pi times that at phi = 0.
+    // The singular quadrature chosen for the tolerance: the cheap one gives the fluxes of a shell to 2 digits.
+    const TorusShape outer0{0.45, 0, 0, 0}, inner0{0.2, 0, 0, 0};
+    const sctl::Long Nt0 = 48, Np0 = 32;
+    const Real gmres_tol0 = 1e-6;
+    const auto reversed = [](const biest::Surface<Real>& S, const bool rev_t, const bool rev_p) { // S with the grid indices reversed
+      const sctl::Long Nt = S.NTor(), Np = S.NPol();
+      biest::Surface<Real> S_(Nt, Np, biest::SurfType::None);
+      for (sctl::Long t = 0; t < Nt; t++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          for (sctl::Integer k = 0; k < COORD_DIM; k++) S_.Coord(t, p, k) = S.Coord(rev_t ? (Nt - t) % Nt : t, rev_p ? (Np - p) % Np : p, k);
+        }
+      }
+      return S_;
+    };
+    sctl::Vector<Real> Xb, Wb; // the band at phi = 0, R from 1 + a of the inner surface to that of the outer
+    {
+      const sctl::Long Ns = 16;
+      sctl::Vector<Real> s, ws;
+      sctl::ChebBasis<Real>::quad_rule(Ns, s, ws); // Gauss-Legendre rule on [0,1]
+      Xb.ReInit(COORD_DIM * Ns);
+      Wb.ReInit(Ns);
+      for (sctl::Long j = 0; j < Ns; j++) {
+        const Real R = 1 + inner0.a + (outer0.a - inner0.a) * s[j];
+        Xb[j * COORD_DIM + 0] = R;
+        Xb[j * COORD_DIM + 1] = 0;
+        Xb[j * COORD_DIM + 2] = 0;
+        Wb[j] = 2 * pi * R * (outer0.a - inner0.a) * ws[j];
+      }
+    }
+    const auto poloidal_flux = [&Xb,&Wb](const sctl::Vector<Real>& Btrg) { // B . (-z_hat) over the band, at the targets after those of the cross-section
+      const sctl::Long n0 = Btrg.Dim() / COORD_DIM - Wb.Dim();
+      Real flux = 0;
+      for (sctl::Long j = 0; j < Wb.Dim(); j++) flux -= Btrg[(n0 + j) * COORD_DIM + 2] * Wb[j];
+      return flux;
+    };
+    for (const sctl::Integer Nsurf : {1, 2}) {
+      sctl::Vector<Real> Xtrg, W;
+      cross_section(Xtrg, W, (Nsurf == 2 ? &inner0 : nullptr), outer0);
+      if (Nsurf == 2) { // the band after the cross-section
+        const sctl::Long N0 = Xtrg.Dim();
+        sctl::Vector<Real> X(N0 + Xb.Dim());
+        for (sctl::Long i = 0; i < N0; i++) X[i] = Xtrg[i];
+        for (sctl::Long i = 0; i < Xb.Dim(); i++) X[N0 + i] = Xb[i];
+        Xtrg.Swap(X);
+      }
+      for (const sctl::Integer rev : {0, 1, 2, 3}) {
+        const bool rev_t = rev & 1, rev_p = rev & 2;
+        sctl::Vector<biest::Surface<Real>> Svec(Nsurf);
+        Svec[0] = reversed(torus(Nt0, Np0, outer0), rev_t, rev_p);
+        if (Nsurf == 2) Svec[1] = reversed(torus(Nt0, Np0, inner0), rev_t, rev_p);
+        sctl::Vector<Real> B, Btrg;
+        sctl::Vector<sctl::Vector<Real>> J, m, sigma; // of the fields of unit flux: one solve each for both fluxes
+        VacuumField(comm).Compute(B, 1.0, 0.0, Svec, gmres_tol0, gmres_iter, &J);
+        TaylorState(comm).Compute(B, 1.0, 0.0, 1.0, Svec, gmres_tol0, gmres_iter, 0.1, &m, &sigma);
+        Real err = 0;
+        for (const auto& flux : std::vector<std::pair<Real, Real>>{{1, 0}, {0, 1}}) {
+          if (Nsurf == 1 && flux.second) continue;
+          for (const bool taylor : {false, true}) {
+            if (taylor) TaylorState::EvalOffSurface(Btrg, Xtrg, Svec, flux.first, flux.second, 1.0, m, sigma, comm);
+            else VacuumField::EvalOffSurface(Btrg, Xtrg, Svec, flux.first, flux.second, J, comm);
+            err = std::max(err, sctl::fabs<Real>(toroidal_flux(Btrg, W) - flux.first));
+            if (Nsurf == 2) err = std::max(err, sctl::fabs<Real>(poloidal_flux(Btrg) - flux.second));
+          }
+        }
+        const std::string name = std::string(Nsurf == 1 ? "One surface" : "Shell") + ", t " + (rev_t ? "clockwise" : "counterclockwise") + ", p " + (rev_p ? "clockwise" : "counterclockwise") + ": VacuumField and TaylorState (lambda = 1) fluxes = tor_flux" + (Nsurf == 2 ? ", pol_flux" : "");
+        res.Check(name.c_str(), err, 1e-4);
+      }
     }
   }
 

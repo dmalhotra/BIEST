@@ -117,7 +117,7 @@ template <class Real, sctl::Integer COORD_DIM, sctl::Integer KDIM0, sctl::Intege
       if (matfn) {
         matfn(r_src, n_src, r_trg, M, ctx);
       } else { // one kerfn call per (source, source-DOF) pair
-        auto src_range = [&](const sctl::Long s0, const sctl::Long s1) {
+        auto src_range = [this,&r_src,Ns,&n_src,&M,&r_trg](const sctl::Long s0, const sctl::Long s1) {
           sctl::StaticArray<Real,COORD_DIM> r_src0_;
           sctl::StaticArray<Real,COORD_DIM> n_src0_;
           sctl::StaticArray<Real,   Dim(0)> f_src0_;
@@ -243,7 +243,7 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
         for (sctl::Long i = Ns; i < NNs; i++) Xn[k][i] = 0;
       }
 
-      auto src_blk = [&](sctl::Long s) {
+      auto src_blk = [&Xs,&Xn,&r_trg,ctx,&M,scal,Ns,Nt](sctl::Long s) {
         RealVec xs[COORD_DIM], ns[NDIM_], dX[COORD_DIM], U[KDIM0][KDIM1];
         for (sctl::Integer k = 0; k < COORD_DIM; k++) xs[k] = RealVec::LoadAligned(&Xs[k][s]);
         for (sctl::Integer k = 0; k < NDIM; k++) ns[k] = RealVec::LoadAligned(&Xn[k][s]);
@@ -262,9 +262,8 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
         }
       };
 
-      // Serial inside a parallel region, and where a region would have one thread (sctl::omp_par::one_thread): a
-      // nested one, even of one thread, allocates its team (libgomp), and SingularCorrection::Setup calls this twice for
-      // each target from a parallel loop
+      // Serial inside a parallel region, and where a region would have one thread (sctl::omp_par::one_thread): libgomp
+      // allocates and frees the team of a nested region, even of one thread, and of a region of one thread
       if (SCTL_IN_PARALLEL() || sctl::omp_par::one_thread()) {
         for (sctl::Long s = 0; s < NNs; s += Nv) src_blk(s);
       } else {
@@ -279,7 +278,7 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
       const Real scal = SKer::template uKerScaleFactor<Real>();
       const sctl::Long NNt = Xt.Dim(1);
 
-      auto trg_blk = [&](sctl::Long t) {
+      auto trg_blk = [&Xt,Ns,&r_src,&n_src,&v_src,ctx,Nt,&v_trg,scal](sctl::Long t) {
         RealVec xt[COORD_DIM], dX[COORD_DIM], ns[NDIM_], vs[DOF*KDIM0], vt[DOF*KDIM1];
         for (sctl::Integer k = 0; k < DOF*KDIM1; k++) vt[k] = RealVec::Zero();
         for (sctl::Integer k = 0; k < COORD_DIM; k++) xt[k] = RealVec::LoadAligned(&Xt[k][t]);
@@ -288,7 +287,8 @@ template <class Real, class SKer, sctl::Integer DIGITS, sctl::Integer Nv = sctl:
           for (sctl::Integer k = 0; k < NDIM; k++) ns[k] = RealVec::Load1(&n_src[k * Ns + s]);
           for (sctl::Integer k = 0; k < DOF*KDIM0; k++) vs[k] = RealVec::Load1(&v_src[k * Ns + s]);
           if constexpr (FUSED) {
-            SKer::template uKerApply<DIGITS_,DOF>(vt, dX, ns, vs, ctx);
+            if constexpr (NDIM) SKer::template uKerApply<DIGITS_,DOF>(vt, dX, ns, vs, ctx);
+            else SKer::template uKerApply<DIGITS_,DOF,RealVec>(vt, dX, nullptr, vs, ctx);
           } else {
             RealVec U[KDIM0][KDIM1];
             SKer::template uKerMatrix<DIGITS_>(U, dX, ns, ctx);

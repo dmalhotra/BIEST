@@ -9,7 +9,6 @@
 #include <utility>
 
 #include <biest/kernel.hpp>
-#include <biest/mat.hpp>
 #include <biest/surface.hpp>
 #include <sctl.hpp>
 
@@ -444,8 +443,8 @@ template <class Real> class SurfaceOp {
     static Real max_norm(const sctl::Vector<Real>& x);
 
     /**
-     * The preconditioner of InvSurfLap() and GradInvSurfLap() on an Nt x Np grid: the inverse of the Laplacian in the
-     * grid parameters, scaled by the mean lengths of the grid lines (1 / invLt2 and 1 / invLp2 their squares, in grid
+     * A preconditioner of the Laplace-Beltrami operator on an Nt x Np grid: the inverse of the Laplacian in the grid
+     * parameters, scaled by the mean lengths of the grid lines (1 / invLt2 and 1 / invLp2 their squares, in grid
      * spacings), in Fourier space.
      */
     struct SpectralInvLapOp {

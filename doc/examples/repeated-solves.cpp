@@ -28,8 +28,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    sctl::Vector<Real> B0, J, B1;
-    vacuum_field.Compute(B0, J, 1.0, 0.0, Svec, 1e-8, 100);
+    sctl::Vector<Real> B0, B1;
+    vacuum_field.Compute(B0, 1.0, 0.0, Svec, 1e-8, 100);
     taylor_state.Compute(B1, 1.0, 0.0, 1.0, Svec, 1e-8, 100);
 
     Real B0max = 0, B1max = 0;

@@ -10,7 +10,7 @@ bie_solvers.hpp
 
 This header file provides solvers for vacuum fields and Taylor states (force-free fields) inside a toroidal surface, or in a toroidal shell between two nested toroidal surfaces.
 
-The template parameter ``UPSAMPLE`` upsamples the grids for the quadrature, and the singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`) is chosen for the accuracy ``0.1*gmres_tol`` and the anisotropy of the grid of each surface (see :ref:`Choosing the parameters <algorithms-quadrature-params>`).
+The quadrature grids and the singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`) are chosen for the accuracy ``0.1*gmres_tol`` (see :ref:`Upsampling <algorithms-upsampling>` and :ref:`Choosing the parameters <algorithms-quadrature-params>`).
 An object can be given the quadrature instead (``SingularQuadParams``), and keeps its operators from one call of ``Compute`` to the next; the static ``Compute`` uses a new object.
 
 Classes and Types

@@ -30,11 +30,11 @@ The domain is given by a vector of surfaces: one surface for the region inside a
 2. Compute the vacuum field
 ---------------------------
 
-``VacuumField::Compute`` returns the magnetic field ``B`` on the surface grid points, and a surface current ``J`` whose Biot--Savart field is ``B`` inside the domain:
+``VacuumField::Compute`` returns the magnetic field ``B`` on the surface grid points:
 
 .. literalinclude:: ../../src/force-free-fields-example.cpp
    :language: c++
-   :start-at: sctl::Vector<Real> B, J;
+   :start-at: sctl::Vector<Real> B;
    :end-at: WriteVTK("B0"
    :dedent: 6
 
@@ -49,7 +49,7 @@ The GMRES iterations stop when the relative residual is below the GMRES toleranc
 
 .. literalinclude:: ../../src/force-free-fields-example.cpp
    :language: c++
-   :start-at: sctl::Vector<Real> B;
+   :start-after: { // Compute Taylor state
    :end-at: WriteVTK("B1"
    :dedent: 6
 
@@ -58,14 +58,16 @@ Inside each GMRES iteration, ``TaylorState`` solves Laplace--Beltrami problems o
 
 .. note::
 
-   The two classes use opposite signs for the toroidal flux.
-   With a positive ``tor_flux``, ``VacuumField`` gives a field that points toward decreasing toroidal grid index :math:`t`, and ``TaylorState`` a field that points toward increasing :math:`t`.
-   To compute fields in the same direction, pass ``-tor_flux`` and ``-pol_flux`` to one of them, as ``src/table7.cpp`` does.
+   The two classes use the same signs for the fluxes, whichever way the grid indices of the surfaces increase.
+   A positive toroidal flux points counterclockwise about the z-axis, as the field of a current along +z on the z-axis.
+   A positive poloidal flux points as the field of a current counterclockwise about the z-axis inside the inner surface: at the outboard midplane, toward -z.
+   As :math:`\lambda \to 0`, the ``TaylorState`` field tends to the ``VacuumField`` field for the same fluxes.
 
 4. Evaluate the field inside the domain
 ---------------------------------------
 
-To evaluate the field at points inside the domain, keep the surface current ``J`` (vacuum field) or the densities ``m`` and ``sigma`` (Taylor state), and pass them to ``EvalOffSurface``.
+To evaluate the field at points inside the domain, keep the surface currents ``J`` (vacuum field) or the densities ``m`` and ``sigma`` (Taylor state), which ``Compute`` returns through its optional last arguments, and pass them to ``EvalOffSurface`` with the fluxes.
+They are those of the fields of unit flux, one per surface, so ``EvalOffSurface`` gives the field of any fluxes without a new solve.
 The target points and the result are arrays of structures, ``{x1, y1, z1, x2, y2, z2, ...}``.
 This is from ``src/example1.cpp``:
 
@@ -97,7 +99,7 @@ The program also evaluates the field at a point inside the shell, and prints (th
 .. code-block:: text
 
    B.Dim() = 24336 = 3 * (104 * 52 + 104 * 26)
-   B(2.5, 0, 0) = 2.89902e-13 0.474928 -0.110743
+   B(2.5, 0, 0) = 8.06554e-14 0.474928 -0.110743
 
 .. _tutorial-solver-field-periods:
 
@@ -135,9 +137,9 @@ which prints
 
 .. code-block:: text
 
-   a = 0.25: max |B| = 7.60279 (vacuum field), 7.55886 (Taylor state)
-   a = 0.3: max |B| = 5.74353 (vacuum field), 5.70378 (Taylor state)
-   a = 0.35: max |B| = 4.62371 (vacuum field), 4.58679 (Taylor state)
+   a = 0.25: max |B| = 7.60285 (vacuum field), 7.55882 (Taylor state)
+   a = 0.3: max |B| = 5.74358 (vacuum field), 5.70374 (Taylor state)
+   a = 0.35: max |B| = 4.62375 (vacuum field), 4.58676 (Taylor state)
 
 The memory held by an object is mostly that of the singular corrections: 13 and 28 times :math:`(2R+1)^2` values for each grid point for ``VacuumField`` and ``TaylorState``, with :math:`R` the radius of the patch of the singular quadrature.
 An object must not be shared by threads that call ``Compute`` at the same time.
@@ -147,9 +149,9 @@ An object must not be shared by threads that call ``Compute`` at the same time.
 8. Choosing the quadrature parameters
 -------------------------------------
 
-The singular quadrature (see :ref:`Singular quadrature <algorithms-singular-quadrature>`) is chosen for the accuracy ``0.1*gmres_tol`` and the anisotropy of the grid of each surface (see :ref:`Choosing the parameters <algorithms-quadrature-params>`), on the grids upsampled ``UPSAMPLE`` times (the template parameter ``<Real, UPSAMPLE>``).
-An object can be given the quadrature instead, the radius :math:`R` of the patch and the radial and angular nodes of the polar grid: ``biest::TaylorState<Real> taylor_state(comm, {R, q, 2*q})``. Each direction of the (upsampled) grid then needs at least :math:`2R+1` points.
-The following values were used in the Taylor states paper for a toroidal domain (QAS3, ``src/table5.cpp``), with :math:`q` radial and :math:`2q` angular nodes, the GMRES tolerance and the resulting error of the Taylor state for :math:`\lambda = 1`:
+The quadrature grids and the singular quadrature on them (see :ref:`Singular quadrature <algorithms-singular-quadrature>`) are chosen for the accuracy ``0.1*gmres_tol``: the grid of each surface upsampled at least twice in each direction (see :ref:`Upsampling <algorithms-upsampling>`), and the patch and the polar grid for the anisotropy of that grid (see :ref:`Choosing the parameters <algorithms-quadrature-params>`).
+An object can be given the quadrature instead, the radius :math:`R` of the patch, the radial and angular nodes of the polar grid, and the toroidal and poloidal upsampling factors: ``biest::TaylorState<Real> taylor_state(comm, {R, q, 2*q, 1, 1})``. Each direction of the quadrature grid then needs at least :math:`2R+1` points; without the factors, they are chosen for the given patch.
+The following values, without upsampling, were used in the Taylor states paper for a toroidal domain (QAS3, ``src/table5.cpp``), with :math:`q` radial and :math:`2q` angular nodes, the GMRES tolerance and the resulting error of the Taylor state for :math:`\lambda = 1`:
 
 .. list-table::
    :header-rows: 1

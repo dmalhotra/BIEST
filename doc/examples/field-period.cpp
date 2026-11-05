@@ -28,10 +28,9 @@ int main(int argc, char** argv) {
   }
 
   // Laplace double-layer operator: 1 density and 1 potential component
-  biest::FieldPeriodBIOp<Real, COORD_DIM, 1, 1> biop;
-  sctl::Vector<biest::Surface<Real>> Svec(1);
-  Svec[0] = biop.BuildSurface(X, NFP, Nt, Np); // full torus
-  biop.SetupSingular(Svec, biest::Laplace3D<Real>::DxU(), digits, NFP, NFP * Nt, Np, Nt, Np);
+  biest::FieldPeriodBIOp<Real> biop;
+  const biest::Surface<Real> S(NFP, Nt, Np, X); // the full torus, from one field period
+  biop.SetupSingular(S, biest::Laplace3D<Real>::DxU(), digits, NFP, Nt, Np);
 
   // Double-layer potential of a constant density; it equals -1/2 on the surface
   sctl::Vector<Real> F(Nt * Np), U;

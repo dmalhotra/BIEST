@@ -45,6 +45,32 @@ int main(int argc, char** argv) {
     res.Check("SurfNormalAreaElem: returned orientation is +1 or -1", sctl::fabs<Real>(sctl::fabs<Real>(orient) - 1), 0);
   }
 
+  { // SurfLap on a torus of revolution (R0 = 2, a = 1), on a grid whose lines are not orthogonal: phi = 2 pi t/Nt and
+    // theta = 2 pi (p/Np + t/Nt). With rho = R0 + a cos(theta), SurfLap(u) = (rho u_theta)_theta / (a^2 rho)
+    // + u_phiphi / rho^2; for u = cos(theta) sin(2 phi), -sin(2 phi) ((rho cos(theta) - a sin(theta)^2) / (a^2 rho)
+    // + 4 cos(theta) / rho^2)
+    const sctl::Long Nt = 128, Np = 64, N = Nt * Np;
+    const Real R0 = 2, a = 1;
+    sctl::Vector<Real> X(COORD_DIM * N), u(N), Lu_ref(N);
+    for (sctl::Long t = 0; t < Nt; t++) {
+      for (sctl::Long p = 0; p < Np; p++) {
+        const sctl::Long i = t * Np + p;
+        const Real phi = 2 * pi * t / Nt, theta = 2 * pi * (p / (Real)Np + t / (Real)Nt);
+        const Real rho = R0 + a * sctl::cos<Real>(theta), cos_t = sctl::cos<Real>(theta), sin_t = sctl::sin<Real>(theta);
+        X[0 * N + i] = rho * sctl::cos<Real>(phi);
+        X[1 * N + i] = rho * sctl::sin<Real>(phi);
+        X[2 * N + i] = a * sin_t;
+        u[i] = cos_t * sctl::sin<Real>(2 * phi);
+        Lu_ref[i] = -sctl::sin<Real>(2 * phi) * ((rho * cos_t - a * sin_t * sin_t) / (a * a * rho) + 4 * cos_t / (rho * rho));
+      }
+    }
+    biest::SurfaceOp<Real> op(comm, Nt, Np);
+    sctl::Vector<Real> dX, Lu;
+    op.Grad2D(dX, X);
+    op.SurfLap(Lu, dX, u);
+    res.Check("SurfLap: a torus of revolution on a sheared grid", MaxRelDiff(Lu, Lu_ref), 1e-11);
+  }
+
   { // Operators on a non-axisymmetric surface
     const sctl::Long Nt = 240, Np = 80, N = Nt * Np;
     const biest::Surface<Real> S(Nt, Np, biest::SurfType::RotatingEllipseWide);
@@ -60,6 +86,20 @@ int main(int argc, char** argv) {
       V[0 * N + i] = z;
       V[1 * N + i] = x * y;
       V[2 * N + i] = x;
+    }
+
+    { // SurfGrad(U) is the part tangent to the surface of the gradient of U in R^3, (z, cos(y), x)
+      sctl::Vector<Real> GradU, GradU_ref(COORD_DIM * N);
+      op.SurfGrad(GradU, dX, U);
+      for (sctl::Long i = 0; i < N; i++) {
+        const Real x = S.Coord()[0 * N + i], y = S.Coord()[1 * N + i], z = S.Coord()[2 * N + i];
+        const Real gx = z, gy = sctl::cos<Real>(y), gz = x;
+        const Real gn = gx * normal[0 * N + i] + gy * normal[1 * N + i] + gz * normal[2 * N + i];
+        GradU_ref[0 * N + i] = gx - gn * normal[0 * N + i];
+        GradU_ref[1 * N + i] = gy - gn * normal[1 * N + i];
+        GradU_ref[2 * N + i] = gz - gn * normal[2 * N + i];
+      }
+      res.Check("SurfGrad: the tangential part of the gradient in R^3", MaxRelDiff(GradU, GradU_ref), 1e-12);
     }
 
     { // InvSurfLap(SurfLap(U)) is the mean-zero part of U
@@ -153,7 +193,7 @@ int main(int argc, char** argv) {
         for (sctl::Integer k = 0; k < COORD_DIM; k++) S_rev.Coord(t, p, k) = S_fwd.Coord((Nt - t) % Nt, p, k);
       }
     }
-    const auto period = [N,M](const sctl::Vector<Real>& X) { // the first field period of each component of X
+    const auto period = [](const sctl::Vector<Real>& X) { // the first field period of each component of X
       const sctl::Long dof = X.Dim() / N;
       sctl::Vector<Real> Y(dof * M);
       for (sctl::Long k = 0; k < dof; k++) {

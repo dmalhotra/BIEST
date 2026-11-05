@@ -32,9 +32,9 @@ int main(int argc, char** argv) {
     }
 
     { // Compute vacuum field
-      sctl::Vector<Real> B, J;
+      sctl::Vector<Real> B;
       Real tor_flux = 1.0;
-      biest::VacuumField<Real>::Compute(B, J, tor_flux, 0, Svec, comm, 1e-4, 100);
+      biest::VacuumField<Real>::Compute(B, tor_flux, 0, Svec, comm, 1e-4, 100);
 
       // Generate VTK visualization
       WriteVTK("B0", Svec, B, comm);

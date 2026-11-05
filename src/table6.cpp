@@ -22,11 +22,11 @@ int main(int argc, char** argv) {
       Svec.PushBack(biest::Surface<Real>(52, 26, biest::SurfType::RotatingEllipseWide));
       Svec.PushBack(biest::Surface<Real>(52, 13, biest::SurfType::RotatingEllipseNarrow));
 
-      biest::TaylorState<Real, 1>::test_conv(1.0, Svec, 1, 2.0e-3, 100, comm, 1e-1, {6, 15, 30});
-      biest::TaylorState<Real, 1>::test_conv(1.0, Svec, 2, 1.3e-5, 100, comm, 2e-2, {12, 24, 48});
-      biest::TaylorState<Real, 1>::test_conv(1.0, Svec, 3, 3.0e-7, 100, comm, 2e-2, {18, 36, 72});
-      biest::TaylorState<Real, 1>::test_conv(1.0, Svec, 4, 3.2e-8, 100, comm, 2e-2, {24, 40, 80});
-      biest::TaylorState<Real, 1>::test_conv(1.0, Svec, 5, 2.6e-9, 100, comm, 2e-2, {25, 45, 90});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 1, 2.0e-3, 100, comm, 1e-1, {6, 15, 30, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 2, 1.3e-5, 100, comm, 2e-2, {12, 24, 48, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 3, 3.0e-7, 100, comm, 2e-2, {18, 36, 72, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 4, 3.2e-8, 100, comm, 2e-2, {24, 40, 80, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 5, 2.6e-9, 100, comm, 2e-2, {25, 45, 90, 1, 1});
 
       // +----------------------------------------------------------------------------------------------------------------------------------+
       // | lambda  up  gmres_tol         N  | gmres_iter  rel_inf_error   |    Setup         LB           Quadrature                  Solve |

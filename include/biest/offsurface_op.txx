@@ -351,13 +351,12 @@ namespace detail_offsurf {
 template <class Real, class SKer> template <sctl::Integer DIGITS, sctl::Integer Nv> OffSurfaceOp<Real,SKer>::OffSurfaceOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) : ker_(ker.GetSctlKernel()), comm_(comm), tol_(0), Nt_(0), Np_(0), Ntrg(0), trg0(0), trg1(0), L_max_(0), Ut(1), Up(1), warned_panels(false), warned_interp(false), flip(false) {
 }
 
-template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& F) {
-  (void)F;
-  SetupSurface(X, Nt, Np, tol);
+template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& refine) {
+  SetupSurface(X, Nt, Np, tol, refine);
   SetTargets(Xt);
 }
 
-template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol) {
+template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol, const sctl::Vector<Real>& refine) {
   SCTL_ASSERT(X.Dim() == COORD_DIM * Nt * Np);
   Nt_ = Nt;
   Np_ = Np;
@@ -372,7 +371,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::SetupSurface(con
   Up = 1;
   warned_panels = false;
   warned_interp = false;
-  FitPanels();
+  FitPanels(refine);
   grp_idx_.resize(panels.Dim());
   grp_.resize(panels.Dim() + 1);
   grp_.resize(detail_offsurf::GroupByInterval(grp_idx_.begin(), grp_.begin(), panels) + 1);
@@ -442,17 +441,19 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::Eval(sctl::Vecto
   U += Uglb;
 }
 
-template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels() {
+template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels(const sctl::Vector<Real>& refine) {
   const sctl::Long N = Nt_ * Np_, Nnds = ORDER * ORDER;
+  const sctl::Long Nr = refine.Dim() / N;
+  SCTL_ASSERT(refine.Dim() == Nr * N);
   const detail_offsurf::PanelRule<Real> rule(ORDER);
 
   // Y: the fields that the panels must resolve, X and its derivatives along each direction, which give the normal and
-  // the area element; scal: for each component, the reciprocal of the largest value of its field; sA: the reciprocal
-  // of the surface area, by the trapezoidal rule on the grid with the parameters in [0,1)
-  const sctl::Long Nc = 3 * COORD_DIM;
+  // the area element, and refine; scal: for each component, the reciprocal of the largest value of its field; sA: the
+  // reciprocal of the surface area, by the trapezoidal rule on the grid with the parameters in [0,1)
+  const sctl::Long Nc = 3 * COORD_DIM + Nr;
   sctl::ScratchBuf<Real> Y_buf(Nc * N), scal(Nc);
   sctl::Vector<Real> Y(Y_buf);
-  Real sX, st, sp, sA;
+  Real sX, st, sp, sR, sA;
   {
     sctl::ScratchBuf<Real> dX_buf(2 * COORD_DIM * N);
     sctl::Vector<Real> dX(dX_buf); // dX/dt and dX/dp, for each component of X
@@ -464,11 +465,13 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels() {
         Y[(2 * COORD_DIM + k) * N + i] = dX[(k * 2 + 1) * N + i];
       }
     }
+    for (sctl::Long i = 0; i < Nr * N; i++) Y[3 * COORD_DIM * N + i] = refine[i];
     const auto inv_max = [&Y,N](const sctl::Long c0, const sctl::Long c1) { return detail_offsurf::InvMaxAbs<Real>(sctl::Vector<Real>((c1 - c0) * N, Y.begin() + c0 * N, false)); };
     sX = inv_max(0, COORD_DIM);
     st = inv_max(COORD_DIM, 2 * COORD_DIM);
     sp = inv_max(2 * COORD_DIM, 3 * COORD_DIM);
-    for (sctl::Long c = 0; c < Nc; c++) scal[c] = (c < COORD_DIM ? sX : (c < 2 * COORD_DIM ? st : sp));
+    sR = detail_offsurf::InvMaxAbs<Real>(refine);
+    for (sctl::Long c = 0; c < Nc; c++) scal[c] = (c < COORD_DIM ? sX : (c < 2 * COORD_DIM ? st : (c < 3 * COORD_DIM ? sp : sR)));
     Real area = 0;
     for (sctl::Long i = 0; i < N; i++) {
       Real xt[COORD_DIM], xp[COORD_DIM];
@@ -559,18 +562,20 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels() {
   Real xmax = 0, nmax = 0; // the largest x at the nodes of the kept panels, and there the x component of X_t x X_p
   bool resolved = true;
   for (sctl::Long Ut0 = 0, Up0 = 0; ; ) {
-    { // Set Ut, Up: the error of the local interpolation, which differentiation on the finest panels amplifies, is
-      // within tol/2
+    { // Set Ut, Up: the error of the local interpolation, of X, which differentiation on the finest panels amplifies,
+      // and of refine, is within tol/2
       sctl::Integer lt = 0, lp = 0;
       for (const auto& q : panels) {
         lt = std::max(lt, q.lt);
         lp = std::max(lp, q.lp);
       }
       const Real cX = std::max<Real>(rule.L_max * sX, rule.Ld_max * std::max<Real>((Mt0 << lt) * st, (Mp0 << lp) * sp));
-      const auto upsample_factor = [this,cX](const sctl::Long U0, const sctl::Integer dir) {
-        const sctl::Long U = detail_offsurf::LocalUpsampleLines<Real>(X_, Nt_, Np_, dir, cX, tol_ / 2, STENCIL, U0);
+      const Real cR = rule.L_max * sR;
+      const auto upsample_factor = [this,&refine,cX,cR](const sctl::Long U0, const sctl::Integer dir) {
+        sctl::Long U = detail_offsurf::LocalUpsampleLines<Real>(X_, Nt_, Np_, dir, cX, tol_ / 2, STENCIL, U0);
+        if (U >= 0) U = detail_offsurf::LocalUpsampleLines<Real>(refine, Nt_, Np_, dir, cR, tol_ / 2, STENCIL, U);
         if (U < 0) {
-          if (!warned_interp) SCTL_WARN("The local interpolation of the surface may not reach the requested accuracy.");
+          if (!warned_interp) SCTL_WARN("The local interpolation of the surface or of the fields of the refinement may not reach the requested accuracy.");
           warned_interp = true;
           return std::max<sctl::Long>(U0, 16);
         }
@@ -584,12 +589,12 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels() {
     Up0 = Up;
 
     // Split the panels, along one or both directions, until along each direction the last two Legendre coefficients of
-    // each field are within tol, and the area of the panel by its quadrature differs from the sum of the areas of its
-    // two halves by at most tol times the surface area, or the panels are the finest allowed. The test of the area
-    // catches an area element that the quadrature does not resolve although X and its derivatives are resolved: the
-    // area element is the square root of a polynomial, and near a sharp concave fold of the surface its branch points
-    // are close to the panel. The values at the nodes of the panels and of their halves are computed and tested
-    // interval by interval of the toroidal direction, in buffers of each thread.
+    // each field (X, its derivatives and refine) are within tol, and the area of the panel by its quadrature differs
+    // from the sum of the areas of its two halves by at most tol times the surface area, or the panels are the finest
+    // allowed. The test of the area catches an area element that the quadrature does not resolve although X and its
+    // derivatives are resolved: the area element is the square root of a polynomial, and near a sharp concave fold of
+    // the surface its branch points are close to the panel. The values at the nodes of the panels and of their halves
+    // are computed and tested interval by interval of the toroidal direction, in buffers of each thread.
     const sctl::Long Ntf = Ut * Nt_, Npf = Up * Np_, Nfine = Ntf * Npf, Ld = Npf + 2 * STENCIL;
     sctl::ScratchBuf<Real> Yf_buf(Ut * Up > 1 ? Nc * Nfine : 0);
     sctl::Vector<Real> Yf(Yf_buf, false);
@@ -605,7 +610,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels() {
       sctl::ScratchBuf<sctl::Integer> split(P); // bit 0: split along the toroidal direction, bit 1: along the poloidal
       sctl::ScratchBuf<Real> xm(P), nm(P); // of each panel, the largest x at its nodes, and there the x component of X_t x X_p
       sctl::ScratchBuf<char> group_resolved(Ng); // whether the panels of each group are resolved or split
-      sctl::omp_par::parallel_for(Ng, [this,&idx,&grp,&Yf,&dXf,&legendre_tails,&scal,&panel_area,sA,&split,&xm,&nm,&group_resolved,Ld,Ntf,Npf,&nds,lt_max,lp_max](const sctl::Long g) {
+      sctl::omp_par::parallel_for(Ng, [this,&idx,&grp,&Yf,&dXf,&legendre_tails,&scal,&panel_area,sA,&split,&xm,&nm,&group_resolved,Nc,Ld,Ntf,Npf,&nds,lt_max,lp_max](const sctl::Long g) {
         bool resolved_ = true;
         // T: Yf at the toroidal nodes of the interval, and Th: dXf at those of its two halves, on every poloidal grid
         // line; V: Yf at the nodes of a panel, and Vh: dXf at the nodes of its halves
@@ -674,7 +679,7 @@ template <class Real, class SKer> void OffSurfaceOp<Real,SKer>::FitPanels() {
     panels.Swap(done_);
   }
   if (!resolved) {
-    if (!warned_panels) SCTL_WARN("The surface is not resolved on its grid; the panels may not reach the requested accuracy.");
+    if (!warned_panels) SCTL_WARN("The surface or the fields of the refinement are not resolved on the grid; the panels may not reach the requested accuracy.");
     warned_panels = true;
   }
 

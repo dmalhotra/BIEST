@@ -11,12 +11,26 @@ namespace biest {
     namespace detail_quadgrid {
       /**
        * Sets qNt x qNp to the quadrature grid of SingCorr::QuadGrid() for the surface X on its Nt x Np grid, from its
-       * derivatives in scratch memory (see SurfaceOp::SurfGrad) unless quad gives the upsampling factors.
+       * derivatives in scratch memory (see SurfaceOp::SurfGrad) unless quad gives the upsampling factors. With the
+       * fields refine on an rNt x rNp grid of the full torus, at least the upsampling of that grid on which the local
+       * interpolation of refine by the singular correction is within tol.
        */
-      template <class SingCorr, class Real> void QuadGrid(sctl::Long& qNt, sctl::Long& qNp, const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol, const SingularQuadParams& quad, const sctl::Long dNt, const sctl::Long dNp, const sctl::Long mt, const sctl::Long mp, const sctl::Comm& comm) {
+      template <class SingCorr, class Real> void QuadGrid(sctl::Long& qNt, sctl::Long& qNp, const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol, const SingularQuadParams& quad, sctl::Long dNt, sctl::Long dNp, const sctl::Long mt, const sctl::Long mp, const sctl::Comm& comm, const sctl::Vector<Real>& refine = sctl::Vector<Real>(), const sctl::Long rNt = 0, const sctl::Long rNp = 0) {
         sctl::ScratchBuf<Real> dX_buf(quad.upsample_t ? 0 : 2 * X.Dim());
         sctl::Vector<Real> dX(dX_buf);
         if (!quad.upsample_t) SurfaceOp<Real>(comm, Nt, Np).Grad2D(dX, X);
+        if (!quad.upsample_t && refine.Dim()) { // SingCorr::QuadGrid() takes at least twice dNt x dNp
+          SCTL_ASSERT(refine.Dim() % (rNt * rNp) == 0);
+          const sctl::Integer p = SingCorr::InterpOrder(quad.patch_rad ? quad.patch_rad : SingCorr::QuadParams(tol, 1).patch_rad);
+          const Real scal = detail_offsurf::InvMaxAbs<Real>(refine);
+          const auto upsample = [&refine,rNt,rNp,scal,tol,p](const sctl::Integer dir) {
+            const sctl::Long U = detail_offsurf::LocalUpsampleLines<Real>(refine, rNt, rNp, dir, scal, tol, p, 1);
+            if (U < 0) SCTL_WARN("The local interpolation of the fields of the refinement may not reach the requested accuracy.");
+            return (U < 0 ? (sctl::Long)16 : U);
+          };
+          dNt = std::max<sctl::Long>(dNt, (upsample(0) * rNt + 1) / 2);
+          dNp = std::max<sctl::Long>(dNp, (upsample(1) * rNp + 1) / 2);
+        }
         SingCorr::QuadGrid(qNt, qNp, dX, Nt, Np, tol, quad, dNt, dNp, mt, mp);
       }
     }
@@ -72,8 +86,8 @@ namespace biest {
          * tol: within (log(1/tol) / (2 pi) + 1) times the local grid spacing, as
          * its error is about exp(-2 pi d / h) at a distance d for a spacing h.
          * There, with a kernel that is an SctlKernelFunction, the potential is
-         * that of OffSurfaceOp, by quadrature on panels fit to the surface; with
-         * another kernel, the trapezoidal rule still.
+         * that of OffSurfaceOp, by quadrature on panels fit to the surface and
+         * to refine; with another kernel, the trapezoidal rule still.
          *
          * @param[in] Svec vector containing the surfaces.
          *
@@ -87,8 +101,13 @@ namespace biest {
          *
          * @param[in] quad (optional) the singular quadrature, its zero values
          * chosen from tol.
+         *
+         * @param[in] refine (optional) for each surface, fields on its grid that
+         * the panels of the potential at the targets of the other surfaces must
+         * also resolve, one surface after the other in SoA order, the same
+         * number of components for each; not stored.
          */
-        template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>(), const Real tol = (Real)1e-10, const SingularQuadParams& quad = SingularQuadParams());
+        template <class Surface, class Kernel> void SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_ = sctl::Vector<sctl::Vector<sctl::Long>>(), const Real tol = (Real)1e-10, const SingularQuadParams& quad = SingularQuadParams(), const sctl::Vector<Real>& refine = sctl::Vector<Real>());
 
         /**
          * Evaluate the layer-potential operator. The potential of a surface at
@@ -107,8 +126,9 @@ namespace biest {
         /**
          * Evaluate the potential at off-surface points, at any distance from the
          * surfaces. The panels for near-surface quadrature are fit to the surfaces
-         * by the first call after SetupSingular() (and again for another tol), and
-         * their operator is set up for the targets, again only for other targets.
+         * and to the densities of the first call after SetupSingular() (and again
+         * for another tol), and their operator is set up for the targets, again
+         * only for other targets.
          *
          * @param[in,out] U the computed potential in SoA order, added to U if it
          * already has the right size.
@@ -133,15 +153,15 @@ namespace biest {
          */
         struct NearOpBase {
           virtual ~NearOpBase() = default;
-          virtual void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol) = 0;
-          virtual void SetupSurface(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, Real tol) = 0;
+          virtual void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol, const sctl::Vector<Real>& refine) = 0;
+          virtual void SetupSurface(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, Real tol, const sctl::Vector<Real>& refine) = 0;
           virtual void SetTargets(const sctl::Vector<Real>& Xt) = 0;
           virtual void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) = 0;
         };
         template <class SKer> struct NearOp : NearOpBase {
           template <sctl::Integer DIGITS, sctl::Integer Nv> NearOp(const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const sctl::Comm& comm) : op(ker, comm) {}
-          void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol) override { op.Setup(X, Nt, Np, Xt, tol); }
-          void SetupSurface(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, Real tol) override { op.SetupSurface(X, Nt, Np, tol); }
+          void Setup(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& Xt, Real tol, const sctl::Vector<Real>& refine) override { op.Setup(X, Nt, Np, Xt, tol, refine); }
+          void SetupSurface(const sctl::Vector<Real>& X, sctl::Long Nt, sctl::Long Np, Real tol, const sctl::Vector<Real>& refine) override { op.SetupSurface(X, Nt, Np, tol, refine); }
           void SetTargets(const sctl::Vector<Real>& Xt) override { op.SetTargets(Xt); }
           void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F) override { op.Eval(U, F); }
           OffSurfaceOp<Real,SKer> op;
@@ -155,9 +175,9 @@ namespace biest {
 
         /**
          * Set up the potential of each surface at the targets of the others: find the targets near the surface, and set
-         * up a NearOp for them (see SetupSingular()).
+         * up a NearOp for them, with its panels fit to the fields refine too (see SetupSingular()).
          */
-        template <class Surface, class Kernel> void SetupCross(const sctl::Vector<Surface>& Svec, const Kernel& ker, const Real tol);
+        template <class Surface, class Kernel> void SetupCross(const sctl::Vector<Surface>& Svec, const Kernel& ker, const Real tol, const sctl::Vector<Real>& refine);
 
         /**
          * The parts of the operator that depend on the components of the kernel: the kernel, the trapezoidal rule with it,
@@ -274,7 +294,7 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,HedgehogOrder>::SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_, const Real tol, const SingularQuadParams& quad) {
+    template <class Real, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,HedgehogOrder>::SetupSingular(const sctl::Vector<Surface>& Svec, const Kernel& ker, const sctl::Vector<sctl::Vector<sctl::Long>>& trg_idx_, const Real tol, const SingularQuadParams& quad, const sctl::Vector<Real>& refine) {
       using SingCorr = SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>;
       using KerOp = KernelOp<Kernel::Dim(0),Kernel::Dim(1)>;
       SetupHelper(Svec, ker, trg_idx_, tol, quad);
@@ -297,10 +317,10 @@ namespace biest {
         }
         singular_correction[i].Setup(q, Nt / Nt0[i], Np / Np0[i], Nt, Np, Xsrc[i], dXsrc[i], ker, normal_orient[i], trg_idx[i]);
       }
-      SetupCross(Svec, ker, tol);
+      SetupCross(Svec, ker, tol, refine);
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,HedgehogOrder>::SetupCross(const sctl::Vector<Surface>& Svec, const Kernel& ker, const Real tol) {
+    template <class Real, sctl::Integer HedgehogOrder> template <class Surface, class Kernel> void BoundaryIntegralOp<Real,HedgehogOrder>::SetupCross(const sctl::Vector<Surface>& Svec, const Kernel& ker, const Real tol, const sctl::Vector<Real>& refine) {
       const sctl::Long Nsurf = Svec.Dim();
       cross.clear();
       cross.resize(Nsurf * Nsurf);
@@ -313,7 +333,13 @@ namespace biest {
       // only if it is within the radius plus the largest R_j of the center.
       const Real c = sctl::log<Real>(1 / tol) / (2 * sctl::const_pi<Real>()) + 1;
       constexpr sctl::Long B = 8;
+      const sctl::Long Nsrc = dim[0] / kdim[0]; // the grid points of the surfaces
+      const sctl::Long Nr = refine.Dim() / Nsrc;
+      SCTL_ASSERT(refine.Dim() == Nr * Nsrc);
+      sctl::Long refine_dsp = 0;
       for (sctl::Long s = 0; s < Nsurf; s++) {
+        const sctl::Vector<Real> refine_s(Nr * Nt0[s] * Np0[s], (sctl::Iterator<Real>)refine.begin() + refine_dsp, false);
+        refine_dsp += refine_s.Dim();
         const sctl::Long Nt = quad_Nt[s], Np = quad_Np[s], N = Nt * Np;
         const sctl::Long Bt = (Nt + B - 1) / B, Bp = (Np + B - 1) / B;
         const sctl::Vector<Real>& X = Xsrc[s];
@@ -391,7 +417,7 @@ namespace biest {
             for (sctl::Long i = 0; i < Nnear; i++) Xnear[k * Nnear + i] = Xt[k * Ntrg + ci.near_idx[i]];
           }
           ci.near_op = NewNearOp(ker, comm_);
-          ci.near_op->Setup(Svec[s].Coord(), Nt0[s], Np0[s], Xnear, tol);
+          ci.near_op->Setup(Svec[s].Coord(), Nt0[s], Np0[s], Xnear, tol, refine_s);
         }
       }
     }
@@ -470,11 +496,6 @@ namespace biest {
       sctl::Long SrcOffset = 0;
       for (sctl::Long s = 0; s < Nsurf; s++) {
         const sctl::Vector<Real> F_(kdim[0] * Nt0[s] * Np0[s], (sctl::Iterator<Real>)F.begin() + kdim[0] * SrcOffset, false);
-        if (!off_op_[s]) {
-          off_op_[s] = NewNearOp(ker, comm_);
-          off_op_[s]->SetupSurface(Xsrc[s], quad_Nt[s], quad_Np[s], tol);
-        }
-        off_op_[s]->SetTargets(Xt);
         // Fsrc: F_ upsampled to the quadrature grid, in scratch memory (see SurfaceOp::SurfGrad), or F_ itself
         const bool same_grid = (quad_Nt[s] == Nt0[s] && quad_Np[s] == Np0[s]);
         sctl::ScratchBuf<Real> Fsrc_buf(same_grid ? 0 : kdim[0] * quad_Nt[s] * quad_Np[s]);
@@ -484,6 +505,11 @@ namespace biest {
           Fsrc.ReInit(Fsrc_buf.size(), Fsrc_buf.begin(), false);
           SurfaceOp<Real>::Upsample(F_, Nt0[s], Np0[s], Fsrc, quad_Nt[s], quad_Np[s]);
         }
+        if (!off_op_[s]) {
+          off_op_[s] = NewNearOp(ker, comm_);
+          off_op_[s]->SetupSurface(Xsrc[s], quad_Nt[s], quad_Np[s], tol, Fsrc);
+        }
+        off_op_[s]->SetTargets(Xt);
         off_op_[s]->Eval(U, Fsrc);
         SrcOffset += Nt0[s] * Np0[s];
       }
@@ -500,19 +526,21 @@ namespace biest {
       delete biop;
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,HedgehogOrder>::SetupSingular(const biest::Surface<Real>& S, const Kernel& ker, const sctl::Integer digits, const sctl::Integer trg_NFP, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long src_Nt, const sctl::Long src_Np) {
+    template <class Real, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,HedgehogOrder>::SetupSingular(const biest::Surface<Real>& S, const Kernel& ker, const sctl::Integer digits, const sctl::Integer trg_NFP, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& refine) {
       const Real tol = sctl::pow<Real>((Real)0.1, digits);
+      const sctl::Long sNt = (src_Nt == -1 ? trg_NFP * trg_Nt : src_Nt), sNp = (src_Np == -1 ? trg_Np : src_Np);
       trg_Nt_.ReInit(1);
       trg_Np_.ReInit(1);
       quad_Nt_.ReInit(1);
       quad_Np_.ReInit(1);
       trg_Nt_[0] = trg_Nt;
       trg_Np_[0] = trg_Np;
-      // The quadrature grid: for the grids of the surface and of the density, a multiple of the target grid
-      detail_quadgrid::QuadGrid<SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>>(quad_Nt_[0], quad_Np_[0], S.Coord(), S.NTor(), S.NPol(), tol, SingularQuadParams(), std::max<sctl::Long>(S.NTor(), src_Nt == -1 ? trg_NFP * trg_Nt : src_Nt), std::max<sctl::Long>(S.NPol(), src_Np == -1 ? trg_Np : src_Np), trg_NFP * trg_Nt, trg_Np, comm_);
+      // The quadrature grid: for the grids of the surface and of the density, and the fields refine, a multiple of the
+      // target grid
+      detail_quadgrid::QuadGrid<SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>>(quad_Nt_[0], quad_Np_[0], S.Coord(), S.NTor(), S.NPol(), tol, SingularQuadParams(), std::max<sctl::Long>(S.NTor(), sNt), std::max<sctl::Long>(S.NPol(), sNp), trg_NFP * trg_Nt, trg_Np, comm_, refine, sNt, sNp);
       const sctl::Vector<biest::Surface<Real>> Svec(1, sctl::Ptr2Itr<biest::Surface<Real>>((biest::Surface<Real>*)&S, 1), false); // a view of S
       SetGrids(Svec, trg_NFP);
-      SetupSingular0(ker, tol, SingularQuadParams());
+      SetupSingular0(ker, tol, SingularQuadParams(), sctl::Vector<Real>());
     }
 
     namespace detail_fieldperiod {
@@ -526,21 +554,41 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,HedgehogOrder>::SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol, const SingularQuadParams& quad) {
+    template <class Real, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,HedgehogOrder>::SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol, const SingularQuadParams& quad, const sctl::Vector<Real>& refine) {
       const sctl::Long Nsurf = Svec.Dim();
       const sctl::Integer NFP = detail_fieldperiod::CommonNFP(Svec);
       trg_Nt_.ReInit(Nsurf);
       trg_Np_.ReInit(Nsurf);
       quad_Nt_.ReInit(Nsurf);
       quad_Np_.ReInit(Nsurf);
+      sctl::ScratchBuf<sctl::Long> cnt(Nsurf), dsp(Nsurf); // the grid points of each surface and their offsets
+      for (sctl::Long i = 0; i < Nsurf; i++) cnt[i] = Svec[i].NTor() * Svec[i].NPol();
+      sctl::omp_par::scan(cnt.begin(), dsp.begin(), Nsurf, (sctl::Long)0);
+      const sctl::Long N = (Nsurf ? dsp[Nsurf - 1] + cnt[Nsurf - 1] : 0);
+      const sctl::Long Nr = (N ? NFP * refine.Dim() / N : 0); // the components of refine
+      SCTL_ASSERT(Nr * N == NFP * refine.Dim());
+      sctl::ScratchBuf<Real> Rf_buf(Nr * N); // refine on the full tori
       for (sctl::Long i = 0; i < Nsurf; i++) { // the targets: the grid points of one field period; the quadrature grid: a multiple of the surface grid
         const sctl::Long Nt = Svec[i].NTor(), Np = Svec[i].NPol();
         trg_Nt_[i] = Nt / NFP;
         trg_Np_[i] = Np;
-        detail_quadgrid::QuadGrid<SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>>(quad_Nt_[i], quad_Np_[i], Svec[i].Coord(), Nt, Np, tol, quad, Nt, Np, Nt, Np, comm_);
+        sctl::Vector<Real> Rf(Nr * cnt[i], Rf_buf.begin() + Nr * dsp[i], false);
+        if (Nr) biest::SurfaceOp<Real>::CompleteVecField(Rf, false, false, NFP, Nt / NFP, Np, sctl::Vector<Real>(Nr * cnt[i] / NFP, (sctl::Iterator<Real>)refine.begin() + Nr * dsp[i] / NFP, false), 0, biest::SurfaceOp<Real>::ToroidalOrientation(Svec[i].Coord(), Nt, Np));
+        detail_quadgrid::QuadGrid<SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>>(quad_Nt_[i], quad_Np_[i], Svec[i].Coord(), Nt, Np, tol, quad, Nt, Np, Nt, Np, comm_, Rf, Nt, Np);
       }
       SetGrids(Svec, NFP);
-      SetupSingular0(ker, tol, quad);
+
+      // refine on the quadrature grids, for the panels of the potential of each surface at the targets of the others
+      sctl::ScratchBuf<sctl::Long> qcnt(Nsurf), qdsp(Nsurf);
+      for (sctl::Long i = 0; i < Nsurf; i++) qcnt[i] = quad_Nt_[i] * quad_Np_[i];
+      sctl::omp_par::scan(qcnt.begin(), qdsp.begin(), Nsurf, (sctl::Long)0);
+      sctl::ScratchBuf<Real> Rq_buf(Nsurf && Nr ? Nr * (qdsp[Nsurf - 1] + qcnt[Nsurf - 1]) : 0);
+      sctl::Vector<Real> Rq(Rq_buf);
+      for (sctl::Long s = 0; s < Nsurf && Nr; s++) {
+        sctl::Vector<Real> Rq_(Nr * qcnt[s], Rq.begin() + Nr * qdsp[s], false);
+        biest::SurfaceOp<Real>::Resample(Rq_, quad_Nt_[s], quad_Np_[s], sctl::Vector<Real>(Nr * cnt[s], Rf_buf.begin() + Nr * dsp[s], false), Svec[s].NTor(), Svec[s].NPol());
+      }
+      SetupSingular0(ker, tol, quad, Rq);
     }
 
     template <class Real, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,HedgehogOrder>::SetGrids(const sctl::Vector<biest::Surface<Real>>& Svec, const sctl::Integer NFP) {
@@ -657,14 +705,14 @@ namespace biest {
       return N;
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,HedgehogOrder>::SetupSingular0(const Kernel& ker, const Real tol, const SingularQuadParams& quad) {
+    template <class Real, sctl::Integer HedgehogOrder> template <class Kernel> void FieldPeriodBIOp<Real,HedgehogOrder>::SetupSingular0(const Kernel& ker, const Real tol, const SingularQuadParams& quad, const sctl::Vector<Real>& refine) {
       if (!biop) biop = new BIOp(comm_);
       kdim_[0] = ker.Dim(0);
       kdim_[1] = ker.Dim(1);
       SingularQuadParams q = quad; // on the surfaces resampled to their quadrature grids
       q.upsample_t = 1;
       q.upsample_p = 1;
-      biop->SetupSingular(Svec_, ker, trg_idx_, tol, q); // in the memory of the earlier setup
+      biop->SetupSingular(Svec_, ker, trg_idx_, tol, q, refine); // in the memory of the earlier setup
     }
 
 }

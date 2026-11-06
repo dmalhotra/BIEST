@@ -53,7 +53,9 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
      * symmetry is assumed. The quadrature grid is that of
      * SingularCorrection::QuadGrid(): of dimensions that are multiples of
      * trg_NFP*trg_Nt and trg_Np, at least twice the larger of the surface grid
-     * and src_Nt x src_Np.
+     * and src_Nt x src_Np, and with refine, at least the upsampling of
+     * src_Nt x src_Np on which the singular quadrature interpolates refine to
+     * the accuracy.
      *
      * @param[in] S the surface (for several, see the SetupSingular() from a
      * tolerance).
@@ -68,22 +70,30 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
      * @param[in] src_Nt, src_Np (optional) the finest density grid, counted on
      * the full torus, that the quadrature must resolve; -1 for the target
      * grid, trg_NFP*trg_Nt x trg_Np. Eval() takes densities on any grid.
+     *
+     * @param[in] refine (optional) fields on the src_Nt x src_Np grid of the
+     * full torus that the quadrature grid must resolve, of any number of
+     * components in SoA order: e.g. the density, or the right-hand side of a
+     * linear system whose solution will be the density; used only to choose
+     * the quadrature grid, and not stored.
      */
-    template <class Kernel> void SetupSingular(const biest::Surface<Real>& S, const Kernel& ker, const sctl::Integer digits, const sctl::Integer trg_NFP, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long src_Nt = -1, const sctl::Long src_Np = -1);
+    template <class Kernel> void SetupSingular(const biest::Surface<Real>& S, const Kernel& ker, const sctl::Integer digits, const sctl::Integer trg_NFP, const sctl::Long trg_Nt, const sctl::Long trg_Np, const sctl::Long src_Nt = -1, const sctl::Long src_Np = -1, const sctl::Vector<Real>& refine = sctl::Vector<Real>());
 
     /**
      * Set up the operator for one or several surfaces, to the tolerance tol,
      * at the grid points of the first 1/NFP of each surface, NFP the greatest
      * common divisor of their Surface::NFP(). The quadrature grid of each
      * surface is that of SingularCorrection::QuadGrid(): of dimensions that
-     * are multiples of the surface grid, at least twice it unless quad gives
-     * the upsampling factors.
+     * are multiples of the surface grid, at least twice it, and with refine,
+     * at least the upsampling of it on which the singular quadrature
+     * interpolates refine to the tolerance, unless quad gives the upsampling
+     * factors.
      *
      * The potential of a surface at the targets of another is the trapezoidal
      * rule on its quadrature grid, except at the targets within
      * (log(1/tol) / (2 pi) + 1) h of a point of that grid, h the larger grid
      * spacing there: for a kernel that is an SctlKernelFunction, it is computed
-     * there by OffSurfaceOp.
+     * there by OffSurfaceOp, on panels that resolve the surface and refine.
      *
      * @param[in] Svec the surfaces.
      *
@@ -93,8 +103,16 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
      *
      * @param[in] quad (optional) the singular quadrature and the upsampling
      * factors (see SingularQuadParams); those that are zero are chosen for tol.
+     *
+     * @param[in] refine (optional) fields that the quadrature must resolve,
+     * e.g. the right-hand side of a linear system whose solution will be the
+     * density: for each surface, on its targets (the grid of its first 1/NFP),
+     * one surface after the other, of any number of components in SoA order,
+     * the same for each surface; completed to the full tori as by
+     * SurfaceOp::CompleteVecField() (3 components as a Cartesian vector). Used
+     * only to choose the quadrature grids and the panels, and not stored.
      */
-    template <class Kernel> void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol, const SingularQuadParams& quad = SingularQuadParams());
+    template <class Kernel> void SetupSingular(const sctl::Vector<biest::Surface<Real>>& Svec, const Kernel& ker, const Real tol, const SingularQuadParams& quad = SingularQuadParams(), const sctl::Vector<Real>& refine = sctl::Vector<Real>());
 
     /**
      * Evaluate the potential of the density F at the targets, for an operator
@@ -131,9 +149,9 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
 
     /**
      * Evaluate the potential at points at any distance from the surfaces, by
-     * OffSurfaceOp: its panels are fit to the surfaces by the first call after
-     * SetupSingular() and again for another tol, and it is set up for the
-     * targets again only for other targets.
+     * OffSurfaceOp: its panels are fit to the surfaces and to the densities of
+     * the first call after SetupSingular(), and again for another tol, and it
+     * is set up for the targets again only for other targets.
      *
      * @param[in,out] U the potential at Xt in SoA order, added to U if it has
      * the right size.
@@ -190,9 +208,10 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
     using BIOp = detail_biop::BoundaryIntegralOp<Real,HedgehogOrder>;
 
     /**
-     * Set up the operator on the surfaces and the targets of SetGrids(), in the memory of the earlier setup.
+     * Set up the operator on the surfaces and the targets of SetGrids(), in the memory of the earlier setup, with the
+     * panels between surfaces fit to the fields refine on the quadrature grids too (see BIOp::SetupSingular()).
      */
-    template <class Kernel> void SetupSingular0(const Kernel& ker, const Real tol, const SingularQuadParams& quad);
+    template <class Kernel> void SetupSingular0(const Kernel& ker, const Real tol, const SingularQuadParams& quad, const sctl::Vector<Real>& refine);
 
     BIOp* biop;
     sctl::StaticArray<sctl::Integer,2> kdim_; // the density and potential components of the kernel of the setup

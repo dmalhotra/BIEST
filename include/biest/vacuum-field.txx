@@ -55,7 +55,8 @@ namespace biest {
     mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
     mutable sctl::Vector<Real> normal, B0J0_; // Nt_ * Np_: B0J0_ the field of the current J0_ (I0 = 1), once computed
     mutable bool dosetup, dosetup_LaplaceFxU;
-    // The operators of EvalOffSurface(), with their panels fit to the surface by the first call after Setup_()
+    // The operators of EvalOffSurface(), with their panels fit to the surface and the densities of the first call after
+    // Setup_()
     mutable std::unique_ptr<OffSurfLaplaceFxdU> off_lap_;
     mutable std::unique_ptr<OffSurfBiotSavartFxU> off_bs_;
   };
@@ -129,8 +130,11 @@ namespace biest {
     constexpr bool half_period = false;
     const sctl::Integer max_iter = 200;
 
-    if (dosetup) { // Quadrature setup
-      LaplaceFxdU.SetupSingular(Svec[0], Laplace3D<Real>::FxdU(), digits_, NFP_*(half_period?2:1), Nt_, Np_);
+    if (dosetup) { // Quadrature setup, for a grid that resolves the right-hand side B1_dot_N too
+      sctl::ScratchBuf<Real> R_buf(NFP_ * Nt_ * Np_);
+      sctl::Vector<Real> R(R_buf);
+      SurfaceOp<Real>::CompleteVecField(R, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)B1_dot_N.size(), sctl::Ptr2Itr<Real>((Real*)B1_dot_N.data(), (sctl::Long)B1_dot_N.size()), false));
+      LaplaceFxdU.SetupSingular(Svec[0], Laplace3D<Real>::FxdU(), digits_, NFP_*(half_period?2:1), Nt_, Np_, -1, -1, R);
       dosetup = false;
     }
 
@@ -250,8 +254,11 @@ namespace biest {
   template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::ComputeU_(const std::vector<Real>& sigma) const {
     constexpr bool half_period = false;
 
-    if (dosetup_LaplaceFxU) { // Quadrature setup
-      LaplaceFxU.SetupSingular(Svec[0], Laplace3D<Real>::FxU(), digits_, NFP_*(half_period?2:1), Nt_, Np_);
+    if (dosetup_LaplaceFxU) { // Quadrature setup, for a grid that resolves sigma too
+      sctl::ScratchBuf<Real> R_buf(NFP_ * Nt_ * Np_);
+      sctl::Vector<Real> R(R_buf);
+      SurfaceOp<Real>::CompleteVecField(R, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false));
+      LaplaceFxU.SetupSingular(Svec[0], Laplace3D<Real>::FxU(), digits_, NFP_*(half_period?2:1), Nt_, Np_, -1, -1, R);
       dosetup_LaplaceFxU = false;
     }
 
@@ -284,7 +291,7 @@ namespace biest {
       for (auto& f : F) f = -f;
       if (!off_lap_) {
         off_lap_.reset(new OffSurfLaplaceFxdU(Laplace3D<Real>::FxdU()));
-        off_lap_->SetupSurface(XX, NFP_*Nt_, Np_, tol);
+        off_lap_->SetupSurface(XX, NFP_*Nt_, Np_, tol, F);
       }
       off_lap_->SetTargets(Xtrg_view);
       off_lap_->Eval(Bplasma, F);
@@ -296,7 +303,7 @@ namespace biest {
       SurfaceOp<Real>::CompleteVecField(J_, false, half_period, NFP_, Nt_, Np_, J_view, 0, SurfaceOp<Real>::ToroidalOrientation(Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol()));
       if (!off_bs_) {
         off_bs_.reset(new OffSurfBiotSavartFxU(BiotSavart3D<Real>::FxU()));
-        off_bs_->SetupSurface(XX, NFP_*Nt_, Np_, tol);
+        off_bs_->SetupSurface(XX, NFP_*Nt_, Np_, tol, J_);
       }
       off_bs_->SetTargets(Xtrg_view);
       off_bs_->Eval(Bplasma, J_);

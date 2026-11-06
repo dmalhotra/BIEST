@@ -174,6 +174,11 @@ fewest points. A warning is printed if :math:`c_{min}` is above 4.
 - **The anisotropy**: the rule below was fit for :math:`c` up to 4.4. On W7-X with :math:`140\times 56` points
   (:math:`c = 10.9`), upsampling twice in each direction gives 4.8 digits for 6 requested, and the grid of cells that
   are about square, 4 times toroidally, gives 5.7, what the data allow.
+- **The fields of the refinement**: ``SetupSingular()`` can also be given fields that the quadrature grid must resolve,
+  for example the density, or the right-hand side of a linear system whose solution will be the density, which the
+  surface and the tolerance do not describe. The grid is then at least as fine as the upsampling of their grid on which
+  the local Lagrange interpolation of the singular correction (of order :math:`\min(2R+1, 16)`) interpolates them to
+  the tolerance, relative to their largest value. They only guide the choice of the grid, and are not stored.
 
 In the test of Green's identity for the Laplace single and double layers, with a smooth harmonic function on
 axisymmetric, W7-X and stellarator surfaces (grids of 800 to 63,000 points, 3 to 12 digits), the rule reaches within
@@ -268,7 +273,8 @@ used for the other results in the paper. In the test of [MCOT2020]_ (Fig. 2), th
 
 ``FieldPeriodBIOp`` chooses its quadrature grid by the rule of :ref:`Upsampling <algorithms-upsampling>` for the
 requested number of digits :math:`d`, with dimensions that are multiples of those of the target grid on the full
-torus, and at least twice the larger of the surface grid and the grid of the densities in each direction.
+torus, at least twice the larger of the surface grid and the grid of the densities in each direction, and fine enough
+for the fields of the refinement, if given.
 
 .. _algorithms-off-surface:
 
@@ -284,17 +290,20 @@ which handles targets at any distance from the surface:
 1. The surface is divided into quadrilateral panels, each with a :math:`12\times 12` tensor grid of Gauss--Legendre
    nodes. Starting from a coarse :math:`4\times 4` mesh in the grid parameters, each panel is split in half along
    the toroidal direction, the poloidal direction or both, until on every panel the last two Legendre coefficients
-   along each direction of the surface coordinates and of their derivatives (which give the normal and the area
-   element) are below the requested tolerance, relative to the largest value of each field, and the area of the panel
-   by its quadrature differs from the sum of the areas of its two halves along each direction by at most the
-   tolerance times the surface area. The second test catches area elements that the quadrature does not resolve
-   although the surface coordinates are resolved: the area element is the square root of a polynomial on each panel,
-   and near a sharp concave fold of the surface its branch points are close to the panel. The panels are therefore
-   small only where the surface varies rapidly. A panel is not split beyond 32 nodes per grid point. The panels
-   depend only on the surface and the tolerance, so they serve every density and every set of targets:
-   ``FieldPeriodBIOp``, ``ExtVacuumField`` and ``IntVacuumField`` fit them by the first ``EvalOffSurface`` after
-   their setup, and set up step 3 again only for other targets. The static ``EvalOffSurface`` of ``VacuumField`` and
-   ``TaylorState``, given the surfaces at each call, fit them at each call.
+   along each direction of the surface coordinates, of their derivatives (which give the normal and the area
+   element) and of the density are below the requested tolerance, relative to the largest value of each field, and
+   the area of the panel by its quadrature differs from the sum of the areas of its two halves along each direction
+   by at most the tolerance times the surface area. The second test catches area elements that the quadrature does
+   not resolve although the surface coordinates are resolved: the area element is the square root of a polynomial on
+   each panel, and near a sharp concave fold of the surface its branch points are close to the panel. The panels are
+   therefore
+   small only where the surface or the density varies rapidly. A panel is not split beyond 32 nodes per grid point.
+   The density only guides the splitting, and ``OffSurfaceOp`` takes any fields on the grid for this, for example
+   the right-hand side of a linear system whose solution the panels will integrate. ``FieldPeriodBIOp``,
+   ``ExtVacuumField`` and ``IntVacuumField`` fit the panels to the surface and to the densities of the first
+   ``EvalOffSurface`` after their setup, keep them for later densities, and set up step 3 again only for other
+   targets. The static ``EvalOffSurface`` of ``VacuumField`` and ``TaylorState``, given the surfaces at each call, fit
+   them at each call.
 2. The surface coordinates and the densities are interpolated from the periodic grid to the panel nodes: first FFT
    upsampling, then local 12-point Lagrange interpolation. The upsampling factor (up to 16) is chosen for the surface,
    to meet the tolerance on the finest panels, and for each density, at least that of the surface, to meet the
@@ -319,8 +328,9 @@ grid points of the others, which are off that surface. The trapezoidal rule on t
 with :math:`h` the larger of the two grid spacings. For a tolerance :math:`\epsilon` (an argument of
 ``SetupSingular``), ``SetupSingular`` finds the targets within :math:`(\log(1/\epsilon)/(2\pi) + 1)\,h` of a grid
 point of the source surface, with the local :math:`h` of that point (the extra :math:`h` covers a target that is
-closer to the surface than to its grid points), and sets up off-surface evaluation (``OffSurfaceOp``, above) for them;
-the other targets keep the trapezoidal rule. The near targets cost more at each evaluation, as the panels have more
+closer to the surface than to its grid points), and sets up off-surface evaluation (``OffSurfaceOp``, above) for them,
+on panels fit to the surface and to the fields of the refinement given to ``SetupSingular``; the other targets keep
+the trapezoidal rule. The near targets cost more at each evaluation, as the panels have more
 nodes than the grid has points. The solvers use :math:`\epsilon = 0.1\,\mathtt{gmres\_tol}`, and the near
 evaluation needs a kernel of SCTL (``SctlKernelFunction``, as those of ``Laplace3D``, ``BiotSavart3D``,
 ``Stokes3D`` and ``Helmholtz3D``); with another kernel all targets keep the trapezoidal rule.

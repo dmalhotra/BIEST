@@ -105,8 +105,9 @@ namespace biest {
     /**
      * Evaluate Bplasma = -grad(S[sigma]) + curl(S[J]) at points outside the
      * surface, at any distance from it. The panels of the near-surface
-     * quadrature are fit to the surface by the first call after Setup(), and
-     * their operator is set up again only for other targets.
+     * quadrature are fit to the surface and to the densities of the first call
+     * after Setup(), and their operator is set up again only for other
+     * targets.
      *
      * @param[in] Xt the target points in SoA order {x1, x2, ..., y1, ..., z1, ...}.
      *
@@ -209,8 +210,9 @@ namespace biest {
     /**
      * Evaluate B = -grad(S[sigma]) + I0/(2 pi R) phi_hat at points inside
      * the surface, at any distance from it. The panels of the near-surface
-     * quadrature are fit to the surface by the first call after Setup(), and
-     * their operator is set up again only for other targets.
+     * quadrature are fit to the surface and to the densities of the first call
+     * after Setup(), and their operator is set up again only for other
+     * targets.
      *
      * @param[in] Xt the target points in SoA order {x1, x2, ..., y1, ..., z1, ...}.
      *

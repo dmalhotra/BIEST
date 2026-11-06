@@ -57,10 +57,10 @@ namespace detail_offsurf {
 
 /**
  * Layer potentials of a toroidal surface at off-surface targets, by quadrature on panels that resolve the surface. The
- * panels are refined adaptively from a coarse mesh, along one or both directions, where the surface or the density
- * needs them. The panels depend only on the surface and the tolerance, and the operator on the targets too: a later
- * SetTargets() keeps the panels, and does nothing for the targets of the last call. Target points must not lie on
- * the surface.
+ * panels are refined adaptively from a coarse mesh, along one or both directions, where the surface, or the fields
+ * given to guide the refinement (e.g. the density), need them. The panels depend only on the surface, those fields and
+ * the tolerance, and the operator on the targets too: a later SetTargets() keeps the panels, and does nothing for the
+ * targets of the last call. Target points must not lie on the surface.
  *
  * @tparam SKer the SCTL kernel, e.g. sctl::Laplace3D_FxdU.
  */
@@ -97,15 +97,17 @@ template <class Real, class SKer> class OffSurfaceOp {
      *
      * @param[in] tol the accuracy tolerance.
      *
-     * @param[in] F unused: the panels depend only on the surface. It is kept for compatibility.
+     * @param[in] refine (optional) fields on the grid in SoA order, of any number of components, that the panels must
+     * also resolve, e.g. the density, or the right-hand side of a linear system; used only to fit the panels, and not
+     * stored.
      */
-    void Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& F = sctl::Vector<Real>());
+    void Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& refine = sctl::Vector<Real>());
 
     /**
-     * Fit panels to the surface, for the tolerance tol: the part of Setup() that does not depend on the targets. The
-     * operator is then set up by SetTargets().
+     * Fit panels to the surface and to the fields refine (see Setup()), for the tolerance tol: the part of Setup()
+     * that does not depend on the targets. The operator is then set up by SetTargets().
      */
-    void SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol);
+    void SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol, const sctl::Vector<Real>& refine = sctl::Vector<Real>());
 
     /**
      * Set up the operator for the target points Xt (in SoA order) on the panels of the last SetupSurface(), unless
@@ -127,14 +129,14 @@ template <class Real, class SKer> class OffSurfaceOp {
   private:
 
     /**
-     * Split the panels until they resolve the surface: on each panel, along each direction, the last two Legendre
-     * coefficients of the surface coordinates and of their derivatives are within the tolerance, and the area of the
-     * panel by its quadrature differs from the sum over its two halves by at most the tolerance times the surface
-     * area, unless the panel is the finest allowed (32 nodes per grid point). Set Ut and Up to the smallest values,
-     * at least their current values, for which the local interpolation of the surface is accurate on the finest
-     * panels. Set flip, from the normal at the node of largest x.
+     * Split the panels until they resolve the surface and the fields refine: on each panel, along each direction, the
+     * last two Legendre coefficients of the surface coordinates, of their derivatives and of refine are within the
+     * tolerance, and the area of the panel by its quadrature differs from the sum over its two halves by at most the
+     * tolerance times the surface area, unless the panel is the finest allowed (32 nodes per grid point). Set Ut and
+     * Up to the smallest values, at least their current values, for which the local interpolation of the surface on
+     * the finest panels, and of refine, is accurate. Set flip, from the normal at the node of largest x.
      */
-    void FitPanels();
+    void FitPanels(const sctl::Vector<Real>& refine);
 
     /**
      * Build the elements from the surface coordinates at their nodes, and set up the operator.

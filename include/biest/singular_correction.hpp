@@ -96,6 +96,12 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     explicit SingularCorrection(const sctl::Comm& comm = sctl::Comm::Self());
 
     /**
+     * Returns the order of the Lagrange interpolation of the data on the patch to the polar grid, for the patch radius
+     * patch_rad.
+     */
+    static constexpr sctl::Integer InterpOrder(const sctl::Integer patch_rad) { return std::min<sctl::Integer>(2 * patch_rad + 1, MAX_INTERP_ORDER); }
+
+    /**
      * Returns the quadrature for the tolerance tol on a grid of anisotropy cond (see GridAnisotropy()).
      */
     static SingularQuadParams QuadParams(const Real tol, const Real cond);
@@ -167,7 +173,7 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
   SCTL_ASSERT(params.patch_rad > 0 && params.rad_nodes > 0 && params.ang_nodes > 0);
   PATCH_RAD = params.patch_rad;
   PATCH_DIM = 2 * PATCH_RAD + 1;
-  INTERP_ORDER = std::min<sctl::Integer>(PATCH_DIM, MAX_INTERP_ORDER);
+  INTERP_ORDER = InterpOrder(PATCH_RAD);
   RAD_DIM = params.rad_nodes;
   ANG_DIM = params.ang_nodes;
   ANGp = (ANG_DIM + VecLen - 1) / VecLen * VecLen; // the columns of U, padded to whole vectors

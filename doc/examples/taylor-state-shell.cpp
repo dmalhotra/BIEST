@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
   const Real lambda = 1.0, tor_flux = 1.0, pol_flux = 0.5;
   sctl::Vector<Real> B;
   sctl::Vector<sctl::Vector<Real>> m, sigma;
-  biest::TaylorState<Real,1,12,24>::Compute(B, tor_flux, pol_flux, lambda, Svec, comm, 1e-6, 200, 0.1, &m, &sigma);
+  biest::TaylorState<Real>::Compute(B, tor_flux, pol_flux, lambda, Svec, comm, 1e-6, 200, 0.1, &m, &sigma);
 
   // B holds the field on the grid of each surface, one after the other
   std::cout << "B.Dim() = " << B.Dim() << " = 3 * (104 * 52 + 104 * 26)\n";
@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
   Xt[0] = 2.5;
   Xt[1] = 0.0;
   Xt[2] = 0.0;
-  biest::TaylorState<Real,1,12,24>::EvalOffSurface(Bt, Xt, Svec, tor_flux, pol_flux, lambda, m, sigma, comm, 1e-6);
+  biest::TaylorState<Real>::EvalOffSurface(Bt, Xt, Svec, tor_flux, pol_flux, lambda, m, sigma, comm, 1e-6);
   std::cout << "B(2.5, 0, 0) = " << Bt[0] << ' ' << Bt[1] << ' ' << Bt[2] << '\n';
   biest::WriteVTK("B", Svec, B);
   return 0;

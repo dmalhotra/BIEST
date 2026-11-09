@@ -43,7 +43,10 @@ enum class SurfType {
 
 /**
  * A toroidal surface given by the coordinates of the points of a uniform Nt x
- * Np grid in the toroidal and poloidal angles, in SoA order.
+ * Np grid in the toroidal and poloidal angles, in SoA order. A surface may
+ * have NFP toroidal field periods: its coordinates are then invariant under
+ * the rotation by 2*pi/NFP about the z-axis, which maps the grid points of one
+ * field period to those of the next.
  */
 template <class Real> class Surface {
     static constexpr sctl::Integer COORD_DIM = 3;
@@ -53,7 +56,7 @@ template <class Real> class Surface {
     /**
      * Constructs an empty surface.
      */
-    Surface() : Nt0(0), Np0(0) {}
+    Surface() : Nt0(0), Np0(0), NFP_(1) {}
 
     /**
      * Constructs a surface of given dimensions.
@@ -68,6 +71,21 @@ template <class Real> class Surface {
     Surface(sctl::Long Nt, sctl::Long Np, SurfType type = SurfType::AxisymCircleWide);
 
     /**
+     * Constructs a surface with NFP toroidal field periods from its
+     * coordinates on one field period, completed to the full torus by
+     * symmetry: the surface has NFP*Nt x Np grid points.
+     *
+     * @param[in] NFP the number of toroidal field periods.
+     *
+     * @param[in] Nt, Np the grid dimensions of one field period.
+     *
+     * @param[in] X the coordinates on one field period, in the order of
+     * Coord(). The toroidal index may increase in either direction about the
+     * z-axis.
+     */
+    Surface(sctl::Integer NFP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& X);
+
+    /**
      * Returns the number of surface discretization nodes in toroidal
      * direction.
      */
@@ -78,6 +96,33 @@ template <class Real> class Surface {
      * direction.
      */
     sctl::Long NPol() const {return Np0;}
+
+    /**
+     * Returns the number of toroidal field periods: 1 unless given to the
+     * constructor or to SetNFP(). The grid points of field period j are those
+     * with toroidal index in [j*NTor()/NFP(), (j+1)*NTor()/NFP()).
+     */
+    sctl::Integer NFP() const {return NFP_;}
+
+    /**
+     * Declares that the surface has NFP toroidal field periods, which
+     * HasSymmetry() must confirm. The coordinates must not change afterwards
+     * unless the symmetry is kept or NFP is set back to 1.
+     *
+     * @param[in] NFP the number of field periods; 1 declares none.
+     *
+     * @param[in] tol the tolerance of HasSymmetry().
+     */
+    void SetNFP(sctl::Integer NFP, Real tol = (Real)1e-10);
+
+    /**
+     * Returns whether the surface has NFP field periods: NTor() is a multiple
+     * of NFP, and the coordinates of each grid point, rotated by 2*pi/NFP about
+     * the z-axis (in the direction of the toroidal index), are those of the
+     * point NTor()/NFP() grid points further, to within tol relative to the
+     * largest coordinate.
+     */
+    bool HasSymmetry(sctl::Integer NFP, Real tol = (Real)1e-10) const;
 
     /**
      * Get the surface coordinates vector.  The coordinates are in the order:
@@ -101,6 +146,7 @@ template <class Real> class Surface {
   private:
 
     sctl::Long Nt0, Np0;
+    sctl::Integer NFP_;
     sctl::Vector<Real> X0_;
 };
 

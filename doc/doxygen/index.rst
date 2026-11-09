@@ -67,6 +67,6 @@ Data layout
   vector fields on one period follow the direction of their surface grid.
 - **Off-surface target points.** ``VacuumField::EvalOffSurface`` and ``TaylorState::EvalOffSurface`` take and return
   arrays of structures (AoS), ``{x1, y1, z1, x2, y2, z2, ...}``. ``ExtVacuumField::EvalOffSurface``,
-  ``IntVacuumField::EvalOffSurface``, ``BoundaryIntegralOp::EvalOffSurface`` and ``OffSurfaceOp`` use SoA,
+  ``IntVacuumField::EvalOffSurface``, ``FieldPeriodBIOp::EvalOffSurface`` and ``OffSurfaceOp`` use SoA,
   ``{x1, x2, ..., y1, y2, ..., z1, z2, ...}``.
 - **Units.** BIEST uses units in which :math:`\mu_0 = 1`.

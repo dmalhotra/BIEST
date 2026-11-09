@@ -29,8 +29,11 @@ For a given real :math:`\lambda`, BIEST solves ([MCIO2019]_, Eq. 2.11)
 The boundary conditions alone do not determine the field: one flux condition is needed for each boundary
 surface. For a torus, :math:`\Phi_1` is the toroidal flux, through a cross-section at constant toroidal angle.
 For a shell, the second condition is the poloidal flux, through a ribbon that connects the two surfaces at constant
-poloidal angle. The problem has no unique solution when :math:`\lambda` is an eigenvalue of the curl operator on
-fields tangent to :math:`\Gamma`; away from these values the formulation below is well conditioned.
+poloidal angle. The toroidal flux is positive counterclockwise about the z-axis, the direction of the field of a
+current along +z on the z-axis; the poloidal flux is positive in the direction of the field of a current
+counterclockwise about the z-axis inside the inner surface. The problem has no unique solution when :math:`\lambda` is
+an eigenvalue of the curl operator on fields tangent to :math:`\Gamma`; away from these values the formulation below
+is well conditioned.
 The case :math:`\lambda = 0` is a vacuum field, which has a separate formulation
 (:ref:`below <algorithms-taylor-states-vacuum>`).
 
@@ -169,8 +172,9 @@ inside the iteration ([MCIO2019]_, Sec. 2.2.4). For each surface :math:`k`:
    :math:`\mathcal{S}_0[\mathbf{j}]` along its boundary ([MCIO2019]_, Eq. 2.27).
 
 The field with the requested fluxes is the combination of the :math:`\mathbf{B}_k` that matches them.
-``VacuumField::Compute`` returns the field and the surface current :math:`\mathbf{j}`, and
-``VacuumField::EvalOffSurface`` evaluates the Biot--Savart field of :math:`\mathbf{j}` at points inside :math:`\Omega`.
+``VacuumField::Compute`` returns the field and, optionally, the surface currents :math:`\mathbf{j}` of the fields of
+unit flux, and ``VacuumField::EvalOffSurface`` evaluates the Biot--Savart field of their combination for the given
+fluxes at points inside :math:`\Omega`.
 
 Results
 -------

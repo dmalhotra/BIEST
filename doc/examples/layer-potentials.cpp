@@ -2,7 +2,7 @@
 // Author: Dhairya Malhotra
 // SPDX-License-Identifier: Apache-2.0
 
-// The virtual casing principle with BoundaryIntegralOp.
+// The virtual casing principle with FieldPeriodBIOp.
 
 #include <biest.hpp>
 
@@ -54,18 +54,16 @@ int main(int argc, char** argv) {
   }
 
   // Layer-potential operators: Biot-Savart (3 -> 3 components) and Laplace gradient (1 -> 3 components)
-  constexpr int UPSAMPLE = 1; // upsampling factor for the quadrature
-  constexpr int PDIM = 20; // radius of the patch for the singular quadrature (PATCH_DIM0)
-  constexpr int RDIM = 32; // order of the polar quadrature (RAD_DIM)
-  biest::BoundaryIntegralOp<Real, 3, 3, UPSAMPLE, PDIM, RDIM> BiotSavart;
-  biest::BoundaryIntegralOp<Real, 1, 3, UPSAMPLE, PDIM, RDIM> LaplaceGrad;
-  BiotSavart.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU());
-  LaplaceGrad.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU());
+  const Real tol = 1e-12; // the accuracy of the singular quadrature, which sets its grid, patch and polar grid
+  biest::FieldPeriodBIOp<Real> BiotSavart; // the targets: all the grid points, as the surface declares no field periods
+  biest::FieldPeriodBIOp<Real> LaplaceGrad;
+  BiotSavart.SetupSingular(Svec, biest::BiotSavart3D<Real>::FxU(), tol);
+  LaplaceGrad.SetupSingular(Svec, biest::Laplace3D<Real>::FxdU(), tol);
 
   { // Plasma field on the surface: B/2 + curl S[n x B] - grad S[n.B]
     sctl::Vector<Real> curlS, gradS;
-    BiotSavart(curlS, NxB);
-    LaplaceGrad(gradS, BdotN);
+    BiotSavart.Eval(curlS, NxB, 1, Nt, Np); // the densities on the Nt x Np grid of the full torus
+    LaplaceGrad.Eval(gradS, BdotN, 1, Nt, Np);
     const sctl::Vector<Real> Bvc = B * 0.5 + curlS - gradS;
 
     Real err = 0, max_val = 0;
@@ -84,8 +82,8 @@ int main(int argc, char** argv) {
       Xt[2 * Ntrg + i] = 0.2;
     }
     sctl::Vector<Real> curlS, gradS;
-    BiotSavart.EvalOffSurface(curlS, Xt, NxB, biest::BiotSavart3D<Real>::FxU(), 1e-10);
-    LaplaceGrad.EvalOffSurface(gradS, Xt, BdotN, biest::Laplace3D<Real>::FxdU(), 1e-10);
+    BiotSavart.EvalOffSurface(curlS, Xt, NxB, 1, Nt, Np, biest::BiotSavart3D<Real>::FxU(), 1e-10);
+    LaplaceGrad.EvalOffSurface(gradS, Xt, BdotN, 1, Nt, Np, biest::Laplace3D<Real>::FxdU(), 1e-10);
     const sctl::Vector<Real> Bvc = curlS - gradS;
     const sctl::Vector<Real> Bplasma_t = LoopField(Xt, 2.0, 0.1, 1.0);
 

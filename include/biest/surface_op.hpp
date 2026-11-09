@@ -8,8 +8,8 @@
 #include <map>
 #include <utility>
 
+#include <biest/kernel.hpp>
 #include <biest/surface.hpp>
-#include <biest/singular_correction.hpp>
 #include <sctl.hpp>
 
 namespace biest {
@@ -19,6 +19,20 @@ namespace biest {
  * data on a toroidal surface given on a uniform periodic Nt x Np grid in SoA
  * order, with any number of components. The surface parameters t and p run
  * over [0,1) in the toroidal and poloidal directions.
+ *
+ * The grid can also be one of the NFP field periods of a torus with that
+ * symmetry (see Surface::NFP()), the first Nt rows of its NFP*Nt x Np grid, on
+ * which t runs over [0,1/NFP). Each input and output is then the restriction
+ * to the field period of the same quantity on the full torus: dX is the
+ * restriction of Grad2D() of the coordinates on the full torus. This holds for
+ * Grad2D() and SurfGrad() of functions that repeat from one field period to
+ * the next, for SurfDiv() and SurfCurl() of vector fields that rotate with the
+ * field periods, and for SurfNormalAreaElem(), SurfLap(), SurfInteg(),
+ * ProjZeroMean(), InvSurfLap(), GradInvSurfLap(), InvSurfLapPrecond() and
+ * HodgeDecomp(). The differential operators are in the intrinsic form, which
+ * differentiates only the metric and the components of vector fields along
+ * the tangent vectors: quantities that repeat from one field period to the
+ * next, unlike the Cartesian components of vectors.
  */
 template <class Real> class SurfaceOp {
     static constexpr sctl::Integer COORD_DIM = 3;
@@ -36,8 +50,15 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] Np number of surface discretization points in the poloidal
      * direction.
+     *
+     * @param[in] NFP the grid is one of NFP field periods of a torus with that
+     * symmetry (see above), and the full torus if 1.
+     *
+     * @param[in] tor_orient for NFP > 1, +1 or -1 if the toroidal index of the
+     * torus increases counterclockwise or clockwise about the z-axis (see
+     * ToroidalOrientation()).
      */
-    SurfaceOp(const sctl::Comm& comm = sctl::Comm::Self(), sctl::Long Nt = 0, sctl::Long Np = 0);
+    SurfaceOp(const sctl::Comm& comm = sctl::Comm::Self(), sctl::Long Nt = 0, sctl::Long Np = 0, sctl::Integer NFP = 1, sctl::Integer tor_orient = 0);
 
     /**
      * Copy constructor.
@@ -78,7 +99,8 @@ template <class Real> class SurfaceOp {
      * @param[out] dX the output vector containing the negated derivatives
      * {-dX/dt, -dX/dp} for each component of X, stored in SoA order. The sign
      * does not affect the normals and surface operators computed from dX.
-     * The derivatives are with respect to the grid parameters t, p in [0, 1).
+     * The derivatives are with respect to the grid parameters t, p in [0, 1)
+     * (t in [0, 1/NFP) on one of NFP field periods).
      *
      * @param[in] X the vector of input data X(t,p) sampled on a grid of
      * dimensions NtxNp stored in row-major order and as a structure-of-arrays.
@@ -93,14 +115,15 @@ template <class Real> class SurfaceOp {
      * surface normals will be written in SoA order (may be null).
      *
      * @param[out] area_elem pointer to the vector where the per grid point
-     * trapezoidal quadrature weights |dX/dt x dX/dp|/(Nt*Np) will be written
-     * (may be null).
+     * trapezoidal quadrature weights |dX/dt x dX/dp|/(NFP*Nt*Np) will be
+     * written (may be null).
      *
      * @param[in] dX the derivatives of the surface coordinates, from Grad2D().
      *
      * @param[in] X (optional) the vector of position/coordinate values of each
      * grid point in SoA order.  This is used only to determine the correct
-     * orientation of the normal vectors (i.e. outward from the surface).
+     * orientation of the normal vectors (i.e. outward from the surface), from
+     * the normal at the grid point farthest from the z-axis.
      *
      * @return +1 or -1, the factor applied to dX/dt x dX/dp to orient the
      * normals, or 0 if X or normal is null.
@@ -109,7 +132,8 @@ template <class Real> class SurfaceOp {
 
     /**
      * Computes the normal component of the surface curl, -n . curl(F), for
-     * each 3-component vector field in F.
+     * each 3-component vector field in F, as the surface divergence of n x F
+     * (see SurfDiv()).
      *
      * @param[out] CurlF the output vector containing one scalar per grid point
      * for each vector field in F, stored in SoA order.
@@ -139,7 +163,9 @@ template <class Real> class SurfaceOp {
     void SurfGrad(sctl::Vector<Real>& GradFvec, const sctl::Vector<Real>& dXvec_, const sctl::Vector<Real>& Fvec) const;
 
     /**
-     * Computes the on-surface divergence operation.
+     * Computes the on-surface divergence operation, in the intrinsic form
+     * (1/sqrt(g)) d_i(sqrt(g) g^ij F.dX/du_j) of the components of F along the
+     * tangent vectors: the divergence of the tangential part of F.
      *
      * @param[out] DivF the output vector containing the divergence of F at each
      * grid point stored in SoA order.
@@ -152,7 +178,9 @@ template <class Real> class SurfaceOp {
     void SurfDiv(sctl::Vector<Real>& DivF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F) const;
 
     /**
-     * Computes the on-surface Laplacian operation.
+     * Computes the on-surface Laplacian operation, in the intrinsic form
+     * (1/sqrt(g)) d_i(sqrt(g) g^ij d_j F) of each component of F, with g_ij the
+     * metric of the grid parameters (the dot products of the tangent vectors).
      *
      * @param[out] LapF the output vector containing the laplacian of F at each grid
      * point stored in SoA order.
@@ -208,12 +236,16 @@ template <class Real> class SurfaceOp {
      * @param[in] max_iter the maximum number of GMRES iterations.
      *
      * @param[in] upsample the upsample factor for the solve. The final result
-     * is downsampled back to the original resolution.
+     * is downsampled back to the original resolution. The metric on the
+     * upsampled grid is computed from the tangent vectors upsampled (on one
+     * field period, in the frame that turns with the toroidal parameter, in
+     * which they repeat from one period to the next).
      */
     void InvSurfLap(sctl::Vector<Real>& InvLapF, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1, Real upsample = 1.0) const;
 
     /**
-     * Compute the surface gradient of the solution of InvSurfLap().
+     * Compute the surface gradient of the solution of InvSurfLap(), on the
+     * grid of F from the solution downsampled.
      *
      * @param[out] GradInvLapF the gradient of the solution to the
      * Laplace-Beltrami problem evaluated at each grid point.
@@ -241,7 +273,8 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] LeftPrecond the left preconditioner.
      *
-     * @param[in] RightPrecond the right preconditioner.
+     * @param[in] RightPrecond the right preconditioner. Each preconditioner
+     * may add to its output, which it is given empty or zero.
      *
      * @param[in] dX the derivatives of the surface coordinates, from Grad2D().
      *
@@ -252,7 +285,7 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] max_iter the maximum number of GMRES iterations.
      */
-    void InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> LeftPrecond, std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)> RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1) const;
+    void InvSurfLapPrecond(sctl::Vector<Real>& InvLapF, const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& LeftPrecond, const std::function<void(sctl::Vector<Real>&, const sctl::Vector<Real>&)>& RightPrecond, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& F, Real tol, sctl::Integer max_iter = -1) const;
 
     /**
      * Evaluate the potential from a given surface density at target point by
@@ -281,18 +314,6 @@ template <class Real> class SurfaceOp {
      * @param[in] ker the kernel function.
      */
     template <sctl::Integer KDIM0, sctl::Integer KDIM1> void EvalSurfInteg(sctl::Vector<Real>& Utrg, const sctl::Vector<Real>& Xtrg, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& Xn_src, const sctl::Vector<Real>& Xa_src, const sctl::Vector<Real>& Fsrc, const KernelFunction<Real,COORD_DIM,KDIM0,KDIM1>& ker) const;
-
-    /**
-     * Computes the singular-quadrature corrections for the target grid points
-     * trg_idx.
-     */
-    template <class SingularCorrection, class Kernel> void SetupSingularCorrection(sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer TRG_SKIP, const sctl::Vector<Real>& Xsrc, const sctl::Vector<Real>& dXsrc, const Kernel& ker, const Real normal_orient, const sctl::Vector<sctl::Long>& trg_idx) const;
-
-    /**
-     * Adds the singular-quadrature corrections for the density F to the
-     * potential U at the target points.
-     */
-    template <class SingularCorrection> void EvalSingularCorrection(sctl::Vector<Real>& U, const sctl::Vector<SingularCorrection>& singular_correction, sctl::Integer kdim0, sctl::Integer kdim1, const sctl::Vector<Real>& F) const;
 
     /**
      * Computes the Hodge decomposition of the given vector field on a surface,
@@ -391,18 +412,58 @@ template <class Real> class SurfaceOp {
 
   private:
 
-    void Init(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np);
+    void Init(const sctl::Comm& comm, sctl::Long Nt, sctl::Long Np, sctl::Integer NFP, sctl::Integer tor_orient);
+
+    /**
+     * The negated divergence in the grid parameters, -(dA_t/dt + dA_p/dp), of the dof fields A (A_t, A_p of field k
+     * the components 2*k and 2*k+1): the counterpart of Grad2D(), with the transforms of the columns of A_t only.
+     */
+    void Div2D(sctl::Vector<Real>& DivA, const sctl::Vector<Real>& A) const;
+
+    /**
+     * The coefficients of the intrinsic Laplace-Beltrami operator at each grid point, from the derivatives dX: C holds
+     * sqrt(g) g^tt, sqrt(g) g^tp, sqrt(g) g^pp and sqrt(g), with g_ij the metric of the grid parameters.
+     */
+    void LapCoeff(sctl::Vector<Real>& C, const sctl::Vector<Real>& dX) const;
+
+    /**
+     * The intrinsic divergence (1/sqrt(g)) d_i(sqrt(g) g^ij A_j) of the dof fields of covariant components A (A_t, A_p
+     * of field k the components 2*k and 2*k+1, both negated, as Grad2D() returns them), with C from LapCoeff().
+     */
+    void CovDiv(sctl::Vector<Real>& DivA, const sctl::Vector<Real>& C, const sctl::Vector<Real>& A) const;
+
+    /**
+     * The derivatives dX (from Grad2D() of the coordinates) resampled to an Nt1 x Np1 grid: on one of NFP field
+     * periods, in the frame that turns by 2*pi*tor_orient*t about the z-axis, in which they repeat.
+     */
+    void ResampleTangents(sctl::Vector<Real>& dX1, sctl::Long Nt1, sctl::Long Np1, const sctl::Vector<Real>& dX) const;
 
     static Real compute_area_elem(sctl::StaticArray<Real, COORD_DIM>& xn, const sctl::StaticArray<Real, COORD_DIM>& xt, const sctl::StaticArray<Real, COORD_DIM>& xp);
 
     static Real max_norm(const sctl::Vector<Real>& x);
 
+    /**
+     * A preconditioner of the Laplace-Beltrami operator on an Nt x Np grid: the inverse of the Laplacian in the grid
+     * parameters, scaled by the mean lengths of the grid lines (1 / invLt2 and 1 / invLp2 their squares, in grid
+     * spacings), in Fourier space.
+     */
+    struct SpectralInvLapOp {
+      sctl::Long Nt, Np;
+      Real invLt2, invLp2;
+      void operator()(sctl::Vector<Real>& Sx, const sctl::Vector<Real>& x) const;
+    };
+
+    /**
+     * Returns SpectralInvLapOp on an Nt_ x Np_ grid with derivatives dX, one of NFP field periods.
+     */
+    static SpectralInvLapOp SpectralInvLap(const sctl::Vector<Real>& dX, const sctl::Long Nt_, const sctl::Long Np_, const sctl::Integer NFP);
+
     void LaplaceBeltramiReference(sctl::Vector<Real>& f0, sctl::Vector<Real>& u0, const sctl::Vector<Real>& X, const sctl::Vector<Real>& dX, const sctl::Vector<Real>& d2X) const;
 
     sctl::Comm comm_;
     sctl::Long Nt_, Np_;
+    sctl::Integer NFP_, tor_orient_;
     mutable sctl::GMRES<Real> solver;
-    mutable std::map<sctl::Long, std::pair<sctl::FFT<Real>, sctl::FFT<Real>>> Grad2D_fft_; // per-dof R2C/C2R plans (cleared in Init)
 };
 
 }

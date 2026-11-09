@@ -66,5 +66,35 @@ int main(int argc, char** argv) {
     biest::SurfaceOp<Real>::Upsample(Vh, Nt, Np, Vh_fine, 2 * Nt, 2 * Np);
     biest::WriteVTK("Vh", S_fine, Vh_fine);
   }
+
+  { // The Laplace-Beltrami equation on one of the 5 field periods of a W7-X surface
+    const sctl::Integer NFP = 5;
+    const sctl::Long Nt5 = 210, Np5 = 42, N5 = Nt5 * Np5, M = N5 / NFP;
+    const biest::Surface<Real> S5(Nt5, Np5, biest::SurfType::W7X_);
+    const sctl::Integer orient = biest::SurfaceOp<Real>::ToroidalOrientation(S5.Coord(), Nt5, Np5);
+    sctl::Vector<Real> dX5, g(N5);
+    biest::SurfaceOp<Real>(comm, Nt5, Np5).Grad2D(dX5, S5.Coord());
+    for (sctl::Long i = 0; i < N5; i++) { // a function of R and z, which repeats from one field period to the next
+      const Real x = S5.Coord()[0 * N5 + i], y = S5.Coord()[1 * N5 + i], z = S5.Coord()[2 * N5 + i];
+      g[i] = sctl::sqrt<Real>(x * x + y * y) * z;
+    }
+
+    // The first field period: the first Nt5/NFP rows of the grid, of each component
+    sctl::Vector<Real> dX_period(2 * COORD_DIM * M), g_period(M);
+    for (sctl::Integer k = 0; k < 2 * COORD_DIM; k++) {
+      for (sctl::Long i = 0; i < M; i++) dX_period[k * M + i] = dX5[k * N5 + i];
+    }
+    for (sctl::Long i = 0; i < M; i++) g_period[i] = g[i];
+
+    // The solves on the grid upsampled by 1.5, as in the solvers
+    sctl::Vector<Real> u_full, u_period;
+    biest::SurfaceOp<Real>(comm, Nt5, Np5).InvSurfLap(u_full, dX5, g, 1e-10, 100, 1.5);
+    biest::SurfaceOp<Real> op_period(comm, Nt5 / NFP, Np5, NFP, orient);
+    op_period.InvSurfLap(u_period, dX_period, g_period, 1e-10, 100, 1.5);
+    Real err = 0, max_val = 0;
+    for (sctl::Long i = 0; i < M; i++) err = std::max<Real>(err, sctl::fabs(u_period[i] - u_full[i]));
+    for (sctl::Long i = 0; i < M; i++) max_val = std::max<Real>(max_val, sctl::fabs(u_full[i]));
+    std::cout << "one field period vs full torus: " << err / max_val << '\n';
+  }
   return 0;
 }

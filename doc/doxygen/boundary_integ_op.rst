@@ -8,7 +8,7 @@
 boundary_integ_op.hpp
 =====================
 
-This header file provides operators that evaluate layer potentials
+This header file provides the operator that evaluates layer potentials
 
 .. math::
 
@@ -20,19 +20,15 @@ At a target point on the surface, the integral is the principal value where the 
 Classes and Types
 -----------------
 
-.. doxygenclass:: biest::BoundaryIntegralOp
-   :members: BoundaryIntegralOp, SetupSingular, Dim, operator(), EvalOffSurface
-
-The quadrature parameters ``UPSAMPLE``, ``PATCH_DIM0`` and ``RAD_DIM`` are described in :ref:`bie_solvers.hpp <bie_solvers_hpp>`.
-
-**Usage guide**: :ref:`Evaluating layer potentials <tutorial-layer-potentials>`
-
-|
-
 .. doxygenclass:: biest::FieldPeriodBIOp
-   :members: FieldPeriodBIOp, BuildSurface, SetupSingular, Eval, QuadNt, QuadNp
+   :members: FieldPeriodBIOp, SetupSingular, Eval, EvalOffSurface, Dim, QuadNt, QuadNp
 
-**Usage guide**: :ref:`Layer potentials with field-period symmetry <tutorial-field-period>`
+``SetupSingular`` chooses the quadrature grid and the singular quadrature for its tolerance (or number of digits) and the anisotropy of the grid of each surface (see :ref:`Upsampling <algorithms-upsampling>` and :ref:`Choosing the parameters <algorithms-quadrature-params>`), or takes them from a ``SingularQuadParams``:
+
+.. doxygenstruct:: biest::SingularQuadParams
+   :members:
+
+**Usage guides**: :ref:`Evaluating layer potentials <tutorial-layer-potentials>`, :ref:`Layer potentials with field-period symmetry <tutorial-field-period>`
 
 |
 

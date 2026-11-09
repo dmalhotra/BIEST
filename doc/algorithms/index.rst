@@ -42,7 +42,7 @@ pointing out of :math:`\Omega`. BIEST computes:
   outside or inside a single toroidal surface, with prescribed :math:`\mathbf{B}\cdot\mathbf{n}` on the surface
   and a prescribed circulation. These solvers use the toroidal field-period symmetry of stellarators.
 
-- **Layer potentials** (:ref:`BoundaryIntegralOp, FieldPeriodBIOp <algorithms-singular-quadrature>`):
+- **Layer potentials** (:ref:`FieldPeriodBIOp <algorithms-singular-quadrature>`):
   surface integrals :math:`\int_\Gamma K(\mathbf{x}-\mathbf{y})\,f(\mathbf{y})\,\mathrm{d}a(\mathbf{y})`
   with a singular kernel :math:`K` (Laplace, Biot--Savart, Helmholtz, Stokes), evaluated on the surface or
   off the surface. These are the building blocks of the solvers above, and of applications such as the
@@ -76,7 +76,7 @@ The following table lists the public classes and the method each one implements.
      - Method
    * - ``Surface``, ``SurfaceOp``
      - :ref:`Spectral discretization and surface operators <algorithms-discretization>`
-   * - ``BoundaryIntegralOp``, ``FieldPeriodBIOp``
+   * - ``FieldPeriodBIOp``
      - :ref:`Singular quadrature on the surface <algorithms-singular-quadrature>`
    * - ``OffSurfaceOp``, ``EvalOffSurface`` methods
      - :ref:`Quadrature at off-surface points <algorithms-off-surface>`

@@ -85,16 +85,35 @@ The solvers compute the harmonic part of the toroidal tangent vector in this way
    :end-at: biest::SurfaceOp<Real>::Upsample(Vh,
    :dedent: 4
 
+.. _tutorial-surface-op-nfp:
+
+7. One field period
+-------------------
+
+A ``SurfaceOp`` can act on one of the ``NFP`` field periods of a surface with that symmetry (see :ref:`Field periods <tutorial-surface-nfp>`): it is constructed with the grid of the period, ``Nt/NFP`` by ``Np`` (the first ``Nt/NFP`` rows of the grid of the torus), the number of field periods and the direction of the toroidal index, and takes the restrictions to the period of the data on the full torus.
+The Laplace--Beltrami solve of a function that repeats from one field period to the next gives the restriction of the solution on the full torus, at a fifth of the cost for ``NFP = 5``:
+
+.. literalinclude:: ../examples/surface-op.cpp
+   :language: c++
+   :start-at: sctl::Vector<Real> u_full, u_period;
+   :end-at: op_period.InvSurfLap(
+   :dedent: 4
+
+``Grad2D`` and ``SurfGrad`` of functions that repeat, ``SurfDiv`` and ``SurfCurl`` of vector fields that rotate with the field periods (such as the tangent vectors, the normals and the surface gradients), ``SurfNormalAreaElem``, ``SurfLap``, ``SurfInteg``, ``ProjZeroMean``, ``InvSurfLap``, ``GradInvSurfLap`` and ``HodgeDecomp`` act on one field period in this way.
+The differential operators are in the intrinsic form: they differentiate only the metric of the surface and the components of vector fields along the tangent vectors, which repeat from one field period to the next, and never the Cartesian components of a vector, which rotate (see :ref:`Surface differential operators <algorithms-surface-diff-ops>`).
+The derivatives of the coordinates are computed on the full torus, where the coordinates are periodic, and restricted to the period.
+
 Complete Example Code
 ---------------------
 
-The program ``doc/examples/surface-op.cpp`` checks that the integral of the Laplace--Beltrami operator of a function over the closed surface vanishes, solves a Laplace--Beltrami equation on a stellarator surface and checks the residual, and computes the harmonic part of the toroidal tangent vector. It prints (the last digits may differ between runs, and the first value is at the level of rounding errors)
+The program ``doc/examples/surface-op.cpp`` checks that the integral of the Laplace--Beltrami operator of a function over the closed surface vanishes, solves a Laplace--Beltrami equation on a stellarator surface and checks the residual, computes the harmonic part of the toroidal tangent vector, and solves a Laplace--Beltrami equation on one field period of a W7-X surface. It prints (the last digits may differ between runs, and the first and last values are at the level of rounding errors)
 
 .. code-block:: text
 
-   integral of lap(f) / integral of |lap(f)| = -2.12205e-18
-   Laplace-Beltrami residual: 6.2595e-08
-   max |div(Vh)| / max |div(V)| = 1.36044e-07
+   integral of lap(f) / integral of |lap(f)| = 1.06103e-17
+   Laplace-Beltrami residual: 2.89596e-07
+   max |div(Vh)| / max |div(V)| = 9.01078e-08
+   one field period vs full torus: 7.97279e-15
 
 .. raw:: html
 

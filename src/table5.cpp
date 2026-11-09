@@ -21,33 +21,33 @@ int main(int argc, char** argv) {
       sctl::Vector<biest::Surface<Real>> Svec;
       Svec.PushBack(biest::Surface<Real>(70, 14, biest::SurfType::Quas3));
 
-      biest::TaylorState<Real, 1,  6, 15>::test_conv(0.5, Svec,  1, 1.0e-00, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 12, 24>::test_conv(0.5, Svec,  2, 2.1e-02, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 15, 27>::test_conv(0.5, Svec,  3, 9.6e-03, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 15, 30>::test_conv(0.5, Svec,  4, 2.9e-03, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 20, 33>::test_conv(0.5, Svec,  5, 6.5e-04, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 20, 36>::test_conv(0.5, Svec,  6, 2.8e-04, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 20, 36>::test_conv(0.5, Svec,  7, 1.5e-04, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 25, 39>::test_conv(0.5, Svec,  8, 4.8e-05, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 25, 39>::test_conv(0.5, Svec,  9, 1.5e-05, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 25, 42>::test_conv(0.5, Svec, 10, 3.6e-06, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 30, 51>::test_conv(0.5, Svec, 15, 6.8e-08, 200, comm, 1e-2);
-      biest::TaylorState<Real, 1, 35, 60>::test_conv(0.5, Svec, 20, 4.0e-09, 200, comm, 1e-2);
-      biest::TaylorState<Real, 1, 40, 66>::test_conv(0.5, Svec, 25, 1.0e-09, 200, comm, 1e-2);
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  1, 1.0e-00, 100, comm, 1e-2, {6, 15, 30, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  2, 2.1e-02, 100, comm, 1e-2, {12, 24, 48, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  3, 9.6e-03, 100, comm, 1e-2, {15, 27, 54, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  4, 2.9e-03, 100, comm, 1e-2, {15, 30, 60, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  5, 6.5e-04, 100, comm, 1e-2, {20, 33, 66, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  6, 2.8e-04, 100, comm, 1e-2, {20, 36, 72, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  7, 1.5e-04, 100, comm, 1e-2, {20, 36, 72, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  8, 4.8e-05, 100, comm, 1e-2, {25, 39, 78, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec,  9, 1.5e-05, 100, comm, 1e-2, {25, 39, 78, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec, 10, 3.6e-06, 100, comm, 1e-2, {25, 42, 84, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec, 15, 6.8e-08, 200, comm, 1e-2, {30, 51, 102, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec, 20, 4.0e-09, 200, comm, 1e-2, {35, 60, 120, 1, 1});
+      biest::TaylorState<Real>::test_conv(0.5, Svec, 25, 1.0e-09, 200, comm, 1e-2, {40, 66, 132, 1, 1});
 
-      biest::TaylorState<Real, 1,  6, 15>::test_conv(1.0, Svec,  1, 1.0e-00, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 12, 24>::test_conv(1.0, Svec,  2, 2.1e-02, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 15, 27>::test_conv(1.0, Svec,  3, 9.6e-03, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 15, 30>::test_conv(1.0, Svec,  4, 2.9e-03, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 20, 33>::test_conv(1.0, Svec,  5, 6.5e-04, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 20, 36>::test_conv(1.0, Svec,  6, 2.8e-04, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 20, 36>::test_conv(1.0, Svec,  7, 1.5e-04, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 25, 39>::test_conv(1.0, Svec,  8, 4.8e-05, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 25, 39>::test_conv(1.0, Svec,  9, 1.5e-05, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 25, 42>::test_conv(1.0, Svec, 10, 3.6e-06, 100, comm, 1e-2);
-      biest::TaylorState<Real, 1, 30, 51>::test_conv(1.0, Svec, 15, 6.8e-08, 200, comm, 1e-2);
-      biest::TaylorState<Real, 1, 35, 60>::test_conv(1.0, Svec, 20, 4.0e-09, 200, comm, 1e-2);
-      biest::TaylorState<Real, 1, 40, 66>::test_conv(1.0, Svec, 25, 1.0e-09, 200, comm, 1e-2);
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  1, 1.0e-00, 100, comm, 1e-2, {6, 15, 30, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  2, 2.1e-02, 100, comm, 1e-2, {12, 24, 48, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  3, 9.6e-03, 100, comm, 1e-2, {15, 27, 54, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  4, 2.9e-03, 100, comm, 1e-2, {15, 30, 60, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  5, 6.5e-04, 100, comm, 1e-2, {20, 33, 66, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  6, 2.8e-04, 100, comm, 1e-2, {20, 36, 72, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  7, 1.5e-04, 100, comm, 1e-2, {20, 36, 72, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  8, 4.8e-05, 100, comm, 1e-2, {25, 39, 78, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec,  9, 1.5e-05, 100, comm, 1e-2, {25, 39, 78, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 10, 3.6e-06, 100, comm, 1e-2, {25, 42, 84, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 15, 6.8e-08, 200, comm, 1e-2, {30, 51, 102, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 20, 4.0e-09, 200, comm, 1e-2, {35, 60, 120, 1, 1});
+      biest::TaylorState<Real>::test_conv(1.0, Svec, 25, 1.0e-09, 200, comm, 1e-2, {40, 66, 132, 1, 1});
 
 
       // +----------------------------------------------------------------------------------------------------------------------------------+

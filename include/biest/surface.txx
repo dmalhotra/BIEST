@@ -7,7 +7,35 @@
 
 namespace biest {
 
-template <class Real> Surface<Real>::Surface(sctl::Long Nt, sctl::Long Np, SurfType type) : Nt0(Nt), Np0(Np) {
+template <class Real> Surface<Real>::Surface(sctl::Integer NFP, sctl::Long Nt, sctl::Long Np, const sctl::Vector<Real>& X) : Nt0(NFP * Nt), Np0(Np), NFP_(NFP) {
+  SCTL_ASSERT(NFP >= 1 && X.Dim() == COORD_DIM * Nt * Np);
+  SurfaceOp<Real>::CompleteVecField(X0_, true, false, NFP, Nt, Np, X);
+}
+
+template <class Real> void Surface<Real>::SetNFP(sctl::Integer NFP, Real tol) {
+  SCTL_ASSERT_MSG(HasSymmetry(NFP, tol), "Surface::SetNFP: the surface does not have this number of field periods.");
+  NFP_ = NFP;
+}
+
+template <class Real> bool Surface<Real>::HasSymmetry(sctl::Integer NFP, Real tol) const {
+  if (NFP < 1 || Nt0 % NFP) return false;
+  if (NFP == 1) return true;
+  const sctl::Long N = Nt0 * Np0, M = N / NFP; // the grid points of the torus and of a field period
+  const sctl::Integer orient = SurfaceOp<Real>::ToroidalOrientation(X0_, Nt0, Np0);
+  const Real c = sctl::cos<Real>(2 * sctl::const_pi<Real>() / NFP), s = sctl::sin<Real>(2 * sctl::const_pi<Real>() / NFP) * orient;
+  Real scale = 0, err = 0;
+  for (const auto& x : X0_) scale = std::max<Real>(scale, sctl::fabs<Real>(x));
+  for (sctl::Long i = 0; i < N; i++) { // point i and the point of the next field period
+    const sctl::Long j = (i + M) % N;
+    const Real x = X0_[0 * N + i], y = X0_[1 * N + i], z = X0_[2 * N + i];
+    err = std::max<Real>(err, sctl::fabs<Real>(x * c - y * s - X0_[0 * N + j]));
+    err = std::max<Real>(err, sctl::fabs<Real>(x * s + y * c - X0_[1 * N + j]));
+    err = std::max<Real>(err, sctl::fabs<Real>(z - X0_[2 * N + j]));
+  }
+  return err <= tol * scale;
+}
+
+template <class Real> Surface<Real>::Surface(sctl::Long Nt, sctl::Long Np, SurfType type) : Nt0(Nt), Np0(Np), NFP_(1) {
   auto stell_geom = [](sctl::Vector<Real>& X0, sctl::Long Nt, sctl::Long Np, Real R0, Real a, Real b, bool ellipse) {
     X0.ReInit(COORD_DIM * Nt * Np);
     sctl::Matrix<Real> X(2,1), X_(2,1);

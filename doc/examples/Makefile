@@ -12,7 +12,7 @@ LDLIBS += -lfftw3
 #CXXFLAGS += -DSCTL_HAVE_BLAS -DSCTL_HAVE_LAPACK
 #LDLIBS += -lblas -llapack
 
-EXAMPLES = surface surface-op layer-potentials field-period ext-vacuum taylor-state-shell
+EXAMPLES = surface surface-op layer-potentials field-period ext-vacuum taylor-state-shell repeated-solves
 TARGETS = $(EXAMPLES:%=bin/%)
 
 .PHONY: all run clean

@@ -17,21 +17,77 @@ int main(int argc, char** argv) {
     sctl::Comm comm = sctl::Comm::Self();
     sctl::Profile::Enable(true);
 
-    { // BoundaryIntegralOp Convergence Laplace
+    // Green's identity S[du/dn] - D[u] = u/2 on a surface of Nt x Np points, for u the potential of a point source at
+    // (1, 2, 3) of a random density: the error relative to max |u|, by the single and double layers of FieldPeriodBIOp
+    const auto greens_identity = [&comm](const sctl::Long Nt, const sctl::Long Np, const biest::SurfType surf_type, const auto& sl_ker, const auto& dl_ker, const auto& sl_grad_ker, const biest::SingularQuadParams& quad) {
+      constexpr sctl::Integer COORD_DIM = 3;
+      const auto max_norm = [](const sctl::Vector<Real>& x) {
+        Real err = 0;
+        for (const auto& a : x) err = std::max(err, sctl::fabs<Real>(a));
+        return err;
+      };
+      sctl::Vector<biest::Surface<Real>> Svec(1);
+      Svec[0] = biest::Surface<Real>(Nt, Np, surf_type);
+      sctl::Vector<Real> Fs, Fd;
+      { // Set Fs, Fd
+        const auto& Xt = Svec[0].Coord();
+        sctl::Vector<Real> dX, Xn, Xa;
+        biest::SurfaceOp<Real> Op(comm, Nt, Np);
+        Op.Grad2D(dX, Xt);
+        Op.SurfNormalAreaElem(&Xn, &Xa, dX, &Xt);
+
+        sctl::Vector<Real> Xsrc, Fsrc;
+        Xsrc.PushBack(1);
+        Xsrc.PushBack(2);
+        Xsrc.PushBack(3);
+        for (sctl::Long i = 0; i < sl_ker.Dim(0); i++) Fsrc.PushBack(drand48());
+        Fsrc /= max_norm(Fsrc);
+
+        sctl::Vector<Real> U, dU;
+        sl_ker(Xsrc, Xsrc, Fsrc, Xt, U);
+        sl_grad_ker(Xsrc, Xsrc, Fsrc, Xt, dU);
+
+        Fd = U;
+        Fs = U * 0;
+        for (sctl::Long j = 0; j < COORD_DIM; j++) {
+          for (sctl::Long k = 0; k < sl_ker.Dim(0); k++) {
+            for (sctl::Long i = 0; i < Nt*Np; i++) {
+              Fs[k * Nt*Np + i] += Xn[j * Nt*Np + i] * dU[(j*sl_ker.Dim(0)+k) * Nt*Np + i];
+            }
+          }
+        }
+      }
+
+      biest::FieldPeriodBIOp<Real> SL(comm), DL(comm);
+      sctl::Profile::Tic("Setup", &comm);
+      SL.SetupSingular(Svec, sl_ker, (Real)1e-10, quad);
+      DL.SetupSingular(Svec, dl_ker, (Real)1e-10, quad);
+      sctl::Profile::Toc();
+
+      sctl::Profile::Tic("Eval", &comm);
+      sctl::Vector<Real> Us, Ud;
+      SL.Eval(Us, Fs, 1, Nt, Np);
+      DL.Eval(Ud, Fd, 1, Nt, Np);
+      sctl::Profile::Toc();
+
+      std::cout<<"Error: "<<max_norm(Us-Ud-0.5*Fd)/max_norm(Fd)<<'\n';
+    };
+
+    { // Convergence, Laplace
       const auto& sl_ker = biest::Laplace3D<Real>::FxU();
       const auto& dl_ker = biest::Laplace3D<Real>::DxU();
       const auto& sl_grad_ker = biest::Laplace3D<Real>::FxdU();
 
-      biest::BoundaryIntegralOp<Real, 0, 0, 1,  6, 15>::test_GreensIdentity( 70, 14, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 12, 24>::test_GreensIdentity(140, 28, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 15, 27>::test_GreensIdentity(210, 42, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 15, 30>::test_GreensIdentity(280, 56, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 20, 33>::test_GreensIdentity(350, 70, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 20, 36>::test_GreensIdentity(420, 84, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 20, 36>::test_GreensIdentity(490, 98, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 25, 39>::test_GreensIdentity(560,112, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 25, 39>::test_GreensIdentity(630,126, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 25, 42>::test_GreensIdentity(700,140, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
+      greens_identity( 70, 14, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {6, 15, 30, 1, 1});
+      greens_identity(140, 28, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {12, 24, 48, 1, 1});
+      greens_identity(210, 42, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {15, 27, 54, 1, 1});
+      greens_identity(280, 56, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {15, 30, 60, 1, 1});
+      greens_identity(350, 70, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {20, 33, 66, 1, 1});
+      greens_identity(420, 84, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {20, 36, 72, 1, 1});
+      greens_identity(490, 98, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {20, 36, 72, 1, 1});
+      greens_identity(560,112, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {25, 39, 78, 1, 1});
+      greens_identity(630,126, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {25, 39, 78, 1, 1});
+      greens_identity(700,140, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {25, 42, 84, 1, 1});
 
       // Laplace: Convergence, Scaling (QUAS3)
       // =====================================
@@ -47,22 +103,22 @@ int main(int argc, char** argv) {
       // 630     126             25         39      6.75882e-09      382.7198 (0.0377)       1.1449 (0.7215)   34.2077 (5.9187)       7.1946 (2.0061)      0.0390 (21.1568)   0.8436 (239.9884)
       // 700     140             25         42      3.26562e-09      543.5166 (0.0356)       1.4185 (0.7189)   51.8979 (5.9414)      10.3366 (1.8722)      0.0682 (14.9507)   1.2054 (255.8115)
     }
-    { // BoundaryIntegralOp Convergence Helmholtz
+    { // Convergence, Helmholtz
       biest::Helmholtz3D<Real> helm(1);
       const auto& sl_ker = helm.FxU();
       const auto& dl_ker = helm.DxU();
       const auto& sl_grad_ker = helm.FxdU();
 
-      biest::BoundaryIntegralOp<Real, 0, 0, 1,  6, 15>::test_GreensIdentity( 70, 14, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 12, 24>::test_GreensIdentity(140, 28, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 15, 27>::test_GreensIdentity(210, 42, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 15, 30>::test_GreensIdentity(280, 56, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 20, 33>::test_GreensIdentity(350, 70, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 20, 36>::test_GreensIdentity(420, 84, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 20, 36>::test_GreensIdentity(490, 98, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 25, 39>::test_GreensIdentity(560,112, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 25, 39>::test_GreensIdentity(630,126, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
-      biest::BoundaryIntegralOp<Real, 0, 0, 1, 25, 42>::test_GreensIdentity(700,140, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, comm);
+      greens_identity( 70, 14, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {6, 15, 30, 1, 1});
+      greens_identity(140, 28, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {12, 24, 48, 1, 1});
+      greens_identity(210, 42, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {15, 27, 54, 1, 1});
+      greens_identity(280, 56, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {15, 30, 60, 1, 1});
+      greens_identity(350, 70, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {20, 33, 66, 1, 1});
+      greens_identity(420, 84, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {20, 36, 72, 1, 1});
+      greens_identity(490, 98, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {20, 36, 72, 1, 1});
+      greens_identity(560,112, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {25, 39, 78, 1, 1});
+      greens_identity(630,126, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {25, 39, 78, 1, 1});
+      greens_identity(700,140, biest::SurfType::Quas3, sl_ker, dl_ker, sl_grad_ker, {25, 42, 84, 1, 1});
 
       // Helmholtz: Convergence, Scaling (QUAS3)
       // =======================================

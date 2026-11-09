@@ -68,6 +68,19 @@ The solvers also need a minimum number of points for their quadrature (see :ref:
 Either orientation of the grid is allowed: the solvers orient the normals to point out of each surface.
 For data given on one field period (``FieldPeriodBIOp``, ``ExtVacuumField``, ``IntVacuumField`` and the field-period ``WriteVTK``), the other periods are placed in the direction in which the toroidal index increases, which is detected from the surface coordinates.
 
+.. _tutorial-surface-nfp:
+
+Field periods
+-------------
+
+A stellarator with :math:`N_{fp}` field periods is invariant under the rotation by :math:`2\pi/N_{fp}` about the :math:`z`-axis.
+A surface declares this symmetry with ``SetNFP(NFP)``, as the example above does; ``NFP()`` returns it, 1 by default.
+``SetNFP`` checks the symmetry with ``HasSymmetry(NFP, tol)``: the number of toroidal grid points ``NTor()`` must be a multiple of ``NFP``, and the coordinates of each grid point, rotated by :math:`2\pi/N_{fp}`, must be those of the point ``NTor()/NFP()`` grid points further, to within ``tol`` (``1e-10`` by default) relative to the largest coordinate.
+The grid points of field period ``j`` are then those with toroidal index in ``[j*NTor()/NFP(), (j+1)*NTor()/NFP())``.
+The constructor ``Surface(NFP, Nt, Np, X)`` builds the full torus, ``NFP*Nt`` by ``Np`` points, from the coordinates ``X`` of one field period, and declares the symmetry.
+
+The predefined shapes do not declare their field periods; ``W7X``, ``W7X_`` and ``Stell`` have 5, ``Quas3`` and the rotating ellipses 3, and ``LHD`` (from its file in ``geom/``) 5, when ``NTor()`` is a multiple of that number.
+
 Normals and areas
 -----------------
 

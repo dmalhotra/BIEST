@@ -19,6 +19,15 @@ namespace biest {
 namespace detail_offsurf {
 
   /**
+   * A panel: the product of the toroidal interval [it, it+1) / (Mt0 2^lt) and the poloidal interval [ip, ip+1) /
+   * (Mp0 2^lp) of the grid parameters in [0,1), where Mt0 x Mp0 are the panels of the coarse mesh.
+   */
+  struct Panel {
+    sctl::Integer lt, lp; // the refinement level along each direction
+    sctl::Long it, ip; // the index of the interval at that level
+  };
+
+  /**
    * An sctl::QuadElemList whose elements all have order ORDER. With it, sctl::BoundaryIntegralOp compiles the near
    * quadrature for this order only, and no self-interaction quadrature.
    */
@@ -48,7 +57,10 @@ namespace detail_offsurf {
 
 /**
  * Layer potentials of a toroidal surface at off-surface targets, by quadrature on panels that resolve the surface. The
- * panels and the operator are set up once per set of targets. Target points must not lie on the surface.
+ * panels are refined adaptively from a coarse mesh, along one or both directions, where the surface, or the fields
+ * given to guide the refinement (e.g. the density), need them. The panels depend only on the surface, those fields and
+ * the tolerance, and the operator on the targets too: a later SetTargets() keeps the panels, and does nothing for the
+ * targets of the last call. Target points must not lie on the surface.
  *
  * @tparam SKer the SCTL kernel, e.g. sctl::Laplace3D_FxdU.
  */
@@ -56,6 +68,7 @@ template <class Real, class SKer> class OffSurfaceOp {
     static constexpr sctl::Integer COORD_DIM = 3;
     static constexpr sctl::Integer ORDER = 12; // element order of the panels
     static constexpr sctl::Integer STENCIL = 12; // number of points of the local interpolation along each direction
+    static constexpr sctl::Long Mt0 = 4, Mp0 = 4; // number of panels of the coarse mesh along each direction
     static constexpr sctl::Integer KDIM0 = SKer::SrcDim();
     static constexpr sctl::Integer KDIM1 = SKer::TrgDim();
     using ElemList = detail_offsurf::QuadElemListOrder<Real,ORDER>;
@@ -84,13 +97,27 @@ template <class Real, class SKer> class OffSurfaceOp {
      *
      * @param[in] tol the accuracy tolerance.
      *
-     * @param[in] F (optional) densities on the grid in SoA order, which the panels must also resolve.
+     * @param[in] refine (optional) fields on the grid in SoA order, of any number of components, that the panels must
+     * also resolve, e.g. the density, or the right-hand side of a linear system; used only to fit the panels, and not
+     * stored.
      */
-    void Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& F = sctl::Vector<Real>());
+    void Setup(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Xt, const Real tol, const sctl::Vector<Real>& refine = sctl::Vector<Real>());
 
     /**
-     * Add the potential of the densities F at the target points to U. If the panels do not resolve F, they are fit
-     * again.
+     * Fit panels to the surface and to the fields refine (see Setup()), for the tolerance tol: the part of Setup()
+     * that does not depend on the targets. The operator is then set up by SetTargets().
+     */
+    void SetupSurface(const sctl::Vector<Real>& X, const sctl::Long Nt, const sctl::Long Np, const Real tol, const sctl::Vector<Real>& refine = sctl::Vector<Real>());
+
+    /**
+     * Set up the operator for the target points Xt (in SoA order) on the panels of the last SetupSurface(), unless
+     * they are the targets of the operator already.
+     */
+    void SetTargets(const sctl::Vector<Real>& Xt);
+
+    /**
+     * Add the potential of the densities F at the target points to U. F is interpolated to the panel nodes by FFT
+     * upsampling, by a factor chosen for F, and local interpolation; the panels are not changed.
      *
      * @param[in,out] U the potential at the target points in SoA order; it is resized and set to zero first if its
      * size is wrong.
@@ -99,39 +126,41 @@ template <class Real, class SKer> class OffSurfaceOp {
      */
     void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F);
 
-    /**
-     * Returns the number of panels.
-     */
-    sctl::Long PanelCount() const { return Mt * Mp; }
-
   private:
 
     /**
-     * Set Mt, Mp, Ut and Up to the smallest values, at least their current values, that resolve the surface and the
-     * densities F.
+     * Split the panels until they resolve the surface and the fields refine: on each panel, along each direction, the
+     * last two Legendre coefficients of the surface coordinates, of their derivatives and of refine are within the
+     * tolerance, and the area of the panel by its quadrature differs from the sum over its two halves by at most the
+     * tolerance times the surface area, unless the panel is the finest allowed (32 nodes per grid point). Set Ut and
+     * Up to the smallest values, at least their current values, for which the local interpolation of the surface on
+     * the finest panels, and of refine, is accurate. Set flip, from the normal at the node of largest x.
      */
-    void FitPanels(const sctl::Vector<Real>& F);
+    void FitPanels(const sctl::Vector<Real>& refine);
 
     /**
-     * Returns whether the panels and the upsampling resolve the densities F.
+     * Build the elements from the surface coordinates at their nodes, and set up the operator.
      */
-    bool Resolves(const sctl::Vector<Real>& F) const;
+    void BuildPanels(const sctl::Vector<Real>& coord);
 
     /**
-     * Build the panels from Mt, Mp, Ut and Up, and set up the operator.
+     * Set Yf to the fields Y on the grid upsampled ut x up times, in its storage if it has their size; Yf refers to Y
+     * if ut = up = 1.
      */
-    void BuildPanels();
+    void UpsampleGrid(sctl::Vector<Real>& Yf, const sctl::Vector<Real>& Y, const sctl::Long ut, const sctl::Long up) const;
 
     /**
-     * Interpolate fields on the grid to the panel nodes, by FFT upsampling and local interpolation.
+     * Interpolate fields on the grid to the panel nodes, by FFT upsampling ut x up times and local interpolation.
      *
      * @param[out] Ynds the fields at the panel nodes in AoS order, one block of kdim values per node for each field.
      *
      * @param[in] Y the fields on the grid in SoA order, kdim components each.
      *
      * @param[in] kdim the number of components of a field.
+     *
+     * @param[in] ut, up the upsampling factors along the toroidal and the poloidal direction.
      */
-    void InterpToNodes(sctl::Vector<Real>& Ynds, const sctl::Vector<Real>& Y, const sctl::Integer kdim) const;
+    void InterpToNodes(sctl::Vector<Real>& Ynds, const sctl::Vector<Real>& Y, const sctl::Integer kdim, const sctl::Long ut, const sctl::Long up) const;
 
     SKer ker_;
     sctl::Comm comm_;
@@ -142,14 +171,14 @@ template <class Real, class SKer> class OffSurfaceOp {
     sctl::Long trg0, trg1; // indices of the first and one past the last target point of this process
     sctl::Vector<Real> Xt_; // coordinates of the target points of this process, AoS
 
-    sctl::Long Mt, Mp; // number of panels in the toroidal and the poloidal direction
-    sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation, in each direction
-    bool warned_panels, warned_interp; // whether FitPanels has printed each of its warnings since Setup
-    bool flip; // whether the poloidal parameter of the panels is reversed, so that the panel normals point outward
-    sctl::Long Kt, Kp; // number of upsampled grid points spanned by the stencils of the nodes of a panel
-    sctl::Vector<sctl::Long> wt0, wp0; // index on the upsampled grid of the first of these points, for each panel
-    sctl::Matrix<Real> Wt; // stencil weights of each toroidal node on the points of its panel: Mt*ORDER x Kt
-    sctl::Matrix<Real> WpT; // stencil weights of the poloidal nodes of each panel, transposed: Mp*Kp x ORDER
+    sctl::Vector<detail_offsurf::Panel> panels;
+    sctl::Vector<detail_offsurf::Panel> todo_, next_, done_; // while panels are split: a level, the next one, the resolved; kept for their storage
+    sctl::Vector<Real> coord_; // the surface coordinates at the nodes of the panels, as sctl::QuadElemList takes them
+    std::vector<sctl::Long> grp_idx_, grp_; // the panels grouped by their toroidal interval (see GroupByInterval)
+    Real L_max_; // of the panel rule (see PanelRule)
+    sctl::Long Ut, Up; // upsampling factor of the grid before the local interpolation of the surface, in each direction
+    bool warned_panels, warned_interp; // whether each warning has been printed since Setup
+    bool flip; // whether the poloidal nodes of each panel are reversed, so that the panel normals point outward
     std::unique_ptr<sctl::BoundaryIntegralOp<Real,SKer>> op;
 };
 

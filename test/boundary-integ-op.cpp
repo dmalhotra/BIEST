@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
       biest::FieldPeriodBIOp<Real> dl(comm), bs(comm);
       dl.SetupSingular(Sh, ker, digits, NFP, Nt, Np);
       bs.SetupSingular(Sh, biest::BiotSavart3D<Real>::FxU(), digits, NFP, Nt, Np);
-      const auto check = [&res,&name,NFP,Nt,Nh,Np](const biest::FieldPeriodBIOp<Real>& biop, const sctl::Vector<Real>& F, const biest::Parity parity, const std::string& density) {
+      const auto check = [&res,&name](const biest::FieldPeriodBIOp<Real>& biop, const sctl::Vector<Real>& F, const biest::Parity parity, const std::string& density) {
         const sctl::Long dof = F.Dim() / (Nt * Np);
         sctl::Vector<Real> Fh(dof * Nh * Np), U, Uh; // Fh: F on the first half of the field period
         for (sctl::Long k = 0; k < dof; k++) {

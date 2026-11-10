@@ -1728,6 +1728,7 @@ namespace detail_bie_solvers {
           detail_bie_solvers::CompletePeriods(B_out, B_real, COORD_DIM, 1, SurfDim, SurfDsp, SurfOrient, NFP);
         };
         auto print_imag_norm = [&real_imag_part] (const sctl::Vector<Real>& B) { // Print | imag(B) |_inf
+          SCTL_UNUSED(real_imag_part);
 #ifdef BIEST_VERBOSE
           sctl::Vector<Real> B_imag;
           real_imag_part(B_imag, B, false);

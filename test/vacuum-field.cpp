@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
 
   // Coordinates (SoA order) on an Nt x Np grid in one field period, of a surface with minor radius about a; the
   // toroidal index increases counterclockwise (orient = 1) or clockwise (orient = -1) about the z-axis
-  const auto surface_coord = [pi,NFP](const sctl::Long Nt, const sctl::Long Np, const Real a, const sctl::Integer orient) {
+  const auto surface_coord = [pi](const sctl::Long Nt, const sctl::Long Np, const Real a, const sctl::Integer orient) {
     std::vector<Real> X(COORD_DIM * Nt * Np);
     for (sctl::Long t = 0; t < Nt; t++) {
       for (sctl::Long p = 0; p < Np; p++) {

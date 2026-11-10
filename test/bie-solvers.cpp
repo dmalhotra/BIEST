@@ -176,7 +176,7 @@ int main(int argc, char** argv) {
     const sctl::Long Nt2 = 96, Np2 = 96; // 64 poloidal points do not resolve the six lobes of the inner surface
     const biest::Surface<Real> S_outer = torus(Nt2, Np2, outer2), S_inner = torus(Nt2, Np2, inner2);
     { // test setup: the inner surface has the larger area
-      const auto area = [&comm,Nt2,Np2](const biest::Surface<Real>& S) {
+      const auto area = [&comm](const biest::Surface<Real>& S) {
         sctl::Vector<Real> dX, area_elem;
         biest::SurfaceOp<Real> surf_op(comm, Nt2, Np2);
         surf_op.Grad2D(dX, S.Coord());
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
         Wb[j] = 2 * pi * R * (outer0.a - inner0.a) * ws[j];
       }
     }
-    const auto poloidal_flux = [&Xb,&Wb](const sctl::Vector<Real>& Btrg) { // B . (-z_hat) over the band, at the targets after those of the cross-section
+    const auto poloidal_flux = [&Wb](const sctl::Vector<Real>& Btrg) { // B . (-z_hat) over the band, at the targets after those of the cross-section
       const sctl::Long n0 = Btrg.Dim() / COORD_DIM - Wb.Dim();
       Real flux = 0;
       for (sctl::Long j = 0; j < Wb.Dim(); j++) flux -= Btrg[(n0 + j) * COORD_DIM + 2] * Wb[j];
@@ -266,7 +266,7 @@ int main(int argc, char** argv) {
         TaylorState(comm).Compute(B, 1.0, 0.0, 1.0, Svec, gmres_tol0, gmres_iter, 0.1, &m, &sigma);
         Real err = 0;
         for (const auto& flux : std::vector<std::pair<Real, Real>>{{1, 0}, {0, 1}}) {
-          if (Nsurf == 1 && flux.second) continue;
+          if (Nsurf == 1 && flux.second != 0) continue;
           for (const bool taylor : {false, true}) {
             if (taylor) TaylorState::EvalOffSurface(Btrg, Xtrg, Svec, flux.first, flux.second, 1.0, m, sigma, comm);
             else VacuumField::EvalOffSurface(Btrg, Xtrg, Svec, flux.first, flux.second, J, comm);

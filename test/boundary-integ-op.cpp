@@ -269,6 +269,46 @@ int main(int argc, char** argv) {
       biop.Eval(U_full, density(Svec[0].Coord()), 1, NFP * Nt, Np);
       res.Check((name + "vector density given on one period and on the full torus").c_str(), MaxRelDiff(U, U_full), 1e-12);
     }
+    { // densities given on half a field period, the other half by stellarator symmetry, and on one field period: on a
+      // surface whose grid points are half a grid spacing from the planes of symmetry
+      const sctl::Long Nh = Nt / 2, N = Nt * Np; // grid in half a field period, grid points in one field period
+      sctl::Vector<Real> Xh(COORD_DIM * N), f_even(N), f_odd(N), v_odd(COORD_DIM * N);
+      for (sctl::Long t = 0; t < Nt; t++) {
+        for (sctl::Long p = 0; p < Np; p++) {
+          const sctl::Long i = t * Np + p;
+          const Real theta = orient * (t + 0.5) * pi / (NFP * Nh);
+          const Real phi = 2 * pi * p / Np;
+          const Real R = 1.0 + 0.3 * sctl::cos<Real>(phi) + 0.05 * sctl::cos<Real>(phi - NFP * theta);
+          const Real Z = 0.3 * sctl::sin<Real>(phi) - 0.05 * sctl::sin<Real>(phi - NFP * theta);
+          Xh[0 * N + i] = R * sctl::cos<Real>(theta);
+          Xh[1 * N + i] = R * sctl::sin<Real>(theta);
+          Xh[2 * N + i] = Z;
+          f_even[i] = sctl::cos<Real>(phi - NFP * theta) + 0.3 * sctl::cos<Real>(phi);
+          f_odd[i] = sctl::sin<Real>(phi - NFP * theta) + 0.3 * sctl::sin<Real>(phi);
+          v_odd[0 * N + i] = -Xh[1 * N + i];
+          v_odd[1 * N + i] = Xh[0 * N + i];
+          v_odd[2 * N + i] = 1;
+        }
+      }
+      const biest::Surface<Real> Sh(NFP, Nt, Np, Xh);
+      biest::FieldPeriodBIOp<Real> dl(comm), bs(comm);
+      dl.SetupSingular(Sh, ker, digits, NFP, Nt, Np);
+      bs.SetupSingular(Sh, biest::BiotSavart3D<Real>::FxU(), digits, NFP, Nt, Np);
+      const auto check = [&res,&name,NFP,Nt,Nh,Np](const biest::FieldPeriodBIOp<Real>& biop, const sctl::Vector<Real>& F, const biest::Parity parity, const std::string& density) {
+        const sctl::Long dof = F.Dim() / (Nt * Np);
+        sctl::Vector<Real> Fh(dof * Nh * Np), U, Uh; // Fh: F on the first half of the field period
+        for (sctl::Long k = 0; k < dof; k++) {
+          for (sctl::Long i = 0; i < Nh * Np; i++) Fh[k * Nh * Np + i] = F[k * Nt * Np + i];
+        }
+        biop.Eval(U, F, NFP, Nt, Np);
+        biop.Eval(Uh, Fh, NFP, Nh, Np, true, parity);
+        res.Check((name + density + " given on half a field period and on one").c_str(), MaxRelDiff(Uh, U), 1e-12);
+      };
+      check(dl, f_even, biest::Parity::Even, "even scalar density");
+      check(dl, f_odd, biest::Parity::Odd, "odd scalar density");
+      check(bs, Xh, biest::Parity::Even, "even vector density (x,y,z)");
+      check(bs, v_odd, biest::Parity::Odd, "odd vector density (-y,x,1)");
+    }
   }
 
   { // FieldPeriodBIOp on two nested tori with 3 field periods 0.1 apart: on one field period, the potential on the full

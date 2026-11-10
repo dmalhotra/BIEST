@@ -20,6 +20,8 @@ namespace biest {
 
     std::vector<Real> ComputeBdotN(const std::vector<Real>& B) const;
 
+    std::vector<Real> GetTargetCoord() const;
+
     /**
      * Construct a magnetic field B0 with with prescribed B0.n + B1_dot_N = 0 and circulation equal to I0.
      */
@@ -128,6 +130,16 @@ namespace biest {
     const sctl::Vector<Real> B_view((sctl::Long)B.size(), sctl::Ptr2Itr<Real>((Real*)B.data(), (sctl::Long)B.size()), false);
     DotProd(BdotN, B_view, normal);
     return BdotN_;
+  }
+
+  template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::GetTargetCoord() const {
+    std::vector<Real> X(COORD_DIM * Nt_ * Np_);
+    for (sctl::Integer k = 0; k < COORD_DIM; k++) { // the first field period of XX
+      for (sctl::Long i = 0; i < Nt_*Np_; i++) {
+        X[k*Nt_*Np_+i] = XX[k*torus_Nt_*Np_+i];
+      }
+    }
+    return X;
   }
 
   template <class Real, bool exterior> std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> VacuumFieldBase<Real,exterior>::ComputeB_(const std::vector<Real>& B1_dot_N, const Real I0) const {
@@ -344,6 +356,10 @@ namespace biest {
     VacuumFieldBase<Real,true>::Setup_(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
   }
 
+  template <class Real> std::vector<Real> ExtVacuumField<Real>::GetTargetCoord() const {
+    return VacuumFieldBase<Real,true>::GetTargetCoord();
+  }
+
   template <class Real> std::vector<Real> ExtVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {
     return VacuumFieldBase<Real,true>::ComputeBdotN(B);
   }
@@ -364,6 +380,10 @@ namespace biest {
 
   template <class Real> void IntVacuumField<Real>::Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
     VacuumFieldBase<Real,false>::Setup_(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
+  }
+
+  template <class Real> std::vector<Real> IntVacuumField<Real>::GetTargetCoord() const {
+    return VacuumFieldBase<Real,false>::GetTargetCoord();
   }
 
   template <class Real> std::vector<Real> IntVacuumField<Real>::ComputeBdotN(const std::vector<Real>& B) const {

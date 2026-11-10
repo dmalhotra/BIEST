@@ -8,6 +8,7 @@ namespace biest {
 
   template <class Real, bool exterior> class VacuumFieldBase {
     static constexpr sctl::Integer COORD_DIM = 3;
+    static constexpr bool half_period = false; // the data is on half a field period, the other half its stellarator symmetric image
 
     public:
 
@@ -51,9 +52,10 @@ namespace biest {
     sctl::Vector<Surface<Real>> Svec;
     sctl::Integer NFP_, digits_;
     sctl::Long Nt_, Np_;
+    sctl::Long torus_Nt_; // toroidal dimension of the field grid on the full torus
     sctl::Integer tor_orient_; // ToroidalOrientation() of the surface
     bool verbose_;
-    mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
+    mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // torus_Nt_ * Np_
     mutable sctl::Vector<Real> normal, B0J0_; // Nt_ * Np_: B0J0_ the field of the current J0_ (I0 = 1), once computed
     mutable bool dosetup, dosetup_LaplaceFxU;
     // The operators of EvalOffSurface(), with their panels fit to the surface and the densities of the first call after
@@ -63,15 +65,15 @@ namespace biest {
   };
 
 
-  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), LaplaceFxU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), tor_orient_(1), verbose_(verbose), dosetup(true), dosetup_LaplaceFxU(true) {
+  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), LaplaceFxU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), torus_Nt_(0), tor_orient_(1), verbose_(verbose), dosetup(true), dosetup_LaplaceFxU(true) {
   }
 
   template <class Real, bool exterior> void VacuumFieldBase<Real,exterior>::Setup_(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
-    bool half_period = false;
     digits_ = digits;
     NFP_ = NFP;
     Nt_ = Nt;
     Np_ = Np;
+    torus_Nt_ = NFP*(half_period?2:1)*Nt;
 
     dosetup = true;
     dosetup_LaplaceFxU = true;
@@ -89,25 +91,25 @@ namespace biest {
       SurfaceOp<Real>::CompleteVecField(Svec[0].Coord(), half_period, NFP, surf_Nt, surf_Np, X_view, Parity::Even, tor_orient_, (Real)0);
     }
     { // Set normal_, dX_, Xt_, normal, Xp
-      SurfaceOp<Real>::Resample(XX, NFP_*Nt_, Np_, Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
+      SurfaceOp<Real>::Resample(XX, torus_Nt_, Np_, Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
 
-      SurfaceOp<Real> SurfOp(sctl::Comm::Self(), NFP_*Nt_, Np_);
+      SurfaceOp<Real> SurfOp(sctl::Comm::Self(), torus_Nt_, Np_);
       SurfOp.Grad2D(dX_, XX);
       SurfOp.SurfNormalAreaElem(&normal_, nullptr, dX_, &XX);
 
-      Xt_.ReInit(COORD_DIM*NFP_*Nt_*Np_);
-      Xp_.ReInit(COORD_DIM*NFP_*Nt_*Np_);
+      Xt_.ReInit(COORD_DIM*torus_Nt_*Np_);
+      Xp_.ReInit(COORD_DIM*torus_Nt_*Np_);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) { // Set Xt_, Xp_: -dX/dt and -dX/dp (see SurfaceOp::Grad2D())
-        for (sctl::Long i = 0; i < NFP_*Nt_*Np_; i++) {
-          Xt_[k*NFP_*Nt_*Np_+i] = dX_[(k*2+0)*NFP_*Nt_*Np_+i];
-          Xp_[k*NFP_*Nt_*Np_+i] = dX_[(k*2+1)*NFP_*Nt_*Np_+i];
+        for (sctl::Long i = 0; i < torus_Nt_*Np_; i++) {
+          Xt_[k*torus_Nt_*Np_+i] = dX_[(k*2+0)*torus_Nt_*Np_+i];
+          Xp_[k*torus_Nt_*Np_+i] = dX_[(k*2+1)*torus_Nt_*Np_+i];
         }
       }
 
       normal.ReInit(COORD_DIM*Nt_*Np_);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) { // Set normal
         for (sctl::Long i = 0; i < Nt_*Np_; i++) {
-          normal[k*Nt_*Np_+i] = normal_[k*NFP_*Nt_*Np_+i];
+          normal[k*Nt_*Np_+i] = normal_[k*torus_Nt_*Np_+i];
         }
       }
 
@@ -130,25 +132,24 @@ namespace biest {
 
   template <class Real, bool exterior> std::tuple<std::vector<Real>,std::vector<Real>,std::vector<Real>> VacuumFieldBase<Real,exterior>::ComputeB_(const std::vector<Real>& B1_dot_N, const Real I0) const {
     SCTL_ASSERT((sctl::Long)B1_dot_N.size() == Nt_*Np_);
-    constexpr bool half_period = false;
     const sctl::Integer max_iter = 200;
 
     if (dosetup) { // Quadrature setup, for a grid that resolves the right-hand side B1_dot_N too
-      sctl::ScratchBuf<Real> R_buf(NFP_ * Nt_ * Np_);
+      sctl::ScratchBuf<Real> R_buf(torus_Nt_ * Np_);
       sctl::Vector<Real> R(R_buf);
       SurfaceOp<Real>::CompleteVecField(R, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)B1_dot_N.size(), sctl::Ptr2Itr<Real>((Real*)B1_dot_N.data(), (sctl::Long)B1_dot_N.size()), false), Parity::Odd, tor_orient_);
-      LaplaceFxdU.SetupSingular(Svec[0], Laplace3D<Real>::FxdU(), digits_, NFP_*(half_period?2:1), Nt_, Np_, -1, -1, R);
+      LaplaceFxdU.SetupSingular(Svec[0], Laplace3D<Real>::FxdU(), digits_, torus_Nt_ / Nt_, Nt_, Np_, -1, -1, R);
       dosetup = false;
     }
 
-    // The temporaries in scratch memory (see SurfaceOp::SurfGrad); LaplaceFxdU.Eval() completes a density on one field
-    // period to the full torus, and resamples it to the quadrature grid, in scratch memory as well
+    // The temporaries in scratch memory (see SurfaceOp::SurfGrad); FieldPeriodBIOp::Eval() completes a density on one
+    // field period, or half of one, to the full torus, and resamples it to the quadrature grid, in scratch memory as well
     const sctl::Long N = Nt_ * Np_;
     auto LinOp = [this,N](sctl::Vector<Real>* Ax, const sctl::Vector<Real>& x) {
       sctl::ScratchBuf<Real> grad_phi_buf(COORD_DIM * N);
       sctl::Vector<Real> grad_phi(grad_phi_buf);
       grad_phi.SetZero();
-      LaplaceFxdU.Eval(grad_phi, x, NFP_*(half_period?2:1), Nt_, Np_);
+      LaplaceFxdU.Eval(grad_phi, x, NFP_, Nt_, Np_, half_period, Parity::Odd);
 
       DotProd(*Ax, grad_phi, normal);
       const Real s = (exterior ? (Real)-0.5 : (Real)0.5); // potential in the exterior (interior) of the torus
@@ -162,13 +163,13 @@ namespace biest {
       if (exterior) {
         if (B0J0_.Dim() == 0) { // Set B0J0_, the field of the current J0_, and J0_ first if needed
           if (J0_.Dim() == 0) { // Compute J0 (toroidal surface current of unit magnitude)
-            sctl::ScratchBuf<Real> Vn_buf(COORD_DIM*NFP_*Nt_*Np_), Vd_buf(COORD_DIM*NFP_*Nt_*Np_), Vc_buf(COORD_DIM*NFP_*Nt_*Np_);
+            sctl::ScratchBuf<Real> Vn_buf(COORD_DIM*torus_Nt_*Np_), Vd_buf(COORD_DIM*torus_Nt_*Np_), Vc_buf(COORD_DIM*torus_Nt_*Np_);
             sctl::Vector<Real> Vn(Vn_buf), Vd(Vd_buf), Vc(Vc_buf); // the other parts of the decomposition, in scratch memory
-            SurfaceOp<Real> surf_op(sctl::Comm::Self(), NFP_*Nt_, Np_);
+            SurfaceOp<Real> surf_op(sctl::Comm::Self(), torus_Nt_, Np_);
             surf_op.HodgeDecomp(Vn, Vd, Vc, J0_, Xt_, dX_, normal_, sctl::pow<Real>(0.1,digits_), max_iter);
 
             { // normalize J0_: the current flows in the direction of Xt_ = -dX/dt, of decreasing toroidal index
-              const sctl::Long N = NFP_*Nt_*Np_;
+              const sctl::Long N = torus_Nt_*Np_;
 
               Real orientation = 0;
               { // Set orientation
@@ -188,7 +189,7 @@ namespace biest {
                   Jtor_flux -= J0_[k0*N+i] * Xp_[k2*N+i] * normal_[k1*N+i];
                 }
               }
-              J0_ *= (NFP_*Nt_*Np_)/Jtor_flux*orientation;
+              J0_ *= N/Jtor_flux*orientation;
             }
           }
 
@@ -199,13 +200,13 @@ namespace biest {
           sctl::ScratchBuf<Real> gradG_J_buf(COORD_DIM * COORD_DIM * N);
           sctl::Vector<Real> gradG_J(gradG_J_buf); // the gradient of S[J0_ k] at offset k * COORD_DIM * N
           gradG_J.SetZero();
-          LaplaceFxdU.Eval(gradG_J, J0_, 1, NFP_*Nt_, Np_);
+          LaplaceFxdU.Eval(gradG_J, J0_, 1, torus_Nt_, Np_);
           for (sctl::Integer k = 0; k < COORD_DIM; k++) {
             sctl::Integer k1 = (k+1)%COORD_DIM;
             sctl::Integer k2 = (k+2)%COORD_DIM;
             for (sctl::Long i = 0; i < N; i++) {
-              B0J0_[k2 * N + i] -= gradG_J[(k * COORD_DIM + k1) * N + i] - 0.5 * J0_[k * NFP_*Nt_*Np_ + i] * normal[k1 * N + i];
-              B0J0_[k1 * N + i] += gradG_J[(k * COORD_DIM + k2) * N + i] - 0.5 * J0_[k * NFP_*Nt_*Np_ + i] * normal[k2 * N + i];
+              B0J0_[k2 * N + i] -= gradG_J[(k * COORD_DIM + k1) * N + i] - 0.5 * J0_[k * torus_Nt_*Np_ + i] * normal[k1 * N + i];
+              B0J0_[k1 * N + i] += gradG_J[(k * COORD_DIM + k2) * N + i] - 0.5 * J0_[k * torus_Nt_*Np_ + i] * normal[k2 * N + i];
             }
           }
         }
@@ -213,9 +214,9 @@ namespace biest {
       } else {
         const Real scal = I0/(2*sctl::const_pi<Real>());
         for (sctl::Long i = 0; i < Nt_ * Np_; i++) {
-          const Real R2inv = 1/(XX[0 * NFP_*Nt_*Np_ + i]*XX[0 * NFP_*Nt_*Np_ + i] + XX[1 * NFP_*Nt_*Np_ + i]*XX[1 * NFP_*Nt_*Np_ + i]);
-          B0[0 * Nt_*Np_ + i] = -XX[1 * NFP_*Nt_*Np_ + i] * scal * R2inv; // Assuming axis is through the origin along Z
-          B0[1 * Nt_*Np_ + i] =  XX[0 * NFP_*Nt_*Np_ + i] * scal * R2inv;
+          const Real R2inv = 1/(XX[0 * torus_Nt_*Np_ + i]*XX[0 * torus_Nt_*Np_ + i] + XX[1 * torus_Nt_*Np_ + i]*XX[1 * torus_Nt_*Np_ + i]);
+          B0[0 * Nt_*Np_ + i] = -XX[1 * torus_Nt_*Np_ + i] * scal * R2inv; // Assuming axis is through the origin along Z
+          B0[1 * Nt_*Np_ + i] =  XX[0 * torus_Nt_*Np_ + i] * scal * R2inv;
           B0[2 * Nt_*Np_ + i] = 0;
         }
       }
@@ -224,13 +225,14 @@ namespace biest {
     for (sctl::Long i = 0; i < N; i++) rhs[i] += B1_dot_N[i];
 
     { // Solve for sigma
+      // TODO: take sigma initial guess as optional input, and add optional Krylov preconditioning
       sigma.SetZero();
       sctl::GMRES<Real> solver(sctl::Comm::Self(), verbose_);
       solver(&sigma, LinOp, rhs, sctl::pow<Real>(0.1,digits_), max_iter);
     }
     { // Compute B0 <-- B0 - (LaplaceFxdU[sigma] - 0.5*sigma*normal)
       grad_phi.SetZero();
-      LaplaceFxdU.Eval(grad_phi, sigma, NFP_*(half_period?2:1), Nt_, Np_);
+      LaplaceFxdU.Eval(grad_phi, sigma, NFP_, Nt_, Np_, half_period, Parity::Odd);
 
       for (sctl::Long i = 0; i < Nt_*Np_; i++) { // B0 <-- B0 - (grad_phi - 0.5*sigma*normal)
         for (sctl::Integer k = 0; k < COORD_DIM; k++) {
@@ -247,7 +249,7 @@ namespace biest {
       J0.resize(COORD_DIM*Nt_*Np_);
       for (sctl::Integer k = 0; k < COORD_DIM; k++) {
         for (sctl::Long i = 0; i < Nt_*Np_; i++) {
-          J0[k*Nt_*Np_+i] = J0_[k*NFP_*Nt_*Np_+i] * I0;
+          J0[k*Nt_*Np_+i] = J0_[k*torus_Nt_*Np_+i] * I0;
         }
       }
     }
@@ -255,25 +257,23 @@ namespace biest {
   }
 
   template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::ComputeU_(const std::vector<Real>& sigma) const {
-    constexpr bool half_period = false;
-
+    SCTL_ASSERT((sctl::Long)sigma.size() == Nt_*Np_);
+    const sctl::Vector<Real> sigma_view((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false);
     if (dosetup_LaplaceFxU) { // Quadrature setup, for a grid that resolves sigma too
-      sctl::ScratchBuf<Real> R_buf(NFP_ * Nt_ * Np_);
+      sctl::ScratchBuf<Real> R_buf(torus_Nt_ * Np_);
       sctl::Vector<Real> R(R_buf);
-      SurfaceOp<Real>::CompleteVecField(R, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false), Parity::Odd, tor_orient_);
-      LaplaceFxU.SetupSingular(Svec[0], Laplace3D<Real>::FxU(), digits_, NFP_*(half_period?2:1), Nt_, Np_, -1, -1, R);
+      SurfaceOp<Real>::CompleteVecField(R, half_period, NFP_, Nt_, Np_, sigma_view, Parity::Odd, tor_orient_);
+      LaplaceFxU.SetupSingular(Svec[0], Laplace3D<Real>::FxU(), digits_, torus_Nt_ / Nt_, Nt_, Np_, -1, -1, R);
       dosetup_LaplaceFxU = false;
     }
 
-    std::vector<Real> U0_(Nt_*Np_, (Real)0); // U0 <-- LaplaceFxU[sigma], sigma completed to the full torus and resampled by Eval()
+    std::vector<Real> U0_(Nt_*Np_, (Real)0); // U0 <-- LaplaceFxU[sigma]
     sctl::Vector<Real> U0((sctl::Long)U0_.size(), sctl::Ptr2Itr<Real>(U0_.data(), (sctl::Long)U0_.size()), false);
-    const sctl::Vector<Real> sigma_view((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false);
-    LaplaceFxU.Eval(U0, sigma_view, NFP_*(half_period?2:1), Nt_, Np_);
+    LaplaceFxU.Eval(U0, sigma_view, NFP_, Nt_, Np_, half_period, Parity::Odd);
     return U0_;
   }
 
   template <class Real, bool exterior> std::vector<Real> VacuumFieldBase<Real,exterior>::EvalOffSurface(const std::vector<Real>& Xtrg, const std::vector<Real>& sigma, const std::vector<Real>& J, const Real I0) const {
-    constexpr bool half_period = false;
     const sctl::Long Ntrg = Xtrg.size() / COORD_DIM;
     SCTL_ASSERT((sctl::Long)Xtrg.size() == COORD_DIM * Ntrg);
     SCTL_ASSERT((sctl::Long)sigma.size() == 0 || (sctl::Long)sigma.size() == Nt_ * Np_);
@@ -281,7 +281,7 @@ namespace biest {
 
     // The densities on the full surface, in scratch memory (see SurfaceOp::SurfGrad), and the operators of the object,
     // with their panels fit by the first call (see OffSurfaceOp::SetTargets)
-    const sctl::Long N = NFP_*Nt_*Np_;
+    const sctl::Long N = torus_Nt_*Np_;
     const Real tol = sctl::pow<Real>((Real)0.1, digits_);
     std::vector<Real> B(COORD_DIM * Ntrg, (Real)0);
     sctl::Vector<Real> Bplasma((sctl::Long)B.size(), sctl::Ptr2Itr<Real>(B.data(), (sctl::Long)B.size()), false);
@@ -294,7 +294,7 @@ namespace biest {
       for (auto& f : F) f = -f;
       if (!off_lap_) {
         off_lap_.reset(new OffSurfLaplaceFxdU(Laplace3D<Real>::FxdU()));
-        off_lap_->SetupSurface(XX, NFP_*Nt_, Np_, tol, F);
+        off_lap_->SetupSurface(XX, torus_Nt_, Np_, tol, F);
       }
       off_lap_->SetTargets(Xtrg_view);
       off_lap_->Eval(Bplasma, F);
@@ -306,7 +306,7 @@ namespace biest {
       SurfaceOp<Real>::CompleteVecField(J_, half_period, NFP_, Nt_, Np_, J_view, Parity::Odd, tor_orient_);
       if (!off_bs_) {
         off_bs_.reset(new OffSurfBiotSavartFxU(BiotSavart3D<Real>::FxU()));
-        off_bs_->SetupSurface(XX, NFP_*Nt_, Np_, tol, J_);
+        off_bs_->SetupSurface(XX, torus_Nt_, Np_, tol, J_);
       }
       off_bs_->SetTargets(Xtrg_view);
       off_bs_->Eval(Bplasma, J_);

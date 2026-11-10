@@ -51,6 +51,7 @@ namespace biest {
     sctl::Vector<Surface<Real>> Svec;
     sctl::Integer NFP_, digits_;
     sctl::Long Nt_, Np_;
+    sctl::Integer tor_orient_; // ToroidalOrientation() of the surface
     bool verbose_;
     mutable sctl::Vector<Real> XX, normal_, dX_, Xt_, Xp_, J0_; // NFP_ * Nt_ * Np_
     mutable sctl::Vector<Real> normal, B0J0_; // Nt_ * Np_: B0J0_ the field of the current J0_ (I0 = 1), once computed
@@ -62,7 +63,7 @@ namespace biest {
   };
 
 
-  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), LaplaceFxU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), verbose_(verbose), dosetup(true), dosetup_LaplaceFxU(true) {
+  template <class Real, bool exterior> VacuumFieldBase<Real,exterior>::VacuumFieldBase(bool verbose) : LaplaceFxdU(sctl::Comm::Self()), LaplaceFxU(sctl::Comm::Self()), Svec(1), NFP_(0), digits_(10), Nt_(0), Np_(0), tor_orient_(1), verbose_(verbose), dosetup(true), dosetup_LaplaceFxU(true) {
   }
 
   template <class Real, bool exterior> void VacuumFieldBase<Real,exterior>::Setup_(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np) {
@@ -75,15 +76,17 @@ namespace biest {
     dosetup = true;
     dosetup_LaplaceFxU = true;
     SCTL_ASSERT(surf_Nt*surf_Np*COORD_DIM == (sctl::Long)X.size());
+    const sctl::Vector<Real> X_view((sctl::Long)X.size(), sctl::Ptr2Itr<Real>((Real*)X.data(), (sctl::Long)X.size()), false);
+    tor_orient_ = SurfaceOp<Real>::ToroidalOrientation(X_view, surf_Nt, surf_Np);
     if (half_period) { // upsample surf_Nt by 1
       sctl::Vector<Real> X0, X1;
       Svec[0] = Surface<Real>(NFP*2*(surf_Nt+1), surf_Np, SurfType::None);
-      SurfaceOp<Real>::CompleteVecField(X0, true, half_period, NFP, surf_Nt, surf_Np, sctl::Vector<Real>(X), -sctl::const_pi<Real>()/(NFP*surf_Nt*2));
+      SurfaceOp<Real>::CompleteVecField(X0, half_period, NFP, surf_Nt, surf_Np, X_view, Parity::Even, tor_orient_, -sctl::const_pi<Real>()/(NFP*surf_Nt*2));
       SurfaceOp<Real>::Resample(X1, NFP*2*(surf_Nt+1), surf_Np, X0, NFP*2*surf_Nt, surf_Np);
       SurfaceOp<Real>::RotateToroidal(Svec[0].Coord(), X1, NFP*2*(surf_Nt+1), surf_Np, sctl::const_pi<Real>()/(NFP*Nt*2));
     } else {
       Svec[0] = Surface<Real>(NFP*surf_Nt, surf_Np, SurfType::None);
-      SurfaceOp<Real>::CompleteVecField(Svec[0].Coord(), true, half_period, NFP, surf_Nt, surf_Np, sctl::Vector<Real>(X), (Real)0);
+      SurfaceOp<Real>::CompleteVecField(Svec[0].Coord(), half_period, NFP, surf_Nt, surf_Np, X_view, Parity::Even, tor_orient_, (Real)0);
     }
     { // Set normal_, dX_, Xt_, normal, Xp
       SurfaceOp<Real>::Resample(XX, NFP_*Nt_, Np_, Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol());
@@ -133,7 +136,7 @@ namespace biest {
     if (dosetup) { // Quadrature setup, for a grid that resolves the right-hand side B1_dot_N too
       sctl::ScratchBuf<Real> R_buf(NFP_ * Nt_ * Np_);
       sctl::Vector<Real> R(R_buf);
-      SurfaceOp<Real>::CompleteVecField(R, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)B1_dot_N.size(), sctl::Ptr2Itr<Real>((Real*)B1_dot_N.data(), (sctl::Long)B1_dot_N.size()), false));
+      SurfaceOp<Real>::CompleteVecField(R, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)B1_dot_N.size(), sctl::Ptr2Itr<Real>((Real*)B1_dot_N.data(), (sctl::Long)B1_dot_N.size()), false), Parity::Odd, tor_orient_);
       LaplaceFxdU.SetupSingular(Svec[0], Laplace3D<Real>::FxdU(), digits_, NFP_*(half_period?2:1), Nt_, Np_, -1, -1, R);
       dosetup = false;
     }
@@ -257,7 +260,7 @@ namespace biest {
     if (dosetup_LaplaceFxU) { // Quadrature setup, for a grid that resolves sigma too
       sctl::ScratchBuf<Real> R_buf(NFP_ * Nt_ * Np_);
       sctl::Vector<Real> R(R_buf);
-      SurfaceOp<Real>::CompleteVecField(R, false, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false));
+      SurfaceOp<Real>::CompleteVecField(R, half_period, NFP_, Nt_, Np_, sctl::Vector<Real>((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false), Parity::Odd, tor_orient_);
       LaplaceFxU.SetupSingular(Svec[0], Laplace3D<Real>::FxU(), digits_, NFP_*(half_period?2:1), Nt_, Np_, -1, -1, R);
       dosetup_LaplaceFxU = false;
     }
@@ -287,7 +290,7 @@ namespace biest {
       sctl::ScratchBuf<Real> F_buf(N);
       sctl::Vector<Real> F(F_buf);
       const sctl::Vector<Real> sigma_view((sctl::Long)sigma.size(), sctl::Ptr2Itr<Real>((Real*)sigma.data(), (sctl::Long)sigma.size()), false);
-      SurfaceOp<Real>::CompleteVecField(F, false, half_period, NFP_, Nt_, Np_, sigma_view);
+      SurfaceOp<Real>::CompleteVecField(F, half_period, NFP_, Nt_, Np_, sigma_view, Parity::Odd, tor_orient_);
       for (auto& f : F) f = -f;
       if (!off_lap_) {
         off_lap_.reset(new OffSurfLaplaceFxdU(Laplace3D<Real>::FxdU()));
@@ -300,7 +303,7 @@ namespace biest {
       sctl::ScratchBuf<Real> J_buf(COORD_DIM * N);
       sctl::Vector<Real> J_(J_buf);
       const sctl::Vector<Real> J_view((sctl::Long)J.size(), sctl::Ptr2Itr<Real>((Real*)J.data(), (sctl::Long)J.size()), false);
-      SurfaceOp<Real>::CompleteVecField(J_, false, half_period, NFP_, Nt_, Np_, J_view, 0, SurfaceOp<Real>::ToroidalOrientation(Svec[0].Coord(), Svec[0].NTor(), Svec[0].NPol()));
+      SurfaceOp<Real>::CompleteVecField(J_, half_period, NFP_, Nt_, Np_, J_view, Parity::Odd, tor_orient_);
       if (!off_bs_) {
         off_bs_.reset(new OffSurfBiotSavartFxU(BiotSavart3D<Real>::FxU()));
         off_bs_->SetupSurface(XX, NFP_*Nt_, Np_, tol, J_);
@@ -443,7 +446,8 @@ namespace biest {
     sctl::Vector<Real> X_surf, X_trg, X_trg_offsurf(Xt_);
     { // Set X_surf, X_trg
       sctl::Vector<Real> XX;
-      SurfaceOp<Real>::CompleteVecField(XX, true, half_period, NFP, surf_Nt, surf_Np, sctl::Vector<Real>(X), (half_period?-sctl::const_pi<Real>()/(NFP*surf_Nt*2):0));
+      const sctl::Vector<Real> X_view((sctl::Long)X.size(), sctl::Ptr2Itr<Real>((Real*)X.data(), (sctl::Long)X.size()), false);
+      SurfaceOp<Real>::CompleteVecField(XX, half_period, NFP, surf_Nt, surf_Np, X_view, Parity::Even, SurfaceOp<Real>::ToroidalOrientation(X_view, surf_Nt, surf_Np), (half_period?-sctl::const_pi<Real>()/(NFP*surf_Nt*2):0));
       SurfaceOp<Real>::Resample(X_surf, NFP*(half_period?2:1)*(surf_Nt+1), surf_Np, XX, NFP*(half_period?2:1)*surf_Nt, surf_Np);
 
       sctl::Vector<Real> X_surf_shifted, X_trg_;

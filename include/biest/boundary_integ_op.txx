@@ -573,7 +573,7 @@ namespace biest {
         trg_Nt_[i] = Nt / NFP;
         trg_Np_[i] = Np;
         sctl::Vector<Real> Rf(Nr * cnt[i], Rf_buf.begin() + Nr * dsp[i], false);
-        if (Nr) biest::SurfaceOp<Real>::CompleteVecField(Rf, false, false, NFP, Nt / NFP, Np, sctl::Vector<Real>(Nr * cnt[i] / NFP, (sctl::Iterator<Real>)refine.begin() + Nr * dsp[i] / NFP, false), 0, biest::SurfaceOp<Real>::ToroidalOrientation(Svec[i].Coord(), Nt, Np));
+        if (Nr) biest::SurfaceOp<Real>::CompleteVecField(Rf, false, NFP, Nt / NFP, Np, sctl::Vector<Real>(Nr * cnt[i] / NFP, (sctl::Iterator<Real>)refine.begin() + Nr * dsp[i] / NFP, false), biest::Parity::Even, biest::SurfaceOp<Real>::ToroidalOrientation(Svec[i].Coord(), Nt, Np));
         detail_quadgrid::QuadGrid<SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>>(quad_Nt_[i], quad_Np_[i], Svec[i].Coord(), Nt, Np, tol, quad, Nt, Np, Nt, Np, comm_, Rf, Nt, Np);
       }
       SetGrids(Svec, NFP);
@@ -670,7 +670,7 @@ namespace biest {
         for (sctl::Long d = 0; d < dof; d++) { // one density at a time: CompleteVecField rotates 3 components as a vector
           const sctl::Vector<Real> Fd(kdim_[0] * Ns, (sctl::Iterator<Real>)F_.begin() + d * kdim_[0] * Ns, false);
           sctl::Vector<Real> Ffd(kdim_[0] * NFP[s] * Ns, Ff.begin() + d * kdim_[0] * NFP[s] * Ns, false);
-          biest::SurfaceOp<Real>::CompleteVecField(Ffd, false, false, NFP[s], src_Nt[s], src_Np[s], Fd, 0, tor_orient_[s]);
+          biest::SurfaceOp<Real>::CompleteVecField(Ffd, false, NFP[s], src_Nt[s], src_Np[s], Fd, biest::Parity::Even, tor_orient_[s]);
         }
         biest::SurfaceOp<Real>::Resample(Fq_, quad_Nt_[s], quad_Np_[s], Ff, NFP[s] * src_Nt[s], src_Np[s]);
       }

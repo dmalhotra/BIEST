@@ -42,6 +42,19 @@ enum class SurfType {
 };
 
 /**
+ * The parity of data on a surface under stellarator symmetry, which maps the
+ * point (x,y,z) to (x,-y,-z) and reverses the poloidal angle. The image of
+ * data with 3 components V is (Vx,-Vy,-Vz), and that of other data is the data
+ * itself.
+ */
+enum class Parity {
+  /** The data at the mapped point is the image of the data: surface coordinates. */
+  Even,
+  /** The data at the mapped point is minus the image of the data: a stellarator symmetric magnetic field B, and B.n. */
+  Odd
+};
+
+/**
  * A toroidal surface given by the coordinates of the points of a uniform Nt x
  * Np grid in the toroidal and poloidal angles, in SoA order. A surface may
  * have NFP toroidal field periods: its coordinates are then invariant under

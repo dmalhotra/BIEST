@@ -24,6 +24,10 @@ Classes and Types
 
 |
 
+.. doxygenenum:: biest::Parity
+
+|
+
 Functions
 ---------
 

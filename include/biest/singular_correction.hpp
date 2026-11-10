@@ -601,6 +601,8 @@ template <class Real, sctl::Integer KDIM0, sctl::Integer KDIM1, sctl::Integer He
     static constexpr sctl::Integer NV_MAX = INTERP_ORDER_MAX / IVecLen;
     const sctl::Integer NV = INTERP_ORDER / IVecLen; // vectors in a row of a window
     auto interp = [&I_G2P,Npc,&W_G2P,Ngrid,PATCH_DIM,INTERP_ORDER,NV](const sctl::Iterator<Real> Vout, const sctl::ConstIterator<Real> Vin) {
+      SCTL_UNUSED(INTERP_ORDER);
+      SCTL_UNUSED(NV);
       for (sctl::Long j = 0; j < Npc; j++) {
         const sctl::ConstIterator<Real> a = W_G2P.begin() + j * 2 * INTERP_ORDER, b = a + INTERP_ORDER;
         const sctl::ConstIterator<Real> W = Vin + I_G2P[j];

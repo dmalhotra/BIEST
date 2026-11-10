@@ -212,8 +212,11 @@ template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, c
  * @param[in] src_Nt, src_Np the grid dimensions of F in one field period.
  *
  * @param[in] F the field on one field period, in SoA order.
+ *
+ * @param[in] parity the parity of F under stellarator symmetry. Used only with
+ * half_period.
  */
-template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F);
+template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F, const Parity parity);
 
 }
 

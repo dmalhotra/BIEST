@@ -740,8 +740,7 @@ template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, c
   WriteVTK(fname, sctl::Vector<Surface<Real>>(1,sctl::Ptr2Itr<Surface<Real>>((Surface<Real>*)&S,1),false), F, comm);
 }
 
-template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F) {
-  static constexpr sctl::Integer COORD_DIM = 3;
+template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F, const Parity parity) {
   const sctl::Integer tor_orient = SurfaceOp<Real>::ToroidalOrientation(X, surf_Nt, surf_Np);
   sctl::Vector<Real> X_, F_;
   sctl::Vector<biest::Surface<Real>> Svec(1);
@@ -749,7 +748,7 @@ template <class Real> void WriteVTK(const std::string& fname, const sctl::Intege
   SurfaceOp<Real>::CompleteVecField(X_, half_period, NFP, surf_Nt, surf_Np, X, Parity::Even, tor_orient, (half_period?sctl::const_pi<Real>()/(NFP*src_Nt*2):0)-(half_period?sctl::const_pi<Real>()/(NFP*surf_Nt*2):0));
   SurfaceOp<Real>::Resample(Svec[0].Coord(), NFP*(half_period?2:1)*src_Nt, src_Np, X_, NFP*(half_period?2:1)*surf_Nt, surf_Np);
 
-  SurfaceOp<Real>::CompleteVecField(F_, half_period, NFP, src_Nt, src_Np, F, (F.Dim() == COORD_DIM*src_Nt*src_Np ? Parity::Odd : Parity::Even), tor_orient);
+  SurfaceOp<Real>::CompleteVecField(F_, half_period, NFP, src_Nt, src_Np, F, parity, tor_orient);
   biest::WriteVTK(fname.c_str(), Svec, F_);
 }
 

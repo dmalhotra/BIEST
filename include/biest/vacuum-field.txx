@@ -552,7 +552,7 @@ namespace biest {
         }
         data.WriteVTK(fname.c_str(), sctl::Comm::Self());
       };
-      WriteVTK("B", NFP, half_period, surf_Nt, surf_Np, sctl::Vector<Real>(X), trg_Nt, trg_Np, sctl::Vector<Real>(B));
+      WriteVTK("B", NFP, half_period, surf_Nt, surf_Np, sctl::Vector<Real>(X), trg_Nt, trg_Np, sctl::Vector<Real>(B), Parity::Odd);
       WriteVTK_("loop0", source0, density0);
     }
 

@@ -42,6 +42,19 @@ enum class SurfType {
 };
 
 /**
+ * The parity of data on a surface under stellarator symmetry, which maps the
+ * point (x,y,z) to (x,-y,-z) and reverses the poloidal angle. The image of
+ * data with 3 components V is (Vx,-Vy,-Vz), and that of other data is the data
+ * itself.
+ */
+enum class Parity {
+  /** The data at the mapped point is the image of the data: surface coordinates. */
+  Even,
+  /** The data at the mapped point is minus the image of the data: a stellarator symmetric magnetic field B, and B.n. */
+  Odd
+};
+
+/**
  * A toroidal surface given by the coordinates of the points of a uniform Nt x
  * Np grid in the toroidal and poloidal angles, in SoA order. A surface may
  * have NFP toroidal field periods: its coordinates are then invariant under
@@ -199,8 +212,11 @@ template <class Real> void WriteVTK(const char* fname, const Surface<Real>& S, c
  * @param[in] src_Nt, src_Np the grid dimensions of F in one field period.
  *
  * @param[in] F the field on one field period, in SoA order.
+ *
+ * @param[in] parity the parity of F under stellarator symmetry. Used only with
+ * half_period.
  */
-template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F);
+template <class Real> void WriteVTK(const std::string& fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real>& X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real>& F, const Parity parity);
 
 }
 

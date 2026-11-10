@@ -24,6 +24,10 @@ Classes and Types
 
 |
 
+.. doxygenenum:: biest::Parity
+
+|
+
 Functions
 ---------
 
@@ -31,7 +35,7 @@ Functions
 
 .. doxygenfunction:: biest::WriteVTK(const char *fname, const sctl::Vector<Surface<Real>> &Svec, const sctl::Vector<Real> F, const sctl::Comm &comm)
 
-.. doxygenfunction:: biest::WriteVTK(const std::string &fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real> &X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real> &F)
+.. doxygenfunction:: biest::WriteVTK(const std::string &fname, const sctl::Integer NFP, bool half_period, const sctl::Long surf_Nt, const sctl::Long surf_Np, const sctl::Vector<Real> &X, const sctl::Long src_Nt, const sctl::Long src_Np, const sctl::Vector<Real> &F, const Parity parity)
 
 |
 

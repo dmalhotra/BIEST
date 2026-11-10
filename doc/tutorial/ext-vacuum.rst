@@ -24,6 +24,7 @@ For a surface with ``NFP`` field periods, the coordinates are given on the toroi
 The magnetic field is given on a separate ``Nt x Np`` grid on the same interval:
 grid point :math:`(t,p)` is the point of the surface at toroidal angle :math:`2\pi t/(N_{fp}N_t)` (in the direction of the toroidal index of the surface) and poloidal angle :math:`2\pi p/N_p`.
 The two grids are independent; the surface is resampled with the FFT.
+After ``Setup``, ``GetTargetCoord`` returns the coordinates of the points of the field grid, at which the magnetic field is given and computed.
 
 .. literalinclude:: ../examples/ext-vacuum.cpp
    :language: c++

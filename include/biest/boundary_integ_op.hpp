@@ -125,27 +125,37 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
      * the src_Nt x src_Np grid, in SoA order. It is copied NFP times in the
      * toroidal direction to cover the whole torus (a density of 3 components
      * rotated as a Cartesian vector to each field period), and resampled to
-     * the quadrature grid; with NFP = 1, src_Nt = QuadNt() and
-     * src_Np = QuadNp() (the defaults), it is used as given. Several
+     * the quadrature grid; with NFP = 1, src_Nt = QuadNt(), src_Np = QuadNp()
+     * and no half_period (the defaults), it is used as given. Several
      * densities are stored one after the other, and U holds their
      * potentials in the same order.
      *
      * @param[in] NFP the number of field periods of F, independent of the NFP
      * of the setup.
      *
-     * @param[in] src_Nt, src_Np the grid of F on one field period (-1 for
-     * QuadNt(), QuadNp()).
+     * @param[in] src_Nt, src_Np the grid of F on one field period, or on half
+     * of one with half_period (-1 for QuadNt(), QuadNp()).
+     *
+     * @param[in] half_period F is given on half a field period, and the other
+     * half is built by stellarator symmetry (see
+     * SurfaceOp::CompleteVecField()): the grid point t of F is at the toroidal
+     * angle (t+1/2)*pi/(NFP*src_Nt) from a plane of symmetry, the first at the
+     * first grid point of the surface, and the full torus has NFP*2*src_Nt x
+     * src_Np points.
+     *
+     * @param[in] parity the parity of F under stellarator symmetry. Used only
+     * with half_period.
      */
-    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP=1, const sctl::Long src_Nt=-1, const sctl::Long src_Np=-1) const;
+    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP=1, const sctl::Long src_Nt=-1, const sctl::Long src_Np=-1, const bool half_period=false, const Parity parity=Parity::Even) const;
 
     /**
      * As Eval() above, for any number of surfaces and densities: F holds, for
      * each surface i, its densities one after the other, each component on
      * the src_Nt[i] x src_Np[i] grid of one of the NFP[i] field periods of
      * surface i; U holds, for each surface, their potentials in the same
-     * order.
+     * order. half_period and parity apply to all the surfaces.
      */
-    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np) const;
+    void Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const bool half_period=false, const Parity parity=Parity::Even) const;
 
     /**
      * Evaluate the potential at points at any distance from the surfaces, by
@@ -203,7 +213,7 @@ template <class Real, sctl::Integer HedgehogOrder = 1> class FieldPeriodBIOp {
      * Calls op(Fq), with Fq the densities F of Eval() on the quadrature grids: F itself when it is on them, and else F
      * completed to the full tori by the symmetry and resampled, in scratch memory (see SurfaceOp::SurfGrad).
      */
-    template <class Op> void OnQuadGrids(const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const Op& op) const;
+    template <class Op> void OnQuadGrids(const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const bool half_period, const Parity parity, const Op& op) const;
 
     using BIOp = detail_biop::BoundaryIntegralOp<Real,HedgehogOrder>;
 

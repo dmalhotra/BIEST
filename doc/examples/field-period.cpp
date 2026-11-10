@@ -42,6 +42,6 @@ int main(int argc, char** argv) {
   std::cout << "quadrature grid: " << biop.QuadNt() << " x " << biop.QuadNp() << '\n';
   std::cout << "max |U + 1/2| = " << err << '\n';
 
-  biest::WriteVTK("U", NFP, false, Nt, Np, X, Nt, Np, U); // U on all field periods
+  biest::WriteVTK("U", NFP, false, Nt, Np, X, Nt, Np, U, biest::Parity::Even); // U on all field periods
   return 0;
 }

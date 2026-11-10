@@ -18,7 +18,7 @@ Classes and Types
 -----------------
 
 .. doxygenclass:: biest::ExtVacuumField
-   :members: ExtVacuumField, Setup, ComputeBdotN, ComputeBplasma, ComputeU, EvalOffSurface
+   :members: ExtVacuumField, Setup, GetTargetCoord, ComputeBdotN, ComputeBplasma, ComputeU, EvalOffSurface
 
 ``Jplasma`` is the net toroidal current of :math:`\mathbf{J}`, which flows in the direction of **decreasing** toroidal grid index :math:`t`.
 For example, if :math:`t` increases counterclockwise about the :math:`z`-axis and :math:`\mathbf{B}_{coil}` is the field of a current loop inside the torus carrying a current :math:`I` counterclockwise about the :math:`z`-axis, then ``ComputeBplasma(ComputeBdotN(Bcoil), I)`` returns :math:`\mathbf{B}_{plasma} = -\mathbf{B}_{coil}` outside the surface.
@@ -28,7 +28,7 @@ For example, if :math:`t` increases counterclockwise about the :math:`z`-axis an
 |
 
 .. doxygenclass:: biest::IntVacuumField
-   :members: IntVacuumField, Setup, ComputeBdotN, ComputeB, ComputeU, EvalOffSurface
+   :members: IntVacuumField, Setup, GetTargetCoord, ComputeBdotN, ComputeB, ComputeU, EvalOffSurface
 
 **Usage guide**: :ref:`Vacuum fields with given normal component <tutorial-ext-vacuum>`
 

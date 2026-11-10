@@ -1106,17 +1106,18 @@ template <class Real> sctl::Integer SurfaceOp<Real>::ToroidalOrientation(const s
   }
   return (cross_z < 0 ? -1 : 1);
 }
-template <class Real> void SurfaceOp<Real>::CompleteVecField(sctl::Vector<Real>& X, const bool is_surf, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Real dtheta, const sctl::Integer tor_orient) {
+template <class Real> void SurfaceOp<Real>::CompleteVecField(sctl::Vector<Real>& X, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Parity parity, const sctl::Integer tor_orient, const Real dtheta) {
   static constexpr sctl::Integer COORD_DIM = 3;
   const sctl::Long dof = Y.Dim() / (Nt*Np);
   SCTL_ASSERT(Y.Dim() == dof*Nt*Np);
-  const sctl::Integer orient = (tor_orient ? tor_orient : (is_surf && dof == COORD_DIM ? ToroidalOrientation(Y, Nt, Np) : 1));
+  SCTL_ASSERT(tor_orient == 1 || tor_orient == -1);
 
   if (half_period) {
+    const Real sign = (parity == Parity::Even ? 1 : -1);
     sctl::Vector<Real> Y_(dof*(Nt*2)*Np);
     if (dof == COORD_DIM) {
       const Real cos_theta = sctl::cos<Real>(2*sctl::const_pi<Real>()/NFP);
-      const Real sin_theta = sctl::sin<Real>(2*sctl::const_pi<Real>()/NFP) * orient;
+      const Real sin_theta = sctl::sin<Real>(2*sctl::const_pi<Real>()/NFP) * tor_orient;
 
       for (sctl::Long t = 0; t < Nt; t++) {
         for (sctl::Long p = 0; p < Np; p++) {
@@ -1124,9 +1125,9 @@ template <class Real> void SurfaceOp<Real>::CompleteVecField(sctl::Vector<Real>&
           Y_[(1*2*Nt+t)*Np+p] = Y[(1*Nt+t)*Np+p];
           Y_[(2*2*Nt+t)*Np+p] = Y[(2*Nt+t)*Np+p];
 
-          const Real x =  Y[(0*Nt+Nt-t-1)*Np+((Np-p)%Np)] * (is_surf?1:-1);
-          const Real y = -Y[(1*Nt+Nt-t-1)*Np+((Np-p)%Np)] * (is_surf?1:-1);
-          const Real z = -Y[(2*Nt+Nt-t-1)*Np+((Np-p)%Np)] * (is_surf?1:-1);
+          const Real x =  Y[(0*Nt+Nt-t-1)*Np+((Np-p)%Np)] * sign;
+          const Real y = -Y[(1*Nt+Nt-t-1)*Np+((Np-p)%Np)] * sign;
+          const Real z = -Y[(2*Nt+Nt-t-1)*Np+((Np-p)%Np)] * sign;
           Y_[(0*2*Nt+Nt+t)*Np+p] = x*cos_theta - y*sin_theta;
           Y_[(1*2*Nt+Nt+t)*Np+p] = x*sin_theta + y*cos_theta;
           Y_[(2*2*Nt+Nt+t)*Np+p] = z;
@@ -1137,19 +1138,19 @@ template <class Real> void SurfaceOp<Real>::CompleteVecField(sctl::Vector<Real>&
         for (sctl::Long p = 0; p < Np; p++) {
           for (sctl::Long k = 0; k < dof; k++) {
             Y_[(k*2*Nt+t)*Np+p] = Y[(k*Nt+t)*Np+p];
-            Y_[(k*2*Nt+Nt+t)*Np+p] = Y[(k*Nt+Nt-t-1)*Np+((Np-p)%Np)];
+            Y_[(k*2*Nt+Nt+t)*Np+p] = sign * Y[(k*Nt+Nt-t-1)*Np+((Np-p)%Np)];
           }
         }
       }
     }
-    return CompleteVecField(X, is_surf, false, NFP, 2*Nt, Np, Y_, dtheta, orient);
+    return CompleteVecField(X, false, NFP, 2*Nt, Np, Y_, parity, tor_orient, dtheta);
   }
 
   if (X.Dim() != dof*NFP*Nt*Np) X.ReInit(dof*NFP*Nt*Np);
   if (dof == COORD_DIM) {
     for (sctl::Long j = 0; j < NFP; j++) {
       const Real cost = sctl::cos<Real>(2*sctl::const_pi<Real>()*j/NFP);
-      const Real sint = sctl::sin<Real>(2*sctl::const_pi<Real>()*j/NFP) * orient;
+      const Real sint = sctl::sin<Real>(2*sctl::const_pi<Real>()*j/NFP) * tor_orient;
       for (sctl::Long i = 0; i < Nt*Np; i++) {
         const Real x0 = Y[0*Nt*Np+i];
         const Real y0 = Y[1*Nt*Np+i];

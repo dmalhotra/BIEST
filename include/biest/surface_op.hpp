@@ -378,15 +378,10 @@ template <class Real> class SurfaceOp {
      *
      * @param[out] X the data on the full torus.
      *
-     * @param[in] is_surf true for surface coordinates, false for a vector
-     * field.
-     *
      * @param[in] half_period Y is given on half a field period, at toroidal
      * angles (t+1/2)*pi/(NFP*Nt) in the direction of the toroidal index, and
-     * the other half is its stellarator symmetric image: (x,-y,-z) for
-     * coordinates and (-Bx,By,Bz) for a vector field, with the poloidal index
-     * reversed. X then has NFP*2*Nt x Np points, at toroidal angles
-     * (t+1/2)*pi/(NFP*Nt).
+     * the other half is built by stellarator symmetry (see Parity). X then
+     * has NFP*2*Nt x Np points, at toroidal angles (t+1/2)*pi/(NFP*Nt).
      *
      * @param[in] NFP number of toroidal field periods.
      *
@@ -394,14 +389,16 @@ template <class Real> class SurfaceOp {
      *
      * @param[in] Y the data on one field period, in SoA order.
      *
-     * @param[in] dtheta the result is shifted toroidally with RotateToroidal().
+     * @param[in] parity the parity of Y under stellarator symmetry. Used only
+     * with half_period.
      *
      * @param[in] tor_orient +1 or -1 if the toroidal index of Y increases
-     * counterclockwise or clockwise about the z-axis. With 0, it is detected
-     * from Y with ToroidalOrientation() if is_surf is true, and is +1
-     * otherwise; a vector field must be given the orientation of its surface.
+     * counterclockwise or clockwise about the z-axis: ToroidalOrientation() of
+     * the surface coordinates. Used only for data with 3 components.
+     *
+     * @param[in] dtheta the result is shifted toroidally with RotateToroidal().
      */
-    static void CompleteVecField(sctl::Vector<Real>& X, const bool is_surf, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Real dtheta = 0, const sctl::Integer tor_orient = 0);
+    static void CompleteVecField(sctl::Vector<Real>& X, const bool half_period, const sctl::Integer NFP, const sctl::Long Nt, const sctl::Long Np, const sctl::Vector<Real>& Y, const Parity parity, const sctl::Integer tor_orient, const Real dtheta = 0);
 
     /**
      * Resample X0 from an Nt0 x Np0 periodic grid to an Nt1 x Np1 grid by

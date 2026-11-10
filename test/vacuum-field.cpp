@@ -70,6 +70,7 @@ int main(int argc, char** argv) {
       const Real I = 1.0;
       biest::ExtVacuumField<Real> ext_field;
       ext_field.Setup(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
+      res.Check(("ExtVacuumField::GetTargetCoord: points of the field grid" + grid).c_str(), rel_diff(ext_field.GetTargetCoord(), XB), 1e-13);
 
       // Jplasma is the current in the direction of decreasing toroidal index; Bplasma is the field of the current -I
       // counterclockwise about the z-axis
@@ -86,6 +87,7 @@ int main(int argc, char** argv) {
       const Real I0 = 1.0;
       biest::IntVacuumField<Real> int_field;
       int_field.Setup(digits, NFP, surf_Nt, surf_Np, X, Nt, Np);
+      res.Check(("IntVacuumField::GetTargetCoord: points of the field grid" + grid).c_str(), rel_diff(int_field.GetTargetCoord(), XB), 1e-13);
 
       std::vector<Real> B, sigma;
       std::tie(B, sigma) = int_field.ComputeB(int_field.ComputeBdotN(loop_wire_field(XB, 3.0, 1.0, -1.0, -I0)), I0);

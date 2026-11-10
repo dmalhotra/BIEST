@@ -60,6 +60,19 @@ namespace biest {
     void Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
 
     /**
+     * Return the coordinates of the points of the field grid, on which
+     * ComputeBdotN() takes B and ComputeBplasma() returns Bplasma: the surface
+     * X given to Setup(), interpolated to the Nt x Np grid of one field
+     * period. The field grid point (t,p) is at the toroidal angle
+     * 2*pi*t/(NFP*Nt) and the poloidal angle 2*pi*p/Np of the surface grid,
+     * whose point (0,0) is the first point of X.
+     *
+     * @return the coordinates {x11, x12, ..., x1Np, x21, ..., xNtNp, y11, ...,
+     * z11, ...} (SoA order).
+     */
+    std::vector<Real> GetTargetCoord() const;
+
+    /**
      * Compute the dot product of a given vector field B on the surface with the
      * surface normal vector.
      *
@@ -165,6 +178,19 @@ namespace biest {
      * any particular way.
      */
     void Setup(const sctl::Integer digits, const sctl::Integer NFP, const sctl::Long surf_Nt, const sctl::Long surf_Np, const std::vector<Real>& X, const sctl::Long Nt, const sctl::Long Np);
+
+    /**
+     * Return the coordinates of the points of the field grid, on which
+     * ComputeBdotN() takes B and ComputeB() returns B: the surface X given to
+     * Setup(), interpolated to the Nt x Np grid of one field period. The field
+     * grid point (t,p) is at the toroidal angle 2*pi*t/(NFP*Nt) and the
+     * poloidal angle 2*pi*p/Np of the surface grid, whose point (0,0) is the
+     * first point of X.
+     *
+     * @return the coordinates {x11, x12, ..., x1Np, x21, ..., xNtNp, y11, ...,
+     * z11, ...} (SoA order).
+     */
+    std::vector<Real> GetTargetCoord() const;
 
     /**
      * Compute the dot product of a given vector field B on the surface with the

@@ -573,7 +573,7 @@ namespace biest {
         trg_Nt_[i] = Nt / NFP;
         trg_Np_[i] = Np;
         sctl::Vector<Real> Rf(Nr * cnt[i], Rf_buf.begin() + Nr * dsp[i], false);
-        if (Nr) biest::SurfaceOp<Real>::CompleteVecField(Rf, false, false, NFP, Nt / NFP, Np, sctl::Vector<Real>(Nr * cnt[i] / NFP, (sctl::Iterator<Real>)refine.begin() + Nr * dsp[i] / NFP, false), 0, biest::SurfaceOp<Real>::ToroidalOrientation(Svec[i].Coord(), Nt, Np));
+        if (Nr) biest::SurfaceOp<Real>::CompleteVecField(Rf, false, NFP, Nt / NFP, Np, sctl::Vector<Real>(Nr * cnt[i] / NFP, (sctl::Iterator<Real>)refine.begin() + Nr * dsp[i] / NFP, false), biest::Parity::Even, biest::SurfaceOp<Real>::ToroidalOrientation(Svec[i].Coord(), Nt, Np));
         detail_quadgrid::QuadGrid<SingularCorrection<Real,Kernel::Dim(0),Kernel::Dim(1),HedgehogOrder>>(quad_Nt_[i], quad_Np_[i], Svec[i].Coord(), Nt, Np, tol, quad, Nt, Np, Nt, Np, comm_, Rf, Nt, Np);
       }
       SetGrids(Svec, NFP);
@@ -624,7 +624,7 @@ namespace biest {
       }
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,HedgehogOrder>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np) const {
+    template <class Real, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,HedgehogOrder>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const bool half_period, const Parity parity) const {
       SCTL_ASSERT(Svec_.Dim() == 1);
       const sctl::Long src_Nt_ = (src_Nt==-1 ? QuadNt() : src_Nt);
       const sctl::Long src_Np_ = (src_Np==-1 ? QuadNp() : src_Np);
@@ -635,15 +635,15 @@ namespace biest {
       NFP_[0] = NFP;
       src_Nt__[0] = src_Nt_;
       src_Np__[0] = src_Np_;
-      Eval(U, F, NFP_, src_Nt__, src_Np__);
+      Eval(U, F, NFP_, src_Nt__, src_Np__, half_period, parity);
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> template <class Op> void FieldPeriodBIOp<Real,HedgehogOrder>::OnQuadGrids(const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const Op& op) const {
+    template <class Real, sctl::Integer HedgehogOrder> template <class Op> void FieldPeriodBIOp<Real,HedgehogOrder>::OnQuadGrids(const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const bool half_period, const Parity parity, const Op& op) const {
       const sctl::Long Nsurf = Svec_.Dim();
       SCTL_ASSERT(NFP.Dim() == Nsurf && src_Nt.Dim() == Nsurf && src_Np.Dim() == Nsurf);
       // The grid points of the density and of the quadrature grid of each surface, and their offsets
       sctl::ScratchBuf<sctl::Long> src_cnt(Nsurf), quad_cnt(Nsurf), src_dsp(Nsurf), quad_dsp(Nsurf);
-      bool on_quad = true; // the densities on the quadrature grids
+      bool on_quad = !half_period; // the densities on the quadrature grids
       for (sctl::Long s = 0; s < Nsurf; s++) {
         src_cnt[s] = src_Nt[s] * src_Np[s];
         quad_cnt[s] = quad_Nt_[s] * quad_Np_[s];
@@ -663,28 +663,29 @@ namespace biest {
       sctl::ScratchBuf<Real> Fq_buf(dof * kdim_[0] * Nquad);
       for (sctl::Long s = 0; s < Nsurf; s++) {
         const sctl::Long Ns = src_cnt[s], Nq = quad_cnt[s];
+        const sctl::Long torus_Nt = NFP[s] * (half_period ? 2 : 1) * src_Nt[s], Nf = torus_Nt * src_Np[s]; // the grid of the full torus
         const sctl::Vector<Real> F_(dof * kdim_[0] * Ns, (sctl::Iterator<Real>)F.begin() + dof * kdim_[0] * src_dsp[s], false);
         sctl::Vector<Real> Fq_(dof * kdim_[0] * Nq, Fq_buf.begin() + dof * kdim_[0] * quad_dsp[s], false);
-        sctl::ScratchBuf<Real> Ff_buf(dof * kdim_[0] * NFP[s] * Ns);
+        sctl::ScratchBuf<Real> Ff_buf(dof * kdim_[0] * Nf);
         sctl::Vector<Real> Ff(Ff_buf);
         for (sctl::Long d = 0; d < dof; d++) { // one density at a time: CompleteVecField rotates 3 components as a vector
           const sctl::Vector<Real> Fd(kdim_[0] * Ns, (sctl::Iterator<Real>)F_.begin() + d * kdim_[0] * Ns, false);
-          sctl::Vector<Real> Ffd(kdim_[0] * NFP[s] * Ns, Ff.begin() + d * kdim_[0] * NFP[s] * Ns, false);
-          biest::SurfaceOp<Real>::CompleteVecField(Ffd, false, false, NFP[s], src_Nt[s], src_Np[s], Fd, 0, tor_orient_[s]);
+          sctl::Vector<Real> Ffd(kdim_[0] * Nf, Ff.begin() + d * kdim_[0] * Nf, false);
+          biest::SurfaceOp<Real>::CompleteVecField(Ffd, half_period, NFP[s], src_Nt[s], src_Np[s], Fd, parity, tor_orient_[s]);
         }
-        biest::SurfaceOp<Real>::Resample(Fq_, quad_Nt_[s], quad_Np_[s], Ff, NFP[s] * src_Nt[s], src_Np[s]);
+        biest::SurfaceOp<Real>::Resample(Fq_, quad_Nt_[s], quad_Np_[s], Ff, torus_Nt, src_Np[s]);
       }
       const sctl::Vector<Real> Fq(dof * kdim_[0] * Nquad, Fq_buf.begin(), false);
       op(Fq);
     }
 
-    template <class Real, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,HedgehogOrder>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np) const {
-      OnQuadGrids(F, NFP, src_Nt, src_Np, [this,&U](const sctl::Vector<Real>& Fq) { (*biop)(U, Fq); });
+    template <class Real, sctl::Integer HedgehogOrder> void FieldPeriodBIOp<Real,HedgehogOrder>::Eval(sctl::Vector<Real>& U, const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const bool half_period, const Parity parity) const {
+      OnQuadGrids(F, NFP, src_Nt, src_Np, half_period, parity, [this,&U](const sctl::Vector<Real>& Fq) { (*biop)(U, Fq); });
     }
 
     template <class Real, sctl::Integer HedgehogOrder> template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void FieldPeriodBIOp<Real,HedgehogOrder>::EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real>& Xt, const sctl::Vector<Real>& F, const sctl::Vector<sctl::Integer>& NFP, const sctl::Vector<sctl::Long>& src_Nt, const sctl::Vector<sctl::Long>& src_Np, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol) const {
       SCTL_ASSERT(biop);
-      OnQuadGrids(F, NFP, src_Nt, src_Np, [this,&U,&Xt,&ker,tol](const sctl::Vector<Real>& Fq) { biop->EvalOffSurface(U, Xt, Fq, ker, tol); });
+      OnQuadGrids(F, NFP, src_Nt, src_Np, false, biest::Parity::Even, [this,&U,&Xt,&ker,tol](const sctl::Vector<Real>& Fq) { biop->EvalOffSurface(U, Xt, Fq, ker, tol); });
     }
 
     template <class Real, sctl::Integer HedgehogOrder> template <class SKer, sctl::Integer DIGITS, sctl::Integer Nv> void FieldPeriodBIOp<Real,HedgehogOrder>::EvalOffSurface(sctl::Vector<Real>& U, const sctl::Vector<Real>& Xt, const sctl::Vector<Real>& F, const sctl::Integer NFP, const sctl::Long src_Nt, const sctl::Long src_Np, const SctlKernelFunction<Real,SKer,DIGITS,Nv>& ker, const Real tol) const {

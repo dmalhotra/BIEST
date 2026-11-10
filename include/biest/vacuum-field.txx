@@ -94,7 +94,7 @@ namespace biest {
 
       Xt_.ReInit(COORD_DIM*NFP_*Nt_*Np_);
       Xp_.ReInit(COORD_DIM*NFP_*Nt_*Np_);
-      for (sctl::Integer k = 0; k < COORD_DIM; k++) { // Set Xt_, Xp_
+      for (sctl::Integer k = 0; k < COORD_DIM; k++) { // Set Xt_, Xp_: -dX/dt and -dX/dp (see SurfaceOp::Grad2D())
         for (sctl::Long i = 0; i < NFP_*Nt_*Np_; i++) {
           Xt_[k*NFP_*Nt_*Np_+i] = dX_[(k*2+0)*NFP_*Nt_*Np_+i];
           Xp_[k*NFP_*Nt_*Np_+i] = dX_[(k*2+1)*NFP_*Nt_*Np_+i];
@@ -164,7 +164,7 @@ namespace biest {
             SurfaceOp<Real> surf_op(sctl::Comm::Self(), NFP_*Nt_, Np_);
             surf_op.HodgeDecomp(Vn, Vd, Vc, J0_, Xt_, dX_, normal_, sctl::pow<Real>(0.1,digits_), max_iter);
 
-            { // normalize J0_ (the current is oriented in the direction of Xt_)
+            { // normalize J0_: the current flows in the direction of Xt_ = -dX/dt, of decreasing toroidal index
               const sctl::Long N = NFP_*Nt_*Np_;
 
               Real orientation = 0;

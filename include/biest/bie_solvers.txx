@@ -1089,7 +1089,8 @@ namespace detail_bie_solvers {
         }
         const sctl::Vector<Real> Fpotn(COORD_DIM * 2 * N, Fgrad.begin() + 2 * N, false);
 
-        OffSurfaceOp op_grad(helm.FxdU(), comm), op_potn(helm.FxU(), comm);
+        OffSurfaceOp op_grad(helm.FxdU(), comm);
+        OffSurfaceOp op_potn(helm.FxU(), comm);
         op_grad.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol, Fgrad);
         op_grad.Eval(Ugrad, Fgrad);
         op_potn.Setup(S.Coord(), S.NTor(), S.NPol(), Xt, tol, Fpotn);

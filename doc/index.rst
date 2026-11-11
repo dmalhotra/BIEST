@@ -93,7 +93,7 @@ If you use BIEST, or code derived from it, please cite the software and the pape
      title     = {{SCTL}: Scientific Computing Template Library},
      url       = {https://github.com/dmalhotra/SCTL},
      doi       = {10.5281/zenodo.23511629},
-     version   = {2.0.0},
+     version   = {2.1.0},
      year      = {2026}
    }
 

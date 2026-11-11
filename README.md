@@ -36,7 +36,7 @@ If you use BIEST, or code derived from it, please cite the software and the pape
   title     = {{BIEST}: Boundary Integral Equation Solver for {Taylor} states},
   url       = {https://github.com/dmalhotra/BIEST},
   doi       = {10.5281/zenodo.23511944},
-  version   = {1.0.0},
+  version   = {2.0.0},
   year      = {2026}
 }
 

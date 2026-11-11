@@ -8,8 +8,8 @@ authors:
 abstract: "A header-only C++ library of high-order boundary integral equation solvers on toroidal surfaces, for Taylor states (force-free fields) and vacuum magnetic fields in stellarators."
 repository-code: "https://github.com/dmalhotra/BIEST"
 license: Apache-2.0
-version: "1.0.0"
-date-released: "2026-10-20"
+version: "2.0.0"
+date-released: "2026-11-11"
 doi: "10.5281/zenodo.23511944"
 preferred-citation:
   type: article
